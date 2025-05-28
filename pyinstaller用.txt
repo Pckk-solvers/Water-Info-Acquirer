@@ -1,0 +1,9 @@
+pyinstaller --noconsole -F -n HydroFetcher -p src src/__main__.py
+
+| オプション         | 説明                                              
+| ----------------- | ----------------------------------------------- 
+| --noconsole       | コンソール画面を使用しない
+| `-F`              | 単一 `.exe` にまとめる（OneFile モード）                    
+| `-n`              | 出力される `.exe` の名前（例：`HydroFetcher_launcher.exe`） 
+| `-p src`          | `src` をPythonパスに追加（モジュール認識のため）                  
+| `src/__main__.py` | 実行スクリプト（この中で `main_datetime.py` を呼ぶ）            
