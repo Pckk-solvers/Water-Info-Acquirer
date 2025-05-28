@@ -1,6 +1,5 @@
 # 水文データ取得・整理支援ツールのソースコード
 # 実行時にはこちらを直接実行してください。
-import os
 import re
 import threading
 import subprocess
@@ -9,7 +8,6 @@ from datetime import datetime, timedelta
 
 import requests
 import pandas as pd
-import xlsxwriter
 from bs4 import BeautifulSoup
 import tkinter.font as tkFont
 from tkinter import (
