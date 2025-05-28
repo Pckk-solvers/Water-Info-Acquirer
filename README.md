@@ -1,4 +1,4 @@
-## WISA（water Information System Acquisition）和名；水文データ取得・整理ツール
+## Water-Info-Acquirer(water Information Acquisition)；水文データ取得・整理ツール
 水文水質データベースからデータから水位・流量・雨量データを指定期間ごとに取得する。
 取得したデータを日単位または1時間単位でExcelへ整理し、ハイドログラフを挿入する。
 
@@ -15,6 +15,6 @@
    - 指定期間内にデータが1件もない場合はエラーウィンドウを表示し、Excelの出力も行わないように修正
    - 出力Excelの時間フォーマットを「/」へ変更これにより、Excel表記に寄せた。
 
- - 英名を考案 WISA（water Information System Acquisition）
-   - ソースコードや実行ファイル名等で広く活用できるようにした。  
+ - 英名を考案 Water-Info-Acquirer(water Information Acquisition)
+   - ソースコードや実行ファイル名等で広く活用できるようにした。
 
