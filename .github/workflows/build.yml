@@ -25,7 +25,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --noconsole --onedir -n Water-Info-Acquirer-${{ github.ref_name }}-win src/__main__.py
+          pyinstaller --noconsole --onefile -n Water-Info-Acquirer-${{ github.ref_name }}-win src/__main__.py
 
       - name: Zip distributable
         shell: pwsh
