@@ -1,4 +1,6 @@
-pyinstaller --noconsole -F -n Water-Info-Acquirer-1.0 -p src src/__main__.py
+pyinstaller --noconsole --onedir -n Water-Info-Acquirer-1.0 src/__main__.py
+
+
 
 | オプション         | 説明                                              
 | ----------------- | ----------------------------------------------- 

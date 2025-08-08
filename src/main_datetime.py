@@ -148,7 +148,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type):
 
     # --- XlsxWriter で書き出し＋チャート作成 ---
     with pd.ExcelWriter(file_name, engine='xlsxwriter',
-                        datetime_format='yyyy/mm/dd hh:mm') as writer:
+                        datetime_format='yyyy/m/d h:mm') as writer:
 
         # 年ごとにシート出力＋チャート挿入
         for year, group in df.groupby('group_year'):
@@ -320,7 +320,8 @@ class ToolTip:
 
 
 class WWRApp:
-    def __init__(self):
+    def __init__(self, single_sheet_mode=False):
+        self.single_sheet_mode = single_sheet_mode
         self.root = Tk()
         self.root.title('水文データ取得ツール')
         self.root.config(bg="#d1f6ff")
@@ -338,9 +339,13 @@ class WWRApp:
         self.month_start = StringVar(value="1月")
         self.year_end = StringVar(value=str(datetime.now().year))
         self.month_end = StringVar(value="12月")
+        
+        # GUI 用変数に single_sheet_mode を渡す（UIで参照可能に）
+        self.single_sheet_var = BooleanVar(value=self.single_sheet_mode)
 
         self._build_ui()
         self.root.mainloop()
+
 
     def _clear_placeholder(self, entry, placeholder):
         if entry.get() == placeholder:
@@ -416,6 +421,9 @@ class WWRApp:
 
         # 日別データ切替
         Checkbutton(main, text="日データ", variable=self.use_data_sru, bg="#d1f6ff").pack(anchor='center', pady=10)
+
+        # 指定区間シート挿入
+        Checkbutton(main, text="指定区間シート挿入", variable=self.single_sheet_var, bg="#d1f6ff").pack(anchor='center', pady=10)
 
         # 実行ボタン
         Button(main, text="実行", command=self._on_execute, height=2, width=8).pack(pady=(10,5))
@@ -538,14 +546,16 @@ class WWRApp:
                         c,
                         self.year_start.get(), self.year_end.get(),
                         self.month_start.get(), self.month_end.get(),
-                        self.mode.get()
+                        self.mode.get(),
+                        single_sheet=self.single_sheet_var.get()
                     )
                 else:
                     file_path = process_data_for_code(
                         c,
                         self.year_start.get(), self.year_end.get(),
                         self.month_start.get(), self.month_end.get(),
-                        self.mode.get()
+                        self.mode.get(),
+                        single_sheet=self.single_sheet_var.get()
                     )
                 results.append(file_path)
 

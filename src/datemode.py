@@ -9,7 +9,7 @@ class EmptyExcelWarning(Exception):
     """出力用データが空のときに投げる例外"""
     pass
 
-def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type):
+def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     """
     年単位URL（各年のBGNDATE=YYYY0101, ENDDATE=YYYY1231）を用いて指定年分のデータを取得し、
     開始月・終了月で指定された期間（例：2022/1～2023/9）にフィルタリング後、

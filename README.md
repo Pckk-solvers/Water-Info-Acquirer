@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ```
 モジュール実行で実行をします。
 ```bash
-python -m src.__main__  
+python -m src.__main__ 
 ```
 コンソール画面には詳しく、デバックさせているので適宜ご確認ください。<br>
 もし、改善点等がありましたら是非お問い合わせいただけると幸いです。<br>
