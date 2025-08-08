@@ -26,30 +26,22 @@ jobs:
       # ── onedir (-d) ビルド & ZIP ──
       - name: Build dir (-d)
         run: |
-          pyinstaller --noconsole --onedir \
-            -n Water-Info-Acquirer-${{ github.ref_name }}-win-d \
-            src/__main__.py
+          pyinstaller --noconsole --onedir -n Water-Info-Acquirer-${{ github.ref_name }}-win-d src/__main__.py
 
       - name: Zip dir (-d)
         shell: pwsh
         run: |
-          Compress-Archive \
-            -Path "dist/Water-Info-Acquirer-${{ github.ref_name }}-win-d\*" \
-            -DestinationPath "Water-Info-Acquirer-${{ github.ref_name }}-win-d.zip"
+          Compress-Archive -Path "dist/Water-Info-Acquirer-${{ github.ref_name }}-win-d\*" -DestinationPath "Water-Info-Acquirer-${{ github.ref_name }}-win-d.zip"
 
       # ── onefile (-f) ビルド & ZIP ──
       - name: Build file (-f)
         run: |
-          pyinstaller --noconsole --onefile \
-            -n Water-Info-Acquirer-${{ github.ref_name }}-win-f \
-            src/__main__.py
+          pyinstaller --noconsole --onefile -n Water-Info-Acquirer-${{ github.ref_name }}-win-f src/__main__.py
 
       - name: Zip file (-f)
         shell: pwsh
         run: |
-          Compress-Archive \
-            -Path "dist/Water-Info-Acquirer-${{ github.ref_name }}-win-f.exe" \
-            -DestinationPath "Water-Info-Acquirer-${{ github.ref_name }}-win-f.zip"
+          Compress-Archive -Path "dist/Water-Info-Acquirer-${{ github.ref_name }}-win-f.exe" -DestinationPath "Water-Info-Acquirer-${{ github.ref_name }}-win-f.zip"
 
       # ── ドラフトリリース作成 ──
       - name: Create GitHub Release Draft
