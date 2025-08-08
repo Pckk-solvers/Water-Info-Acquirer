@@ -134,6 +134,19 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
 
     # DatetimeIndex を列に戻す
     df = df.reset_index().rename(columns={'index': 'datetime'})
+    
+    # ─── 表示用に「時刻＋1」する文字列カラムを作成 ───
+    #   ・元の datetime はそのまま残す
+    #   ・hour は 0→1 … 23→24 まで、そのまま数値をシフト
+    df['hour_plus1'] = df['datetime'].dt.hour + 1
+    #   ・24 を超えないようキャップ（このケースでは max が 24）
+    df.loc[df['hour_plus1'] > 24, 'hour_plus1'] = 24
+    #   ・表示用文字列を YYYY/MM/DD HH:MM 形式で作成
+    df['datetime_display'] = (
+        df['datetime'].dt.strftime('%Y/%m/%d ')
+        + df['hour_plus1'].astype(str).str.zfill(2)
+        + ':00'
+    )
 
     # 年ごとにグループ
     df['group_year'] = df['datetime'].dt.year
@@ -153,13 +166,14 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
         # 年ごとにシート出力＋チャート挿入
         for year, group in df.groupby('group_year'):
             sheet_name = f"{year}年"
-            group[['datetime'] + elem_columns] \
+            group[['datetime_display'] + elem_columns + ['datetime']] \
                 .to_excel(writer, index=False, sheet_name=sheet_name)
             ws = writer.sheets[sheet_name]
 
             # 列幅調整
-            ws.set_column('A:A', 20)  # datetime
+            ws.set_column('A:A', 20)  # datetime_display
             ws.set_column('B:B', 12)  # 値
+            ws.set_column('C:C', 1)  # datetime (非表示)
 
             # チャート作成
             workbook = writer.book
@@ -168,7 +182,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
 
             chart.add_series({
                 'name':       sheet_name,
-                'categories': [sheet_name, 1, 0, max_row-1, 0],  # A列
+                'categories': [sheet_name, 1, 2, max_row-1, 2],  # C列
                 'values':     [sheet_name, 1, 1, max_row-1, 1],  # B列
                 'marker':     {'type': 'none'},
                 'line':       {'width': 1.5},
@@ -211,10 +225,14 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
         # 年別サマリ用 DataFrame を作成
         year_list = []
         for year, group in df.groupby('group_year'):
-            max_idx     = group[elem_columns[0]].idxmax()
-            ts_max      = group.loc[max_idx, 'datetime'].to_pydatetime()
-            val_max     = group.loc[max_idx, elem_columns[0]]
-            empty_year  = group[elem_columns[0]].isna().sum()
+            # ─── 非 null 値がない年はスキップ ───
+            non_null = group[elem_columns[0]].dropna()
+            if non_null.empty:
+                continue
+            max_idx    = non_null.idxmax()
+            ts_max     = group.loc[max_idx, 'datetime'].to_pydatetime()
+            val_max    = group.loc[max_idx, elem_columns[0]]
+            empty_year = group[elem_columns[0]].isna().sum()
             year_list.append([year, ts_max, val_max, empty_year])
 
         year_summary_df = pd.DataFrame(
@@ -456,7 +474,8 @@ class WWRApp:
             ("・日データ", "時刻データではなく、日データを取得したい場合に、チェックを入れてください。", "black"),
             ("・注意事項", "指定した取得期間内に有効なデータが1件も存在しない場合は、下記エラーメッセージが表示され、該当観測所のExcelファイルは出力されません。"
              "\n「指定期間に有効なデータが見つかりませんでした。」"
-             "\nまた、エラー時は”OK”ボタンを押すまで画面操作が行えなくなるため、エラーメッセージを確認後、”OK”ボタンをクリックしてください。", "red")
+             "\nまた、エラー時は”OK”ボタンを押すまで画面操作が行えなくなるため、エラーメッセージを確認後、”OK”ボタンをクリックしてください。"
+             "\n[Error 13] こちらはExcelが開かれていて書き込みができない状態です。", "red")
         ]
         for title, text, color in sections:
             Label(parent, text=title, bg="#eef6f9", fg=color, font=(None, 10, 'bold')).pack(anchor='w', pady=(8,0), padx=5)
