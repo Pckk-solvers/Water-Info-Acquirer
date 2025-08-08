@@ -1,7 +1,7 @@
 pyinstaller --noconsole --onedir -n Water-Info-Acquirer-1.0 src/__main__.py
 
 
-
+メモ
 | オプション         | 説明                                              
 | ----------------- | ----------------------------------------------- 
 | --noconsole       | コンソール画面を使用しない

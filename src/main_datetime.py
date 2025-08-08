@@ -162,6 +162,54 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     # --- XlsxWriter で書き出し＋チャート作成 ---
     with pd.ExcelWriter(file_name, engine='xlsxwriter',
                         datetime_format='yyyy/m/d h:mm') as writer:
+        # --- フラグ: 全期間シート挿入 ---
+        if single_sheet:
+            # 全期間用 DataFrame を作成
+            full_df = df[['datetime_display'] + elem_columns + ['datetime']].copy()
+            sheet_full = "全期間"
+            full_df.to_excel(
+                writer,
+                sheet_name=sheet_full,
+                index=False
+            )
+            ws_full = writer.sheets[sheet_full]
+            # 列幅調整
+            ws_full.set_column('A:A', 20)  # datetime_display
+            ws_full.set_column('B:B', 12)  # 値
+            ws_full.set_column('C:C', 1)   # datetime（非表示）
+
+            # 全期間チャートの挿入
+            chart_full = writer.book.add_chart({
+                'type': 'scatter',
+                'subtype': 'straight_with_markers'
+            })
+            max_row_full = len(full_df) + 1
+            chart_full.add_series({
+                'name':       sheet_full,
+                'categories': [sheet_full, 1, 2, max_row_full-1, 2],
+                'values':     [sheet_full, 1, 1, max_row_full-1, 1],
+                'marker':     {'type': 'none'},
+                'line':       {'width': 1.5},
+            })
+            min_dt = full_df['datetime'].min()
+            max_dt = full_df['datetime'].max()
+            # 例: "2024/6~2025/5"
+            title_str = f"{min_dt.year}/{min_dt.month} - {max_dt.year}/{max_dt.month}"
+            chart_full.set_title({'name': title_str})
+            # Y 軸タイトル
+            ytitle = {'S':'水位[m]', 'R':'流量[m^3/s]', 'U':'雨量[mm/h]'}[mode_type]
+            chart_full.set_x_axis({
+                'name':            '日時[月]',
+                'date_axis':       True,
+                'num_format':      'mm',
+                'major_unit':      30,
+                'major_unit_type': 'months',
+                'major_gridlines': {'visible': True}
+            })
+            chart_full.set_y_axis({'name': ytitle})
+            chart_full.set_legend({'position': 'none'})
+            chart_full.set_size({'width': 720, 'height': 300})
+            ws_full.insert_chart('D2', chart_full)
 
         # 年ごとにシート出力＋チャート挿入
         for year, group in df.groupby('group_year'):
@@ -440,8 +488,8 @@ class WWRApp:
         # 日別データ切替
         Checkbutton(main, text="日データ", variable=self.use_data_sru, bg="#d1f6ff").pack(anchor='center', pady=10)
 
-        # 指定区間シート挿入
-        Checkbutton(main, text="指定区間シート挿入", variable=self.single_sheet_var, bg="#d1f6ff").pack(anchor='center', pady=10)
+        # 指定全期間シート挿入
+        Checkbutton(main, text="指定全期間シート挿入", variable=self.single_sheet_var, bg="#d1f6ff").pack(anchor='center', pady=10)
 
         # 実行ボタン
         Button(main, text="実行", command=self._on_execute, height=2, width=8).pack(pady=(10,5))

@@ -1,4 +1,5 @@
-requests
-beautifulsoup4
-pandas
-xlsxwriter
+beautifulsoup4==4.13.4
+pandas==2.3.0
+pyinstaller==6.14.2
+requests==2.32.4
+xlsxwriter==3.2.5

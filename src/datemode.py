@@ -94,6 +94,40 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
     # --- XlsxWriter で書き出し＋シート内集計＋チャート ---
     with pd.ExcelWriter(file_name, engine="xlsxwriter", datetime_format="yyyy/mm/dd") as writer:
         wb = writer.book
+        # --- フラグ: 全期間シート挿入 ---
+        if single_sheet:
+            # 全期間用 DataFrame を作成
+            full_df = df.reset_index().rename(columns={'index': 'datetime'})
+            sheet_full = "全期間"
+            # 日付とデータ列のみを出力
+            full_df.to_excel(
+                writer,
+                sheet_name=sheet_full,
+                index=False,
+                columns=['datetime', data_label]
+            )
+            ws_full = writer.sheets[sheet_full]
+            # 列幅調整
+            ws_full.set_column("A:A", 15)  # datetime
+            ws_full.set_column("B:B", 12)  # data_label
+            #散布図挿入
+            chart = wb.add_chart({"type":"scatter","subtype":"straight_with_markers"})
+            max_row = len(full_df) + 1
+            chart.add_series({
+                "name": sheet_full,
+                "categories": [sheet_full, 1, 0, max_row-1, 0],
+                "values":     [sheet_full, 1, 1, max_row-1, 1],
+                "marker":     {"type":"none"},
+                "line":       {"width":1.5},
+            })
+            chart.set_x_axis({"name":"日時[年/月]","date_axis":True,"num_format":"yyyy/mm","major_unit":185,"major_gridlines":{"visible":True}})
+            chart.set_y_axis({"name":chart_title})
+            chart.set_legend({"position":"none"})
+            chart.set_size({"width":720,"height":300})
+            chart.set_title({"name": f"{Y1}/{M1} - {Y2}/{M2}"})
+            ws_full.insert_chart("D6", chart)
+        
+        # --- 年別シート挿入 ---
         for year, grp in df.groupby(df.index.year):
             sheet = f"{year}年"
             grp_df = grp.reset_index().rename(columns={"index":"datetime"})
