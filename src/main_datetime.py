@@ -27,6 +27,16 @@ height = 0
 cb_month = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
 month_dic = {'1月':0, '2月':1, '3月':2, '4月':3, '5月':4, '6月':5, '7月':6, '8月':7, '9月':8, '10月':9, '11月':10, '12月':11}
 
+def month_floor(dt: datetime) -> datetime:
+    """その月の月初(00:00)"""
+    return datetime(dt.year, dt.month, 1)
+
+def shift_month(dt: datetime, n: int) -> datetime:
+    """月初を基準に n ヶ月シフトした月初"""
+    y = dt.year + (dt.month - 1 + n) // 12
+    m = (dt.month - 1 + n) % 12 + 1
+    return datetime(y, m, 1)
+
 # --- 元のデータ取得・Excel生成処理 ---
 def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     # --- モード別設定（ファイル名は後で生成） ---
@@ -135,21 +145,12 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     # DatetimeIndex を列に戻す
     df = df.reset_index().rename(columns={'index': 'datetime'})
     
-    # ─── 表示用に「時刻＋1」する文字列カラムを作成 ───
-    #   ・元の datetime はそのまま残す
-    #   ・hour は 0→1 … 23→24 まで、そのまま数値をシフト
-    df['hour_plus1'] = df['datetime'].dt.hour + 1
-    #   ・24 を超えないようキャップ（このケースでは max が 24）
-    df.loc[df['hour_plus1'] > 24, 'hour_plus1'] = 24
-    #   ・表示用文字列を YYYY/MM/DD HH:MM 形式で作成
-    df['datetime_display'] = (
-        df['datetime'].dt.strftime('%Y/%m/%d ')
-        + df['hour_plus1'].astype(str).str.zfill(2)
-        + ':00'
-    )
+    # ─── 1:00 ~ 0:00 方式（表示・集計ともに＋1時間シフト）───
+    # 元の datetime はそのまま保持し、display_dt を作る
+    df['display_dt'] = df['datetime'] + pd.to_timedelta(1, 'h')
 
-    # 年ごとにグループ
-    df['group_year'] = df['datetime'].dt.year
+    # 新: 所属年は元の測定時刻ベース（表示は+1hでも“所属年”はズレない）
+    df['sheet_year'] = df['datetime'].dt.year
 
     # 値列を数値型に変換（空文字は NaN に）
     df[elem_columns[0]] = pd.to_numeric(df[elem_columns[0]], errors='coerce')
@@ -165,7 +166,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
         # --- フラグ: 全期間シート挿入 ---
         if single_sheet:
             # 全期間用 DataFrame を作成
-            full_df = df[['datetime_display'] + elem_columns + ['datetime']].copy()
+            full_df = df[['display_dt'] + elem_columns].copy()
             sheet_full = "全期間"
             full_df.to_excel(
                 writer,
@@ -174,9 +175,8 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             )
             ws_full = writer.sheets[sheet_full]
             # 列幅調整
-            ws_full.set_column('A:A', 20)  # datetime_display
+            ws_full.set_column('A:A', 20)  # datetime_dt
             ws_full.set_column('B:B', 12)  # 値
-            ws_full.set_column('C:C', 1)   # datetime（非表示）
 
             # 全期間チャートの挿入
             chart_full = writer.book.add_chart({
@@ -186,25 +186,35 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             max_row_full = len(full_df) + 1
             chart_full.add_series({
                 'name':       sheet_full,
-                'categories': [sheet_full, 1, 2, max_row_full-1, 2],
+                'categories': [sheet_full, 1, 0, max_row_full-1, 0],
                 'values':     [sheet_full, 1, 1, max_row_full-1, 1],
                 'marker':     {'type': 'none'},
                 'line':       {'width': 1.5},
             })
-            min_dt = full_df['datetime'].min()
-            max_dt = full_df['datetime'].max()
+            min_dt = full_df['display_dt'].min()
+            max_dt = full_df['display_dt'].max()
             # 例: "2024/6~2025/5"
             title_str = f"{min_dt.year}/{min_dt.month} - {max_dt.year}/{max_dt.month}"
             chart_full.set_title({'name': title_str})
             # Y 軸タイトル
             ytitle = {'S':'水位[m]', 'R':'流量[m^3/s]', 'U':'雨量[mm/h]'}[mode_type]
+            
+            min_dt = full_df['display_dt'].min()
+            max_dt = full_df['display_dt'].max()
+
+            xmin = shift_month(month_floor(min_dt), -1)  # 1ヶ月前の月初
+            xmax = shift_month(month_floor(max_dt), +2)  # データの月＋1ヶ月分の“翌月初”
+            
             chart_full.set_x_axis({
                 'name':            '日時[月]',
                 'date_axis':       True,
-                'num_format':      'mm',
-                'major_unit':      30,
+                'num_format':      'm',
+                'major_unit':      31,
+                'min':             xmin,
+                'max':             xmax,
                 'major_unit_type': 'months',
-                'major_gridlines': {'visible': True}
+                'major_gridlines': {'visible': True},
+                'label_position': 'low'
             })
             chart_full.set_y_axis({'name': ytitle})
             chart_full.set_legend({'position': 'none'})
@@ -212,25 +222,29 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             ws_full.insert_chart('D2', chart_full)
 
         # 年ごとにシート出力＋チャート挿入
-        for year, group in df.groupby('group_year'):
+        for year, group in df.groupby('sheet_year', sort=True):
             sheet_name = f"{year}年"
-            group[['datetime_display'] + elem_columns + ['datetime']] \
+            group[['display_dt'] + elem_columns] \
                 .to_excel(writer, index=False, sheet_name=sheet_name)
             ws = writer.sheets[sheet_name]
 
             # 列幅調整
-            ws.set_column('A:A', 20)  # datetime_display
+            ws.set_column('A:A', 20)  # datetime_dt
             ws.set_column('B:B', 12)  # 値
-            ws.set_column('C:C', 1)  # datetime (非表示)
 
             # チャート作成
             workbook = writer.book
             chart = workbook.add_chart({'type': 'scatter', 'subtype': 'straight_with_markers'})
             max_row = len(group) + 1
+            # チャートのデータ範囲を設定
+            gmin = group['display_dt'].min()
+            gmax = group['display_dt'].max()
+            xmin = shift_month(month_floor(gmin), -1)
+            xmax = shift_month(month_floor(gmax), +2)
 
             chart.add_series({
                 'name':       sheet_name,
-                'categories': [sheet_name, 1, 2, max_row-1, 2],  # C列
+                'categories': [sheet_name, 1, 0, max_row-1, 0],  # A列
                 'values':     [sheet_name, 1, 1, max_row-1, 1],  # B列
                 'marker':     {'type': 'none'},
                 'line':       {'width': 1.5},
@@ -239,10 +253,13 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             chart.set_x_axis({
                 'name':            '日時[月]',
                 'date_axis':       True,
-                'num_format':      'mm',
-                'major_unit':      30,
+                'num_format':      'm',
+                'major_unit':      31,
                 'major_unit_type': 'months',
-                'major_gridlines': {'visible': True}
+                'min':             xmin,          # 月初に合わせる
+                'max':             xmax,          # 翌年1/1まで
+                'major_gridlines': {'visible': True},
+                'label_position': 'low'
             })
             ytitle = {'S':'水位[m]', 'R':'流量[m^3/s]', 'U':'雨量[mm/h]'}[mode_type]
             chart.set_y_axis({'name': ytitle})
@@ -256,7 +273,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
         # 日別サマリ用 DataFrame を作成
         tmp = pd.DataFrame(
             [[dt.strftime('%Y/%m/%d'), val]
-            for dt, val in zip(df['datetime'], df[elem_columns[0]])],
+            for dt, val in zip(df['display_dt'], df[elem_columns[0]])],
             columns=['date', elem_columns[0]]
         )
         tmp[elem_columns[0]] = pd.to_numeric(tmp[elem_columns[0]], errors='coerce')
@@ -265,20 +282,20 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             tmp
               .groupby('date')
               .agg(
-                  count_empty=(elem_columns[0], lambda s: s.isna().sum())
+                  empty_count=(elem_columns[0], lambda s: s.isna().sum())
               )
               .reset_index()
         )
 
         # 年別サマリ用 DataFrame を作成
         year_list = []
-        for year, group in df.groupby('group_year'):
+        for year, group in df.groupby('sheet_year', sort=True):
             # ─── 非 null 値がない年はスキップ ───
             non_null = group[elem_columns[0]].dropna()
             if non_null.empty:
                 continue
             max_idx    = non_null.idxmax()
-            ts_max     = group.loc[max_idx, 'datetime'].to_pydatetime()
+            ts_max     = group.loc[max_idx, 'display_dt'].to_pydatetime()
             val_max    = group.loc[max_idx, elem_columns[0]]
             empty_year = group[elem_columns[0]].isna().sum()
             year_list.append([year, ts_max, val_max, empty_year])
@@ -520,6 +537,7 @@ class WWRApp:
             ("・取得項目", "水位・流量・雨量の中から、データを取得したい項目を選択してください。\n※1項目のみ選択可能", "black"),
             ("・取得期間", "データを取得したい期間の開始年月と終了年月を入力してください。", "black"),
             ("・日データ", "時刻データではなく、日データを取得したい場合に、チェックを入れてください。", "black"),
+            ("・指定全期間シート挿入", "指定した全期間データを1シート目へ挿入したい場合に、チェックを入れてください。", "black"),
             ("・注意事項", "指定した取得期間内に有効なデータが1件も存在しない場合は、下記エラーメッセージが表示され、該当観測所のExcelファイルは出力されません。"
              "\n「指定期間に有効なデータが見つかりませんでした。」"
              "\nまた、エラー時は”OK”ボタンを押すまで画面操作が行えなくなるため、エラーメッセージを確認後、”OK”ボタンをクリックしてください。"
