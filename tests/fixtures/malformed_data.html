@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>不正なデータ形式</title>
+</head>
+<body>
+    <table border="1" cellpadding="2" cellspacing="1">
+        <tr><th>項目</th><th>値</th></tr>
+        <tr><td>観測所名</td><td>不正データ観測所</td></tr>
+    </table>
+    
+    <!-- 不正な形式のテーブル -->
+    <table>
+        <tr><td>不正なデータ1</td></tr>
+        <tr><td><font>abc</font></td></tr>
+        <tr><td><font>xyz123</font></td></tr>
+        <tr><td><span>2.34</span></td></tr>  <!-- fontタグではない -->
+        <tr><td><font></font></td></tr>      <!-- 空のfontタグ -->
+        <tr><td><font>   </font></td></tr>   <!-- 空白のみ -->
+    </table>
+</body>
+</html>

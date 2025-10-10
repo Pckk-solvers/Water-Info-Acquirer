@@ -1,0 +1,29 @@
+2025-10-10 15:30:45,678 - __main__ - INFO - 水文データ取得ツール開始 (single_sheet=False)
+2025-10-10 15:30:56,705 - __main__ - INFO - アプリケーション正常終了
+2025-10-10 15:32:07,692 - __main__ - INFO - 水文データ取得ツール開始 (single_sheet=False)
+2025-10-10 15:32:53,842 - src.wia.gui - INFO - 観測所コード追加: 11111111
+2025-10-10 15:32:55,271 - src.wia.gui - INFO - データ取得処理開始
+2025-10-10 15:32:55,322 - src.wia.api - INFO - データ取得開始: 1観測所, モード=S, 期間=2025/1-2025/12
+2025-10-10 15:32:55,322 - src.wia.api - INFO - 処理中 (1/1): 観測所コード 11111111
+2025-10-10 15:32:56,059 - src.wia.api - ERROR - 観測所 11111111: 観測所コード 11111111：想定外のエラーが発生しました - 観測所コード 11111111 の処理でエラーが発生しました: list index out of range
+Traceback (most recent call last):
+  File "C:\Users\yuuta.ochiai\Documents\GitHub\Water-Info-Acquirer\src\wia\api.py", line 146, in execute_single_station
+    station_info = fetch_station_info(code, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yuuta.ochiai\Documents\GitHub\Water-Info-Acquirer\src\wia\data_source.py", line 63, in fetch_station_info
+    info_table = soup.find_all("table", {"border": "1", "cellpadding": "2", "cellspacing": "1"})[0]
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+IndexError: list index out of range
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\yuuta.ochiai\Documents\GitHub\Water-Info-Acquirer\src\wia\api.py", line 57, in execute_data_acquisition
+    file_path = execute_single_station(
+                ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yuuta.ochiai\Documents\GitHub\Water-Info-Acquirer\src\wia\api.py", line 177, in execute_single_station
+    raise WaterInfoAcquirerError(f"観測所コード {code} の処理でエラーが発生しました: {str(e)}") from e
+src.wia.errors.WaterInfoAcquirerError: 観測所コード 11111111 の処理でエラーが発生しました: list index out of range
+2025-10-10 15:32:56,103 - src.wia.api - INFO - データ取得完了: 成功=0件, エラー=1件
+2025-10-10 15:32:56,113 - src.wia.gui - WARNING - エラー表示: 観測所コード 11111111：想定外のエラーが発生しました
+2025-10-10 15:33:05,484 - __main__ - INFO - アプリケーション正常終了

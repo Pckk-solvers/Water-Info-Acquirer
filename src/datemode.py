@@ -11,6 +11,36 @@ class EmptyExcelWarning(Exception):
 
 def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     """
+    新しい統合APIを使用した日次データ取得・Excel生成処理
+    既存の関数シグネチャを維持しつつ、内部実装を新APIに置換
+    """
+    from src.wia.api import execute_single_station
+    from src.wia.errors import EmptyDataError
+    
+    # 月文字列を数値に変換
+    start_month = int(M1.replace("月", ""))
+    end_month = int(M2.replace("月", ""))
+    
+    try:
+        file_path = execute_single_station(
+            code=code,
+            start_year=int(Y1),
+            start_month=start_month,
+            end_year=int(Y2),
+            end_month=end_month,
+            mode=mode_type,
+            granularity="day",
+            single_sheet=single_sheet
+        )
+        return str(file_path)
+    except EmptyDataError as e:
+        # 既存のEmptyExcelWarningとして再発生
+        raise EmptyExcelWarning(str(e)) from e
+
+
+# --- 旧実装（参考用に保持、実際は使用されない） ---
+def process_period_date_display_for_code_old(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
+    """
     年単位URL（各年のBGNDATE=YYYY0101, ENDDATE=YYYY1231）を用いて指定年分のデータを取得し、
     開始月・終了月で指定された期間（例：2022/1～2023/9）にフィルタリング後、
     各シートにデータテーブル（A～C列）および追加統計情報（シート別・全体統計）を

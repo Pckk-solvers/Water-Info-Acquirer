@@ -8,4 +8,52 @@ dependencies = [
     "beautifulsoup4>=4.14.2",
     "pandas>=2.3.3",
     "requests>=2.32.5",
+    "xlsxwriter>=3.2.5",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+    "openpyxl>=3.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --cov=src/wia --cov-report=term-missing --cov-report=html"
+minversion = "7.0"
+
+[tool.coverage.run]
+source = ["src/wia"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.16.0",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+]
+test = [
+    "openpyxl>=3.1.5",
+    "pytest-cov>=7.0.0",
 ]

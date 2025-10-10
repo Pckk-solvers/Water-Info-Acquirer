@@ -37,8 +37,41 @@ def shift_month(dt: datetime, n: int) -> datetime:
     m = (dt.month - 1 + n) % 12 + 1
     return datetime(y, m, 1)
 
-# --- 元のデータ取得・Excel生成処理 ---
+# --- 新しいAPIを使用したデータ取得・Excel生成処理 ---
 def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
+    """
+    新しい統合APIを使用したデータ取得・Excel生成処理
+    既存の関数シグネチャを維持しつつ、内部実装を新APIに置換
+    """
+    from src.wia.api import execute_single_station
+    from src.wia.errors import EmptyDataError
+    
+    # 月文字列を数値に変換
+    month_dic = {'1月':1, '2月':2, '3月':3, '4月':4, '5月':5, '6月':6, 
+                 '7月':7, '8月':8, '9月':9, '10月':10, '11月':11, '12月':12}
+    
+    start_month = month_dic[M1]
+    end_month = month_dic[M2]
+    
+    try:
+        file_path = execute_single_station(
+            code=code,
+            start_year=int(Y1),
+            start_month=start_month,
+            end_year=int(Y2),
+            end_month=end_month,
+            mode=mode_type,
+            granularity="hour",
+            single_sheet=single_sheet
+        )
+        return str(file_path)
+    except EmptyDataError as e:
+        # 既存のEmptyExcelWarningとして再発生
+        raise EmptyExcelWarning(str(e)) from e
+
+
+# --- 旧実装（参考用に保持、実際は使用されない） ---
+def process_data_for_code_old(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     # --- モード別設定（ファイル名は後で生成） ---
     if mode_type == "S":
         num = "2"
