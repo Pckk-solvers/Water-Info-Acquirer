@@ -1,0 +1,7 @@
+  # Python だけ LF を強制
+  *.py text eol=lf
+
+  # 画像や GeoPackage などバイナリは触らない
+  *.png -text
+  *.jpg -text
+  *.gpkg -text

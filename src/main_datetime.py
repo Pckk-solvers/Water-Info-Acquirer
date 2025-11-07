@@ -81,6 +81,11 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
         f"http://www1.river.go.jp/cgi-bin/Dsp{mode_str}Data.exe"
         f"?KIND={num}&ID={code}&BGNDATE={first_date}&ENDDATE={Y2}1231&KAWABOU=NO"
     )
+    debug_tag = f"[WWR][hourly][mode={mode_type}]"
+    print(
+        f"{debug_tag} first fetch -> code={code}, "
+        f"window={Y1}{M1}-{Y2}{M2}, start_month={first_date}, url={first_url}"
+    )
     res0 = requests.get(first_url)
     res0.encoding = 'euc_jp'
     soup0 = BeautifulSoup(res0.text, "html.parser")
@@ -106,7 +111,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             f"http://www1.river.go.jp/cgi-bin/Dsp{mode_str}Data.exe"
             f"?KIND={num}&ID={code}&BGNDATE={um}&ENDDATE={Y2}1231&KAWABOU=NO"
         )
-        print(url)
+        print(f"{debug_tag} chunk fetch -> start={um}, end={Y2}1231, url={url}")
         res = requests.get(url)
         res.encoding = 'euc_jp'
         soup = BeautifulSoup(res.text, "html.parser")
