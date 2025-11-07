@@ -46,7 +46,11 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
         f"{base_url}KIND={num}&ID={code}&BGNDATE={Y1}0101&ENDDATE={Y1}1231&KAWABOU=NO"
     )
     # コンソールにURLをプリント
-    print(first_url)
+    debug_tag = f"[WWR][daily][mode={mode_type}]"
+    print(
+        f"{debug_tag} first fetch -> code={code}, years={Y1}-{Y2}, "
+        f"month_range={M1}-{M2}, url={first_url}"
+    )
     res0 = requests.get(first_url)
     res0.encoding = 'euc_jp'
     soup0 = BeautifulSoup(res0.text, "html.parser")
@@ -68,7 +72,7 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
             f"{base_url}KIND={num}&ID={code}&BGNDATE={year}0101&ENDDATE={year}1231&KAWABOU=NO"
         )
         # コンソールにURLをプリント
-        print(url)
+        print(f"{debug_tag} year fetch -> year={year}, url={url}")
         res = requests.get(url)
         res.encoding = 'euc_jp'
         vals = [f.get_text() for f in BeautifulSoup(res.text, "html.parser").select("td > font")]
