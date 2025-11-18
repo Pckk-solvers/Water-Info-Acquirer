@@ -417,7 +417,7 @@ class WWRApp:
         self.root.title('水文データ取得ツール')
         self.root.config(bg="#d1f6ff")
         w, h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self.root.geometry(f"950x700+{(w-900)//2}+{(h-700)//2}")  # 初期サイズ＆中央
+        self.root.geometry(f"950x750+{(w-900)//2}+{(h-700)//2}")  # 初期サイズ＆中央
         self.root.update_idletasks()
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
