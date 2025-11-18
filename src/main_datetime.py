@@ -6,7 +6,6 @@ import subprocess
 import calendar
 from datetime import datetime, timedelta
 
-import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 import tkinter.font as tkFont
@@ -15,7 +14,11 @@ from tkinter import (
     StringVar, BooleanVar, Radiobutton, Checkbutton,
     PanedWindow, ttk, LEFT, TOP, BOTTOM
 )
-from src.datemode import process_period_date_display_for_code
+from src.datemode import (
+    process_period_date_display_for_code,
+    HEADERS,
+    throttled_get,
+)
 
 class EmptyExcelWarning(Exception):
     """出力用データが空のときに投げる例外"""
@@ -83,10 +86,10 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     )
     debug_tag = f"[WWR][hourly][mode={mode_type}]"
     print(
-        f"{debug_tag} first fetch -> code={code}, "
-        f"window={Y1}{M1}-{Y2}{M2}, start_month={first_date}, url={first_url}"
+        f"{debug_tag} 初回取得 -> 観測所コード={code}, "
+        f"期間={Y1}{M1}-{Y2}{M2}, 開始月={first_date}, url={first_url}"
     )
-    res0 = requests.get(first_url)
+    res0 = throttled_get(first_url, headers=HEADERS)
     res0.encoding = 'euc_jp'
     soup0 = BeautifulSoup(res0.text, "html.parser")
     info_table = soup0.find_all("table", {"border":"1","cellpadding":"2","cellspacing":"1"})[0]
@@ -111,8 +114,8 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
             f"http://www1.river.go.jp/cgi-bin/Dsp{mode_str}Data.exe"
             f"?KIND={num}&ID={code}&BGNDATE={um}&ENDDATE={Y2}1231&KAWABOU=NO"
         )
-        print(f"{debug_tag} chunk fetch -> start={um}, end={Y2}1231, url={url}")
-        res = requests.get(url)
+        print(f"{debug_tag} 月次取得 -> 開始={um}, 終了={Y2}1231, url={url}")
+        res = throttled_get(url, headers=HEADERS)
         res.encoding = 'euc_jp'
         soup = BeautifulSoup(res.text, "html.parser")
         elems = soup.select("td > font")
@@ -710,6 +713,3 @@ class WWRApp:
             text="終了",
             command=self.root.quit,   # or self.root.destroy
         ).pack(pady=5)
-
-
-
