@@ -3,12 +3,28 @@ import re
 import threading
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-from requests import exceptions as req_exc
+pd = None
+BeautifulSoup = None
+requests = None
+req_exc = None
+
+if TYPE_CHECKING:
+    from requests import Response
+
+
+def _ensure_data_libs() -> None:
+    """GUI起動を早くするため、重いライブラリは初回使用時に読み込む。"""
+    global pd, BeautifulSoup
+    if pd is None:
+        import pandas as pandas_module
+
+        pd = pandas_module
+    if BeautifulSoup is None:
+        from bs4 import BeautifulSoup as bs_class
+
+        BeautifulSoup = bs_class
 
 class EmptyExcelWarning(Exception):
     """出力用データが空のときに投げる例外"""
@@ -49,10 +65,11 @@ def _calc_delay(request_index: int) -> float:
     return min(delay, REQUEST_MAX_DELAY)
 
 
-def throttled_get(url: str, headers: dict, timeout: int = 30) -> requests.Response:
+def throttled_get(url: str, headers: dict, timeout: int = 30) -> "Response":
     """
     リクエスト間隔を最低限確保しつつ、一時的な失敗時には再試行を行うGETラッパー。
     """
+    _ensure_http_client()
     global _REQUEST_COUNTER
     last_error: Optional[Exception] = None
     for attempt in range(1, REQUEST_MAX_RETRIES + 1):
@@ -89,6 +106,7 @@ def throttled_get(url: str, headers: dict, timeout: int = 30) -> requests.Respon
     raise RuntimeError(f"{url} の取得に失敗しました")
 
 def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
+    _ensure_data_libs()
     """
     年単位URL（各年のBGNDATE=YYYY0101, ENDDATE=YYYY1231）を用いて指定年分のデータを取得し、
     開始月・終了月で指定された期間（例：2022/1～2023/9）にフィルタリング後、
@@ -281,3 +299,12 @@ if __name__ == "__main__":
     print(process_period_date_display_for_code(test_code_S_R, test_Y1, test_Y2, test_M1, test_M2, mode_type="R"))
     print("\nテスト開始: 期間指定モードのdate_display（雨量）")
     print(process_period_date_display_for_code(test_code_U, test_Y1, test_Y2, test_M1, test_M2, mode_type="U"))
+def _ensure_http_client() -> None:
+    """requests 関連の import も初回利用時に遅延させる。"""
+    global requests, req_exc
+    if requests is None or req_exc is None:
+        import requests as requests_module
+        from requests import exceptions as exceptions_module
+
+        requests = requests_module
+        req_exc = exceptions_module

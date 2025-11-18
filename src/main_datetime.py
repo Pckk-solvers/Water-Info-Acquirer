@@ -5,9 +5,8 @@ import threading
 import subprocess
 import calendar
 from datetime import datetime, timedelta
+from typing import Optional
 
-import pandas as pd
-from bs4 import BeautifulSoup
 import tkinter.font as tkFont
 from tkinter import (
     Tk, Frame, Label, Button, Entry, Listbox,Toplevel,
@@ -19,6 +18,22 @@ from src.datemode import (
     HEADERS,
     throttled_get,
 )
+
+pd = None
+BeautifulSoup = None
+
+
+def _ensure_data_libs() -> None:
+    """GUI起動を早くするため、重いライブラリは初回使用時に読み込む。"""
+    global pd, BeautifulSoup
+    if pd is None:
+        import pandas as pandas_module
+
+        pd = pandas_module
+    if BeautifulSoup is None:
+        from bs4 import BeautifulSoup as bs_class
+
+        BeautifulSoup = bs_class
 
 class EmptyExcelWarning(Exception):
     """出力用データが空のときに投げる例外"""
@@ -42,6 +57,7 @@ def shift_month(dt: datetime, n: int) -> datetime:
 
 # --- 元のデータ取得・Excel生成処理 ---
 def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
+    _ensure_data_libs()
     # --- モード別設定（ファイル名は後で生成） ---
     if mode_type == "S":
         num = "2"
