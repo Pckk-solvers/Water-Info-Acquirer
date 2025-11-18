@@ -10,3 +10,8 @@ dependencies = [
     "requests>=2.32.5",
     "xlsxwriter>=3.2.9",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+]
