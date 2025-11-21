@@ -6,6 +6,7 @@ import subprocess
 import calendar
 from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 
 import tkinter.font as tkFont
 from tkinter import (
@@ -116,7 +117,9 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     station_name = re.sub(r'（.*?）', '', raw_name).strip()  # 読み仮名を除去 -> "神野瀬川"
 
     # --- ファイル名生成 ---
-    prefix = f"{code}_{station_name}_"
+    out_dir = Path("water_info")                                                                                                                                                                                                                                                                               
+    out_dir.mkdir(parents=True, exist_ok=True)                                                                                                                                                                                                                                                                 
+    prefix = out_dir / f"{code}_{station_name}_"  
     if mode_type == "S":
         file_name = f"{prefix}{Y1}年{M1}-{Y2}年{M2}_WH.xlsx"
     elif mode_type == "R":
