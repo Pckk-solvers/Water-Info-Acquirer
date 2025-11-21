@@ -1,8 +1,4 @@
-"""どのアプリを起動するか選ぶためのランチャーGUI。
-
-PyInstaller 配布でも動くよう、サブプロセスではなく同一プロセス内で
-対象モジュールを import して main() を呼び出す形にしている。
-"""
+"""アプリ選択ランチャー（単一Tkルート＋Toplevel子遷移）。"""
 
 import sys
 import os
@@ -12,59 +8,30 @@ import importlib
 from pathlib import Path
 from tkinter import messagebox
 
-# 実行パスを EXE/スクリプトの親に合わせるためのルート決定
-IS_FROZEN = getattr(sys, "frozen", False)
-if IS_FROZEN:
-    PROJECT_ROOT = Path(sys.executable).resolve().parent
-else:
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+from src.app_names import get_app_title, get_module_title, get_version
 
+IS_FROZEN = getattr(sys, "frozen", False)
+PROJECT_ROOT = Path(sys.executable).resolve().parent if IS_FROZEN else Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 
 
 def _ensure_src_on_path() -> None:
-    """凍結/非凍結どちらでも water_info / jma_rainfall_pipeline を見つけられるようにする。"""
-    # 実行中のカレントディレクトリをプロジェクトルートに合わせておく
+    """凍結/非凍結どちらでも water_info / jma_rainfall_pipeline を解決できるようにする。"""
     try:
         os.chdir(PROJECT_ROOT)
     except OSError:
-        pass  # 失敗しても致命的ではない
-
+        pass
     src_path = str(SRC_DIR)
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
 
 
-def _run_water(root: tk.Tk) -> None:
-    """水文情報アプリを同一プロセスで起動する。"""
-    try:
-        root.destroy()
-        _ensure_src_on_path()
-        from water_info.__main__ import main as water_main
-
-        water_main([])
-    except Exception as exc:  # pragma: no cover - GUI only
-        messagebox.showerror("起動エラー", f"water_info の起動に失敗しました:\n{exc}")
-
-
-def _run_jma(root: tk.Tk) -> None:
-    """JMA雨量パイプラインを同一プロセスで起動する。"""
-    try:
-        root.destroy()
-        _ensure_src_on_path()
-        from jma_rainfall_pipeline.main import main as jma_main
-
-        jma_main()
-    except Exception as exc:  # pragma: no cover - GUI only
-        messagebox.showerror("起動エラー", f"jma_rainfall_pipeline の起動に失敗しました:\n{exc}")
-
-
 def _preload_dependencies(status_label: tk.Label, buttons: list[tk.Button]) -> None:
-    """裏で重い依存を読み込んでおき、子ウィンドウ起動を軽くする。"""
+    """裏で依存を読み込んでボタンを有効化する。"""
     _ensure_src_on_path()
     errors: list[str] = []
     try:
-        importlib.import_module("water_info.__main__")
+        importlib.import_module("water_info.main_datetime")
     except Exception as exc:
         errors.append(f"water_info のロードに失敗: {exc}")
     try:
@@ -86,9 +53,38 @@ def _preload_dependencies(status_label: tk.Label, buttons: list[tk.Button]) -> N
 
 
 def main() -> None:
+    _ensure_src_on_path()
     root = tk.Tk()
-    root.title("アプリ選択")
+    root.title(f"{get_app_title()} v{get_version()}")  # 共通タイトルにバージョン表記
     root.geometry("320x180")
+
+    current_child: tk.Toplevel | None = None
+
+    def _on_close():
+        root.destroy()
+
+    def _open_target(target: str) -> None:
+        nonlocal current_child
+        _ensure_src_on_path()
+        if current_child:
+            try:
+                current_child.destroy()
+            except Exception:
+                pass
+            current_child = None
+        root.withdraw()
+
+        def _on_open_other(next_target: str):
+            _open_target(next_target)
+
+        if target == "water":
+            from water_info.main_datetime import show_water
+
+            current_child = show_water(parent=root, on_open_other=_on_open_other, on_close=_on_close)
+        else:
+            from jma_rainfall_pipeline.gui.app import show_jma
+
+            current_child = show_jma(parent=root, on_open_other=_on_open_other, on_close=_on_close)
 
     tk.Label(root, text="起動するアプリを選んでください").pack(pady=8)
     status_label = tk.Label(root, text="依存を読み込み中です…")
@@ -97,19 +93,18 @@ def main() -> None:
     buttons: list[tk.Button] = []
     tk.Button(
         root,
-        text="水文情報 (water_info)",
+        text=f"{get_module_title('water_info')} ",
         state=tk.DISABLED,
-        command=lambda: _run_water(root),
+        command=lambda: _open_target("water"),
     ).pack(pady=6)
 
     tk.Button(
         root,
-        text="JMA 雨量パイプライン",
+        text=get_module_title('jma'),
         state=tk.DISABLED,
-        command=lambda: _run_jma(root),
+        command=lambda: _open_target("jma"),
     ).pack(pady=6)
 
-    # pack だけだと参照を残せないので直後に取り直す
     for child in root.winfo_children():
         if isinstance(child, tk.Button):
             buttons.append(child)

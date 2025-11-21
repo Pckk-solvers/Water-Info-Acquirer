@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""JMA降雨量パイプライン - メインエントリーポイント"""
+"""JMAミニパイプライン - エントリポイント"""
 
 from __future__ import annotations
 
 import argparse
 import os
 import sys
+import tkinter as tk
 from typing import Sequence
 
 
 def _ensure_src_on_path() -> None:
     """srcディレクトリをPythonパスに追加する。"""
-
     current_dir = os.path.dirname(os.path.abspath(__file__))
     src_dir = os.path.dirname(current_dir)
     if src_dir not in sys.path:
@@ -19,42 +19,40 @@ def _ensure_src_on_path() -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """コマンドライン引数パーサーを構築する。"""
-
+    """コマンドライン引数のパーサーを構成する。"""
     parser = argparse.ArgumentParser(
         prog="jma-rainfall-pipeline",
-        description="JMA降雨量パイプラインアプリケーションの起動スクリプト",
+        description="JMAミニパイプライン、GUIエントリ",
     )
     parser.add_argument(
-        "--version",
+        "--dummy",
         action="store_true",
-        help="バージョン情報を表示して終了します。",
+        help=argparse.SUPPRESS,  # 互換用のダミー（将来削除可）
     )
     return parser
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """メイン処理を実行する。"""
-
+    """CLI入口（スタンドアロン起動用）。"""
     _ensure_src_on_path()
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.version:
-        from jma_rainfall_pipeline.version import get_version_string
+    from jma_rainfall_pipeline.gui.app import show_jma
 
-        print(get_version_string())
-        return 0
+    root = tk.Tk()
+    root.withdraw()
 
-    from jma_rainfall_pipeline.gui.app import main as gui_main
+    def _on_close():
+        root.destroy()
 
-    gui_main()
+    show_jma(parent=root, on_open_other=None, on_close=_on_close)
+    root.mainloop()
     return 0
 
 
 def main() -> None:
-    """スクリプトのエントリーポイント。"""
-
+    """スクリプトのエントリポイント。"""
     sys.exit(run(sys.argv[1:]))
 
 

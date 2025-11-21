@@ -1,7 +1,7 @@
 [project]
-name = "water-info-acquirer"
-version = "0.1.1"
-description = "水文水質データベースからデータから水位・流量・雨量データを指定期間ごとに取得する。"
+name = "Water-Info-Acquirer"
+version = "1.2.0"
+description = "公開水文データから水位・流量・雨量データを指定期間ごとに取得する。"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
