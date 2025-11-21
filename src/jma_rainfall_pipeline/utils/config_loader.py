@@ -75,9 +75,9 @@ def get_output_directories(
             path = project_root / path
         return path
 
-    csv_path = resolve_path(csv_dir_override, output_config.get("csv_dir", "outputs/csv"))
-    excel_path = resolve_path(excel_dir_override, output_config.get("excel_dir", "outputs/excel"))
-    log_path = resolve_path(log_file_override, logging_config.get("file", "logs/app.log"))
+    csv_path = resolve_path(csv_dir_override, output_config.get("csv_dir", "jma_rainfall/csv"))
+    excel_path = resolve_path(excel_dir_override, output_config.get("excel_dir", "jma_rainfall/excel"))
+    log_path = resolve_path(log_file_override, logging_config.get("file", "jma_rainfall/logs/app.log"))
 
     return {
         "csv_dir": str(csv_path),

@@ -6,8 +6,8 @@
 
 # 出力先ディレクトリ設定（現在使用中）
 output:
-  csv_dir: "outputs/csv"        # CSVファイルの出力先
-  excel_dir: "outputs/excel"    # Excelファイルの出力先
+  csv_dir: "jma/csv"        # CSVファイルの出力先
+  excel_dir: "jma/excel"    # Excelファイルの出力先
   db_url: "sqlite:///data/precip.db"  # データベースURL（現在未使用だが将来の拡張用）
 
 # 観測所一覧のキャッシュ設定（現在使用中）
