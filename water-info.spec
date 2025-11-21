@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['src\\__main__.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -21,12 +21,12 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Water-Info-Acquirer-1.0',
+    name='water-info',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -40,5 +40,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='Water-Info-Acquirer-1.0',
+    name='water-info',
 )

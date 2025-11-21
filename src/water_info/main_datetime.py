@@ -13,7 +13,7 @@ from tkinter import (
     StringVar, BooleanVar, Radiobutton, Checkbutton,
     PanedWindow, ttk, LEFT, TOP, BOTTOM
 )
-from src.datemode import (
+from .datemode import (
     process_period_date_display_for_code,
     HEADERS,
     throttled_get,

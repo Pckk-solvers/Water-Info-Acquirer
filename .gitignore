@@ -2,3 +2,12 @@ dist
 build
 **__pycache__
 **.xlsx
+*.pyc
+*.pyo
+*.pyd
+
+# tools outputs
+outputs
+*.log
+*.csv
+cache
