@@ -8,7 +8,7 @@ import importlib
 from pathlib import Path
 from tkinter import messagebox
 
-from src.app_names import get_app_title, get_module_title
+from src.app_names import get_app_title, get_module_title, get_version
 
 IS_FROZEN = getattr(sys, "frozen", False)
 PROJECT_ROOT = Path(sys.executable).resolve().parent if IS_FROZEN else Path(__file__).resolve().parent.parent
@@ -55,7 +55,7 @@ def _preload_dependencies(status_label: tk.Label, buttons: list[tk.Button]) -> N
 def main() -> None:
     _ensure_src_on_path()
     root = tk.Tk()
-    root.title(get_app_title())  # 共通タイトル
+    root.title(f"{get_app_title()} v{get_version()}")  # 共通タイトルにバージョン表記
     root.geometry("320x180")
 
     current_child: tk.Toplevel | None = None
@@ -93,7 +93,7 @@ def main() -> None:
     buttons: list[tk.Button] = []
     tk.Button(
         root,
-        text=f"{get_module_title('water_info')} (water_info)",
+        text=f"{get_module_title('water_info')} ",
         state=tk.DISABLED,
         command=lambda: _open_target("water"),
     ).pack(pady=6)

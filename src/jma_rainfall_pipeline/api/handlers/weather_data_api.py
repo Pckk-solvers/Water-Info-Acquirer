@@ -394,7 +394,7 @@ class HealthCheckAPIHandler(BaseAPIHandler):
             data={
                 "status": "healthy",
                 "service": "JMA Rainfall API",
-                "version": "1.0.0"  # 実際にはversion.pyから取得
+                "version": ""
             },
             timestamp=datetime.now()
         )

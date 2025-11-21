@@ -31,7 +31,6 @@ from jma_rainfall_pipeline.api.handlers.weather_data_api import (
     WeatherDataAPIHandler,
 )
 from jma_rainfall_pipeline.app_container import build_weather_api_handler
-from jma_rainfall_pipeline.version import get_version_string
 
 DEFAULT_ALLOW_ORIGINS: Iterable[str] = ("*",)
 
@@ -225,7 +224,7 @@ def create_app(
 
     app = FastAPI(
         title="JMA Rainfall API",
-        version=get_version_string(),
+        version=None,
         description="JMA 気象パイプライン HTTP サーバー。",
         docs_url="/api/docs",
         redoc_url="/api/redoc",

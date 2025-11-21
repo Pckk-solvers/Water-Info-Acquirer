@@ -25,9 +25,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="JMAミニパイプライン、GUIエントリ",
     )
     parser.add_argument(
-        "--version",
+        "--dummy",
         action="store_true",
-        help="バージョン文字列を表示して終了します。",
+        help=argparse.SUPPRESS,  # 互換用のダミー（将来削除可）
     )
     return parser
 
@@ -37,12 +37,6 @@ def run(argv: Sequence[str] | None = None) -> int:
     _ensure_src_on_path()
     parser = _build_parser()
     args = parser.parse_args(argv)
-
-    if args.version:
-        from jma_rainfall_pipeline.version import get_version_string
-
-        print(get_version_string())
-        return 0
 
     from jma_rainfall_pipeline.gui.app import show_jma
 

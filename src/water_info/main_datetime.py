@@ -435,7 +435,7 @@ class WWRApp:
         self.on_close = on_close
         self.root = Toplevel(parent)
         # 親を非表示にしていても子が前面に来るように設定
-        self.root.title('水文データ取得ツール')
+        self.root.title(get_module_title("water_info", lang="jp"))
         self.root.config(bg="#d1f6ff")
         w, h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"950x750+{(w-900)//2}+{(h-700)//2}")  # 初期サイズを中央に
@@ -483,7 +483,7 @@ class WWRApp:
     def _build_ui(self):
         # ツールタイトル
         Label(self.root,
-              text="水文データ取得ツール",
+              text=get_module_title("water_info", lang="jp"),
               bg="#d1f6ff",
               font=(None, 24, 'bold')
               ).pack(fill='x', pady=(10,5))

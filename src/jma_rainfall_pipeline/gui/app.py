@@ -4,9 +4,9 @@ import tkinter as tk
 from tkinter import ttk
 import traceback
 
+from src.app_names import get_module_title
 from jma_rainfall_pipeline.gui.browse_tab import BrowseWindow
 from jma_rainfall_pipeline.gui.help_window import HelpWindow
-from jma_rainfall_pipeline.version import get_full_title
 from jma_rainfall_pipeline.gui.error_dialog import show_error
 
 
@@ -18,7 +18,7 @@ class App(tk.Toplevel):
         self.on_close = on_close
 
         try:
-            self.title(get_full_title())
+            self.title(get_module_title("jma", lang="jp"))
             # ウィンドウサイズ設定
             self.geometry("800x800")
             self.minsize(800, 600)
@@ -29,7 +29,7 @@ class App(tk.Toplevel):
             # メニューバー（ヘルプと水文遷移）
             menubar = tk.Menu(self)
             nav_menu = tk.Menu(menubar, tearoff=0)
-            nav_menu.add_command(label="水文情報を開く", command=self._open_water)
+            nav_menu.add_command(label=get_module_title("water_info", lang="jp"), command=self._open_water)
             nav_menu.add_command(label="ヘルプ", command=self._show_help)
             menubar.add_cascade(label="メニュー", menu=nav_menu)
             self.config(menu=menubar)
