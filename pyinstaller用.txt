@@ -8,4 +8,6 @@ pyinstaller --noconsole --onedir -n Water-Info-Acquirer-1.0 src/__main__.py
 | `-F` , `-D`       | 単一 `.exe` にまとめる or フォルダにまとめる（OneFile or Onedir モード）                    
 | `-n`              | 出力される `.exe` の名前（例：`Water-Info-Acquirer-1.0.exe`） 
 | `-p src`          | `src` をPythonパスに追加（モジュール認識のため）                  
-| `src/__main__.py` | 実行スクリプト（この中で `main_datetime.py` を呼ぶ）            
+| `src/__main__.py` | 実行スクリプト（この中で `main_datetime.py` を呼ぶ）    
+
+uv run pyinstaller --noconsole --onedir -n Water-Info-Acquirer-v1.2.0-win-d main.py --clean --add-data "pyproject.toml;." --paths src

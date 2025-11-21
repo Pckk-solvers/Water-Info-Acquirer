@@ -30,7 +30,7 @@ jobs:
       # ── onedir (-d) ビルド & ZIP ──
       - name: Build dir (-d)
         run: |
-          pyinstaller --noconsole --onedir -n Water-Info-Acquirer-${{ github.ref_name }}-win-d src/__main__.py
+          pyinstaller --noconsole --onedir -n Water-Info-Acquirer-${{ github.ref_name }}-win-d main.py --paths src
 
       - name: Zip dir (-d)
         shell: pwsh
@@ -40,7 +40,7 @@ jobs:
       # ── onefile (-f) ビルド & ZIP ──
       - name: Build file (-f)
         run: |
-          pyinstaller --noconsole --onefile -n Water-Info-Acquirer-${{ github.ref_name }}-win-f src/__main__.py
+          pyinstaller --noconsole --onefile -n Water-Info-Acquirer-${{ github.ref_name }}-win-f main.py --paths src
 
       - name: Zip file (-f)
         shell: pwsh

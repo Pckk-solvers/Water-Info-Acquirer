@@ -241,7 +241,7 @@ class BrowseWindow(ttk.Frame):
             return
 
         self.custom_output_dir_var.set("")
-        self.output_dir_display_var.set("未指定 (設定ファイルの出力先を使用)")
+        self.output_dir_display_var.set("未指定 (デフォルトへ出力)")
         self._set_status("出力フォルダの指定を解除しました")
 
     def _require_output_directory_selection(self) -> None:
