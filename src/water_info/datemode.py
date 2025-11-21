@@ -299,6 +299,7 @@ if __name__ == "__main__":
     print(process_period_date_display_for_code(test_code_S_R, test_Y1, test_Y2, test_M1, test_M2, mode_type="R"))
     print("\nテスト開始: 期間指定モードのdate_display（雨量）")
     print(process_period_date_display_for_code(test_code_U, test_Y1, test_Y2, test_M1, test_M2, mode_type="U"))
+
 def _ensure_http_client() -> None:
     """requests 関連の import も初回利用時に遅延させる。"""
     global requests, req_exc

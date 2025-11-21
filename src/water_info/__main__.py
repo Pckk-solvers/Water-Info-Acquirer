@@ -1,7 +1,7 @@
 import argparse
 from typing import Iterable, Optional
 
-from src.main_datetime import WWRApp, show_error
+from .main_datetime import WWRApp, show_error
 
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
