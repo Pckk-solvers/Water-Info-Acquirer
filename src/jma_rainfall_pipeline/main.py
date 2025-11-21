@@ -7,15 +7,19 @@ import argparse
 import os
 import sys
 import tkinter as tk
+from pathlib import Path
 from typing import Sequence
 
 
 def _ensure_src_on_path() -> None:
-    """srcディレクトリをPythonパスに追加する。"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    src_dir = os.path.dirname(current_dir)
-    if src_dir not in sys.path:
-        sys.path.insert(0, src_dir)
+    """プロジェクトルートをPythonパスに追加する。"""
+    if getattr(sys, "frozen", False):
+        project_root = Path(sys.executable).resolve().parent
+    else:
+        project_root = Path(__file__).resolve().parents[2]
+    root_path = str(project_root)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -21,13 +21,19 @@ def _ensure_src_on_path() -> None:
         os.chdir(PROJECT_ROOT)
     except OSError:
         pass
-    src_path = str(SRC_DIR)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+    root_path = str(PROJECT_ROOT)
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
 
 
 def _preload_dependencies(status_label: tk.Label, buttons: list[tk.Button]) -> None:
-    """裏で依存を読み込んでボタンを有効化する。"""
+    """裏で依存を読み込んでボタンを有効化する（凍結時はスキップ）。"""
+    if IS_FROZEN:
+        status_label.config(text="準備完了")
+        for btn in buttons:
+            btn.config(state=tk.NORMAL)
+        return
+
     _ensure_src_on_path()
     errors: list[str] = []
     try:
