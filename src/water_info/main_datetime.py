@@ -9,10 +9,11 @@ from typing import Optional
 
 import tkinter.font as tkFont
 from tkinter import (
-    Tk, Frame, Label, Button, Entry, Listbox,Toplevel,
+    Tk, Frame, Label, Button, Entry, Listbox, Toplevel, Menu,
     StringVar, BooleanVar, Radiobutton, Checkbutton,
     PanedWindow, ttk, LEFT, TOP, BOTTOM
 )
+from src.app_names import get_module_title
 from .datemode import (
     process_period_date_display_for_code,
     HEADERS,
@@ -427,17 +428,23 @@ class ToolTip:
 
 
 class WWRApp:
-    def __init__(self, single_sheet_mode=False):
+    def __init__(self, parent, single_sheet_mode=False, on_open_other=None, on_close=None):
         self.single_sheet_mode = single_sheet_mode
-        self.root = Tk()
+        self.parent = parent
+        self.on_open_other = on_open_other
+        self.on_close = on_close
+        self.root = Toplevel(parent)
+        # 親を非表示にしていても子が前面に来るように設定
         self.root.title('水文データ取得ツール')
         self.root.config(bg="#d1f6ff")
         w, h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self.root.geometry(f"950x750+{(w-900)//2}+{(h-700)//2}")  # 初期サイズ＆中央
+        self.root.geometry(f"950x750+{(w-900)//2}+{(h-700)//2}")  # 初期サイズを中央に
         self.root.update_idletasks()
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
-
-
+        self.root.protocol("WM_DELETE_WINDOW", self._handle_close)
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
         self.codes = []
         self.mode = StringVar(value="S")
@@ -447,13 +454,22 @@ class WWRApp:
         self.year_end = StringVar(value=str(datetime.now().year))
         self.month_end = StringVar(value="12月")
         
-        # GUI 用変数に single_sheet_mode を渡す（UIで参照可能に）
+        # GUI 用変数。single_sheet_mode をUIに反映
         self.single_sheet_var = BooleanVar(value=self.single_sheet_mode)
 
         self._build_ui()
-        self.root.mainloop()
-
-
+    def _open_jma(self):
+        if self.on_open_other:
+            self.root.destroy()
+            self.on_open_other('jma')
+            
+    def _handle_close(self):
+        try:
+            self.root.destroy()
+        finally:
+            if self.on_close:
+                self.on_close()
+        
     def _clear_placeholder(self, entry, placeholder):
         if entry.get() == placeholder:
             entry.delete(0, 'end')
@@ -471,6 +487,12 @@ class WWRApp:
               bg="#d1f6ff",
               font=(None, 24, 'bold')
               ).pack(fill='x', pady=(10,5))
+
+        menubar = Menu(self.root)
+        nav_menu = Menu(menubar, tearoff=0)
+        nav_menu.add_command(label=get_module_title("jma", lang="jp"), command=self._open_jma)
+        menubar.add_cascade(label="メニュー", menu=nav_menu)
+        self.root.config(menu=menubar)
 
         # メインとサイドを分割する PanedWindow
         paned = PanedWindow(self.root, orient='horizontal')
@@ -727,5 +749,11 @@ class WWRApp:
         Button(
             w,
             text="終了",
-            command=self.root.quit,   # or self.root.destroy
+            command=self._handle_close,   # or self.root.destroy
         ).pack(pady=5)
+
+
+
+def show_water(parent, single_sheet_mode=False, on_open_other=None, on_close=None):
+    """Factory for launcher to create water_info window."""
+    return WWRApp(parent=parent, single_sheet_mode=single_sheet_mode, on_open_other=on_open_other, on_close=on_close)
