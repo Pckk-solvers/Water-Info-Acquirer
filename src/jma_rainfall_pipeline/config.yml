@@ -18,7 +18,7 @@ stations_refresh_on_start: false # 起動時に強制更新するか
 # ログ設定（現在使用中）
 logging:
   level: "INFO"                 # ログレベル（DEBUG, INFO, WARNING, ERROR, CRITICAL）
-  file: "logs/app.log"          # ログファイルのパス
+  file: "jma/logs/app.log"          # ログファイルのパス
   max_size_mb: 10               # ログファイルの最大サイズ（MB）
   backup_count: 5               # バックアップファイルの保持数
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # ログフォーマット

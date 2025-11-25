@@ -17,9 +17,11 @@ try:
     package_root = Path(__file__).resolve().parents[1]
     CONFIG_FILENAME = 'config.yml'
     config_path = package_root / CONFIG_FILENAME
-except:
+except Exception:
     # フォールバック
     pass
+
+_initialized = False  # ログ設定が初期化されたかのフラグ
 
 
 class ConfigError(Exception):
@@ -34,6 +36,8 @@ def setup_logging(config_path_override: Optional[str] = None) -> None:
     Args:
         config_path_override: 設定ファイルのパス（オーバーライド用）
     """
+    global _initialized
+
     # 設定ファイルからログ設定を読み込み
     log_config = _load_log_config(config_path_override)
 
@@ -68,6 +72,8 @@ def setup_logging(config_path_override: Optional[str] = None) -> None:
     file_handler.setLevel(getattr(logging, log_config['level']))
     root_logger.addHandler(file_handler)
 
+    _initialized = True
+
 
 def get_logger(name: str) -> logging.Logger:
     """
@@ -79,6 +85,14 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Logger: ロガーインスタンス
     """
+    global _initialized
+    if not _initialized:
+        try:
+            setup_logging()
+        except Exception as exc:  # pragma: no cover - setup失敗時は標準設定
+            logging.basicConfig(level=logging.INFO)
+            _initialized = True
+            print(f"警告: ログ設定の初期化に失敗しました: {exc}", file=sys.stderr)
     return logging.getLogger(name)
 
 
@@ -99,8 +113,8 @@ def _load_log_config(config_path_override: Optional[str] = None) -> dict:
     actual_config_path = config_path_override or config_path
 
     if actual_config_path is None or not Path(actual_config_path).exists():
-        # デフォルト設定
-        default_path = get_project_root() / 'logs' / 'app.log'
+        # デフォルト設定（config_loader と合わせて jma_rainfall/logs 配下に統一）
+        default_path = get_project_root() / 'jma_rainfall' / 'logs' / 'app.log'
         return {
             'level': 'INFO',
             'file': str(default_path),
@@ -115,7 +129,7 @@ def _load_log_config(config_path_override: Optional[str] = None) -> dict:
 
         log_config = config.get('logging', {})
 
-        log_file = log_config.get('file', 'logs/app.log')
+        log_file = log_config.get('file', 'jma_rainfall/logs/app.log')
         log_path = Path(log_file)
         if not log_path.is_absolute():
             log_path = get_project_root() / log_file
@@ -131,12 +145,4 @@ def _load_log_config(config_path_override: Optional[str] = None) -> dict:
         raise ConfigError(f"ログ設定の読み込みに失敗しました: {e}")
 
 
-# モジュール初期化時にログ設定を適用
-try:
-    setup_logging()
-except Exception as e:
-    # ログ設定エラー時は標準エラー出力に警告を表示
-    import sys
-    print(f"警告: ログ設定の初期化に失敗しました: {e}", file=sys.stderr)
-    # デフォルトのログ設定を適用
-    logging.basicConfig(level=logging.INFO)
+# 初期化は遅延実行（get_logger 内で実施）
