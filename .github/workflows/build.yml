@@ -30,7 +30,7 @@ jobs:
       # ── onedir (-d) ビルド & ZIP ──
       - name: Build dir (-d)
         run: |
-          pyinstaller --noconsole --onedir -n Water-Info-Acquirer-${{ github.ref_name }}-win-d main.py --paths src
+          pyinstaller --noconsole --onedir -n Water-Info-Acquirer-${{ github.ref_name }}-win-d main.py --paths src --add-data "pyproject.toml;."
 
       - name: Zip dir (-d)
         shell: pwsh
@@ -40,7 +40,7 @@ jobs:
       # ── onefile (-f) ビルド & ZIP ──
       - name: Build file (-f)
         run: |
-          pyinstaller --noconsole --onefile -n Water-Info-Acquirer-${{ github.ref_name }}-win-f main.py --paths src
+          pyinstaller --noconsole --onefile -n Water-Info-Acquirer-${{ github.ref_name }}-win-f main.py --paths src --add-data "pyproject.toml;."
 
       - name: Zip file (-f)
         shell: pwsh

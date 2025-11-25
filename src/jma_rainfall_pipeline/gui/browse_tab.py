@@ -7,18 +7,21 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime, timedelta, time
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
-from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import (
-    fetch_prefecture_codes,
-    fetch_station_codes,
-)
-from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
 from jma_rainfall_pipeline.logger.app_logger import get_logger
 from jma_rainfall_pipeline.utils.config_loader import (
     get_output_directories,
 )
 from .error_dialog import show_error
+
+if TYPE_CHECKING:
+    # 型チェック時のみインポート（実行時は遅延インポートで起動を軽くする）
+    from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import (
+        fetch_prefecture_codes,
+        fetch_station_codes,
+    )
+    from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
 
 logger = get_logger(__name__)
 
@@ -299,6 +302,8 @@ class BrowseWindow(ttk.Frame):
 
         def worker() -> None:
             try:
+                from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import fetch_prefecture_codes
+
                 prefs = fetch_prefecture_codes()
                 code_to_pref = {code: name for code, name in prefs}
             except Exception as exc:  # pragma: no cover - GUIで例外ダイアログを表示
@@ -340,6 +345,8 @@ class BrowseWindow(ttk.Frame):
             return
         pref_code = self.prefs[sel[0]][0]
         try:
+            from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import fetch_station_codes
+
             records = fetch_station_codes(pref_code)
         except Exception as exc:  # pragma: no cover - GUIで例外ダイアログを表示
             show_error(
@@ -469,6 +476,8 @@ class BrowseWindow(ttk.Frame):
             messagebox.showwarning("エラー", "有効な観測所が選択されていません")
             self._set_status("観測所が選択されていません")
             return
+
+        from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
 
         output_paths = self._get_effective_output_paths()
         csv_dir: Path = output_paths["csv_dir"]
