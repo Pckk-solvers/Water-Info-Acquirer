@@ -22,8 +22,11 @@ def _ensure_src_on_path() -> None:
     except OSError:
         pass
     root_path = str(PROJECT_ROOT)
+    src_path = str(SRC_DIR)
     if root_path not in sys.path:
         sys.path.insert(0, root_path)
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
 
 
 def _preload_dependencies(status_label: tk.Label, buttons: list[tk.Button]) -> None:

@@ -99,8 +99,8 @@ def _load_log_config(config_path_override: Optional[str] = None) -> dict:
     actual_config_path = config_path_override or config_path
 
     if actual_config_path is None or not Path(actual_config_path).exists():
-        # デフォルト設定
-        default_path = get_project_root() / 'logs' / 'app.log'
+        # デフォルト設定（config_loader と合わせて jma_rainfall/logs 配下に統一）
+        default_path = get_project_root() / 'jma_rainfall' / 'logs' / 'app.log'
         return {
             'level': 'INFO',
             'file': str(default_path),
@@ -115,7 +115,7 @@ def _load_log_config(config_path_override: Optional[str] = None) -> dict:
 
         log_config = config.get('logging', {})
 
-        log_file = log_config.get('file', 'logs/app.log')
+        log_file = log_config.get('file', 'jma_rainfall/logs/app.log')
         log_path = Path(log_file)
         if not log_path.is_absolute():
             log_path = get_project_root() / log_file

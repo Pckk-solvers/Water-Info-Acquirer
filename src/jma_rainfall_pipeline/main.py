@@ -18,8 +18,11 @@ def _ensure_src_on_path() -> None:
     else:
         project_root = Path(__file__).resolve().parents[2]
     root_path = str(project_root)
+    src_path = str(project_root / "src")
     if root_path not in sys.path:
         sys.path.insert(0, root_path)
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
 
 
 def _build_parser() -> argparse.ArgumentParser:

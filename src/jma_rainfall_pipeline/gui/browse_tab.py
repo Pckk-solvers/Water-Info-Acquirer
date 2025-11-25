@@ -2,6 +2,7 @@
 import logging
 import platform
 import subprocess
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime, timedelta, time
@@ -15,7 +16,6 @@ from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import (
 from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
 from jma_rainfall_pipeline.logger.app_logger import get_logger
 from jma_rainfall_pipeline.utils.config_loader import (
-    config_file_exists,
     get_output_directories,
 )
 from .error_dialog import show_error
@@ -47,13 +47,14 @@ class BrowseWindow(ttk.Frame):
         self.status_var = tk.StringVar(value="準備完了")
         self.custom_output_dir_var = tk.StringVar(value="")
         self.output_dir_display_var = tk.StringVar(value="未指定 (設定ファイルの出力先を使用)")
+        self.pref_loading_var = tk.StringVar(value="読み込み中…")
 
         # UI構築
         self._build_ui()
         self._update_fetch_button_state()
 
-        # データ読み込み
-        self._load_prefectures()
+        # データ読み込み（非同期で実施し、起動をブロックしない）
+        self._load_prefectures_async()
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -150,6 +151,7 @@ class BrowseWindow(ttk.Frame):
         pref_container = ttk.Frame(selection_frame)
         pref_container.grid(row=0, column=0, sticky="nsew", padx=(5, 5), pady=5)
         pref_container.rowconfigure(1, weight=1)
+        pref_container.columnconfigure(0, weight=1)
 
         ttk.Label(pref_container, text="都道府県一覧").grid(row=0, column=0, sticky=tk.W)
         pref_scroll = ttk.Scrollbar(pref_container, orient=tk.VERTICAL)
@@ -164,6 +166,17 @@ class BrowseWindow(ttk.Frame):
         pref_scroll.config(command=self.pref_listbox.yview)
         pref_scroll.grid(row=1, column=1, sticky="ns")
         self.pref_listbox.bind("<<ListboxSelect>>", lambda _: self._update_stations())
+
+        # ロード中オーバーレイ（リストの上に重ねる）
+        self.pref_overlay = tk.Label(
+            pref_container,
+            textvariable=self.pref_loading_var,
+            bg="white",
+            fg="gray",
+            bd=0,  # 境界線を消して背景になじませる
+            relief="flat",
+        )
+        self._show_pref_overlay("読み込み中…")
 
         station_container = ttk.Frame(selection_frame)
         station_container.grid(row=0, column=1, sticky="nsew", padx=(5, 5), pady=5)
@@ -233,33 +246,9 @@ class BrowseWindow(ttk.Frame):
             self._set_status(f"出力フォルダを設定しました: {directory}")
 
     def _reset_output_directory(self) -> None:
-        if not config_file_exists():
-            messagebox.showwarning(
-                "出力フォルダの維持",
-                "config.yml が存在しないため、出力フォルダを未指定にはできません。",
-            )
-            return
-
         self.custom_output_dir_var.set("")
         self.output_dir_display_var.set("未指定 (デフォルトへ出力)")
         self._set_status("出力フォルダの指定を解除しました")
-
-    def _require_output_directory_selection(self) -> None:
-        messagebox.showwarning(
-            "出力フォルダの指定",
-            "config.yml が見つからないため、出力フォルダを指定してください。",
-        )
-        while not self.custom_output_dir_var.get().strip():
-            directory = filedialog.askdirectory(parent=self, title="出力フォルダを選択")
-            if directory:
-                self.custom_output_dir_var.set(directory)
-                self.output_dir_display_var.set(directory)
-                self._set_status(f"出力フォルダを設定しました: {directory}")
-                break
-            messagebox.showwarning(
-                "出力フォルダ未指定",
-                "出力フォルダを指定するまで操作を続行できません。",
-            )
 
     def _get_effective_output_paths(self) -> Dict[str, Path]:
         output_dirs = get_output_directories()
@@ -300,20 +289,47 @@ class BrowseWindow(ttk.Frame):
         root_logger.addHandler(handler)
         return handler
 
-    def _load_prefectures(self) -> None:
-        try:
-            self.prefs = fetch_prefecture_codes()
-            self.code_to_pref = {code: name for code, name in self.prefs}
-            for _, name in self.prefs:
-                self.pref_listbox.insert(tk.END, name)
-            self._set_status("都道府県一覧の取得が完了しました")
-        except Exception as exc:  # pragma: no cover - GUIで例外ダイアログを表示
-            show_error(
-                self.master,
-                "都道府県の取得エラー",
-                "都道府県一覧の取得中にエラーが発生しました。",
-                exc,
-            )
+    def _load_prefectures_async(self) -> None:
+        """都道府県一覧の取得をバックグラウンドで行い、起動をブロックしない。"""
+        self.pref_loading_var.set("読み込み中…")
+        self._set_status("都道府県一覧を読み込み中です…")
+        self._show_pref_overlay("読み込み中…")
+        self.pref_listbox.config(state=tk.DISABLED)
+        self.fetch_button.state(["disabled"])
+
+        def worker() -> None:
+            try:
+                prefs = fetch_prefecture_codes()
+                code_to_pref = {code: name for code, name in prefs}
+            except Exception as exc:  # pragma: no cover - GUIで例外ダイアログを表示
+                self.after(
+                    0,
+                    lambda: show_error(
+                        self.master,
+                        "都道府県の取得エラー",
+                        "都道府県一覧の取得中にエラーが発生しました。",
+                        exc,
+                    ),
+                )
+                self.after(0, lambda: self._set_status("都道府県一覧の取得に失敗しました"))
+                self.after(0, lambda: self.pref_loading_var.set("取得に失敗しました"))
+                # 失敗時はオーバーレイを残す（メッセージ表示のため）
+                return
+
+            def apply_result() -> None:
+                self.prefs = prefs
+                self.code_to_pref = code_to_pref
+                self.pref_listbox.config(state=tk.NORMAL)
+                for _, name in prefs:
+                    self.pref_listbox.insert(tk.END, name)
+                self.pref_loading_var.set("取得完了")
+                self._hide_pref_overlay()
+                self._set_status("都道府県一覧の取得が完了しました")
+                self._update_fetch_button_state()
+
+            self.after(0, apply_result)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _update_stations(self) -> None:
         self.sta_listbox.delete(0, tk.END)
@@ -430,14 +446,6 @@ class BrowseWindow(ttk.Frame):
         except ValueError:
             messagebox.showerror("日付エラー", "YYYY-MM-DD形式またはYYYY-MM形式で入力してください")
             self._set_status("日付の形式に誤りがあります")
-            return
-
-        if not config_file_exists() and not self.custom_output_dir_var.get().strip():
-            messagebox.showwarning(
-                "出力フォルダの指定",
-                "出力フォルダの指定をしてから再度データ取得してください。",
-            )
-            self._set_status("出力フォルダを指定してください")
             return
 
         start = datetime.combine(start_date, time.min)
@@ -597,6 +605,18 @@ class BrowseWindow(ttk.Frame):
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)
         self.update_idletasks()
+
+    def _show_pref_overlay(self, message: str) -> None:
+        """都道府県リスト上にオーバーレイを表示する。"""
+        self.pref_loading_var.set(message)
+        # 親フレームのサイズに合わせて配置（ヘッダ行を除いた領域をざっくり覆う）
+        self.pref_overlay.lift()
+        # 枠より一回り小さく覆う（左右上下を少し空ける）
+        self.pref_overlay.place(relx=0.5, rely=0.55, relwidth=0.92, relheight=0.8, anchor="center")
+
+    def _hide_pref_overlay(self) -> None:
+        """オーバーレイを隠す。"""
+        self.pref_overlay.place_forget()
 
     @staticmethod
     def _format_method(method_code: str) -> str:
