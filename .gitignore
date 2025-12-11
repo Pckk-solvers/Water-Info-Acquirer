@@ -5,6 +5,7 @@ build
 *.pyc
 *.pyo
 *.pyd
+*.parquet
 
 # tools outputs
 outputs
