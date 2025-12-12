@@ -1,0 +1,10 @@
+{
+  "hour_file": "water_info/302111282214010_稲下_2000年1月-2010年12月_WD.xlsx",
+  "daily_file": "",
+  "out_excel": "water_info/postprocess/302111282214010_稲下_v2.xlsx",
+  "out_parquet": null,
+  "sheet_main": "main",
+  "sheet_peaks": "peaks",
+  "sheet_year_summary": "位況（順位正規化）",
+  "sheet_year_summary_raw": "位況（順位固定）"
+}

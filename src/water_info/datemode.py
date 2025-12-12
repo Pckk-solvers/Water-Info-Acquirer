@@ -161,7 +161,7 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
     # ファイル名生成
     out_dir = Path("water_info")                                                                                                                                                                                                                                                                               
     out_dir.mkdir(parents=True, exist_ok=True)                                                                                                                                                                                                                                                                 
-    file_name = out_dir / f"out{code}_{station_name}_{Y1}年{M1}-{Y2}年{M2}{file_suffix}"
+    file_name = out_dir / f"{code}_{station_name}_{Y1}年{M1}-{Y2}年{M2}{file_suffix}"
     print(f"生成ファイル名: {file_name}")
 
     # --- 年単位でデータ取得・日付インデックス化 ---
