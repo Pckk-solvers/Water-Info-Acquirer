@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import math
 from pathlib import Path
+import json
 from typing import Iterable
 
 import pandas as pd
@@ -431,9 +432,10 @@ def export_parquet(dfs: dict[str, pd.DataFrame], root: str | Path) -> None:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Water Info post-processing")
-    p.add_argument("--hour-file", required=True, help="_H系Excelファイルへのパス")
+    p.add_argument("--config", required=False, help="設定ファイル(JSON)へのパス")
+    p.add_argument("--hour-file", required=False, help="_H系Excelファイルへのパス")
     p.add_argument("--daily-file", required=False, help="_D系Excelファイルへのパス")
-    p.add_argument("--out-excel", required=True, help="出力Excelパス")
+    p.add_argument("--out-excel", required=False, help="出力Excelパス")
     p.add_argument("--out-parquet", required=False, help="Parquet出力ディレクトリ（未指定なら出力しない）")
     p.add_argument("--sheet-main", default="main", help="メインシート名")
     p.add_argument("--sheet-main-raw", default="main_raw_rank", help="参考ランク版メインシート名（閾値なし）")
@@ -443,8 +445,50 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _load_config(path: str | Path) -> dict:
+    """設定ファイル(JSON)を読み込む。"""
+    cfg_path = Path(path)
+    if not cfg_path.exists():
+        raise ValueError(f"設定ファイルが見つかりません: {cfg_path}")
+    print(f"[INFO] 設定ファイル読込: {cfg_path}")
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"設定ファイルの読込に失敗しました: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError("設定ファイルの形式が不正です（最上位はオブジェクトである必要があります）")
+    return data
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = _build_arg_parser().parse_args(argv)
+    # 1st pass: config だけ拾う
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config")
+    pre_args, remaining = pre_parser.parse_known_args(argv)
+
+    config_data: dict[str, object] = {}
+    if pre_args.config:
+        config_data = _load_config(pre_args.config)
+
+    parser = _build_arg_parser()
+    if config_data:
+        # 未知キーは警告のみ
+        known_dests = {a.dest for a in parser._actions if a.dest and a.dest != argparse.SUPPRESS}
+        unknown_keys = [k for k in config_data.keys() if k not in known_dests]
+        if unknown_keys:
+            print(f"[WARN] 設定ファイルに無視されるキーがあります: {unknown_keys}")
+        defaults = {k: v for k, v in config_data.items() if k in known_dests}
+        parser.set_defaults(**defaults)
+
+    args = parser.parse_args(remaining)
+
+    # 必須チェック (config/CLI 合算後)
+    missing = []
+    for key in ["hour_file", "out_excel"]:
+        if getattr(args, key) in (None, ""):
+            missing.append(f"--{key.replace('_', '-')}")
+    if missing:
+        parser.error(f"必須引数が指定されていません: {', '.join(missing)}")
 
     df_hour_raw = load_hourly(args.hour_file)
     source_cols_base = [

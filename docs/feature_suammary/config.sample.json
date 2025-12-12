@@ -1,0 +1,11 @@
+{
+  "hour_file": "water_info/302111282214030_蔵増_2000年1月-2010年12月_WH.xlsx",
+  "daily_file": "water_info/302111282214030_蔵増_2000年1月-2010年12月_WD.xlsx",
+  "out_excel": "water_info/postprocess/302111282214030_蔵増.xlsx",
+  "out_parquet": "",
+  "sheet_main": "main",
+  "sheet_main_raw": "main_raw_rank",
+  "sheet_peaks": "peaks",
+  "sheet_year_summary": "year_summary",
+  "sheet_year_summary_raw": "year_summary_raw"
+}
