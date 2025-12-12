@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from pathlib import Path
-import json
 from typing import Iterable
 
 import pandas as pd
@@ -36,6 +36,10 @@ def load_hourly(path: str | Path) -> pd.DataFrame:
         else math.nan
     )
     df["hydro_date"] = (df["display_dt"] - pd.Timedelta(hours=1)).dt.date
+    # 1日あたりの件数が1件以下なら日データを渡している可能性が高いので検知
+    counts = df.groupby("hydro_date").size()
+    if not counts.empty and counts.max() <= 1:
+        raise ValueError("hour-file に日データを指定している可能性があります（1日あたりの行数が1件以下）")
     return df
 
 
@@ -59,6 +63,10 @@ def load_daily(path: str | Path) -> pd.DataFrame:
         else math.nan
     )
     df["hydro_date"] = df["datetime"].dt.date
+    # 1日あたり複数行ある場合は時間データを渡している可能性を警告
+    counts = df.groupby("hydro_date").size()
+    if not counts.empty and counts.max() > 1:
+        raise ValueError("daily-file に時間データを指定している可能性があります（1日あたりの行数が複数件）")
     return df
 
 
@@ -423,6 +431,8 @@ def export_parquet(dfs: dict[str, pd.DataFrame], root: str | Path) -> None:
     """各DFを個別のParquetに保存。"""
     if root is None:
         return
+    if isinstance(root, str) and root.strip() == "":
+        return
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     for name, df in dfs.items():
@@ -437,11 +447,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--daily-file", required=False, help="_D系Excelファイルへのパス")
     p.add_argument("--out-excel", required=False, help="出力Excelパス")
     p.add_argument("--out-parquet", required=False, help="Parquet出力ディレクトリ（未指定なら出力しない）")
-    p.add_argument("--sheet-main", default="main", help="メインシート名")
-    p.add_argument("--sheet-main-raw", default="main_raw_rank", help="参考ランク版メインシート名（閾値なし）")
+    p.add_argument("--sheet-main", default="main", help="メインシート名（標準＋参考ランク）")
     p.add_argument("--sheet-peaks", default="peaks", help="ピークシート名")
-    p.add_argument("--sheet-year-summary", default="year_summary", help="年サマリシート名（未使用なら空のまま）")
-    p.add_argument("--sheet-year-summary-raw", default="year_summary_raw", help="参考ランク版年サマリシート名")
+    p.add_argument("--sheet-year-summary", default="summary_adj", help="年サマリシート名（標準）")
+    p.add_argument("--sheet-year-summary-raw", default="summary_raw", help="年サマリシート名（参考：閾値なし・補正なし）")
     return p
 
 
@@ -489,6 +498,9 @@ def main(argv: list[str] | None = None) -> int:
             missing.append(f"--{key.replace('_', '-')}")
     if missing:
         parser.error(f"必須引数が指定されていません: {', '.join(missing)}")
+    # Parquet 出力パスが空文字なら無効化
+    if args.out_parquet is not None and str(args.out_parquet).strip() == "":
+        args.out_parquet = None
 
     df_hour_raw = load_hourly(args.hour_file)
     source_cols_base = [
@@ -503,6 +515,22 @@ def main(argv: list[str] | None = None) -> int:
         source_cols = source_cols_base
         df_ranked = add_ranks(df_merged, target_cols=source_cols)
         df_ranked_raw = add_ranks_no_threshold(df_merged, target_cols=source_cols)
+        # main 用: 値＋標準ランク＋参考ランクのみ（位況は出力しない）
+        df_main = df_ranked.copy()
+        for col in ["rank_var_den", "rank_fixed_den", "rank_daily_value"]:
+            if col in df_ranked_raw.columns:
+                mask = df_main[col].isna()
+                ref_series = df_ranked_raw[col]
+                df_main[f"{col}_ref"] = ref_series.where(mask)
+                if df_main[f"{col}_ref"].isna().all():
+                    df_main.drop(columns=[f"{col}_ref"], inplace=True)
+        if "year" in df_main.columns:
+            cols = df_main.columns.tolist()
+            cols.insert(1, cols.pop(cols.index("year")))
+            df_main = df_main[cols]
+        # 非欠損本数は残す
+
+        # サマリ用の位況計算は従来通り
         df_ikyo = add_ikyo(df_ranked, source_cols, apply_threshold=True, use_scaling=True)
         df_ikyo_raw = add_ikyo(df_ranked_raw, source_cols, apply_threshold=False, use_scaling=False)
         df_peaks = build_peaks(df_hour_raw)
@@ -514,29 +542,17 @@ def main(argv: list[str] | None = None) -> int:
         # Excel用の列名マッピング
         main_map = {
             "hydro_date": "日付",
+            "year": "年",
             "hourly_daily_avg_var_den": "日平均（可変分母）",
             "hourly_daily_avg_fixed_den": "日平均（固定分母）",
             "daily_value": "日データ",
+            "count_non_null": "非欠損本数",
             "rank_var_den": "ランク（可変分母）",
             "rank_fixed_den": "ランク（固定分母）",
             "rank_daily_value": "ランク（日データ）",
-            "count_non_null": "非欠損本数",
-            # 位況（可変分母）
-            "ikyo_high_var_den": "位況（豊水位,可変分母）",
-            "ikyo_normal_var_den": "位況（平水位,可変分母）",
-            "ikyo_low_var_den": "位況（低水位,可変分母）",
-            "ikyo_drought_var_den": "位況（渇水位,可変分母）",
-            # 位況（固定分母）
-            "ikyo_high_fixed_den": "位況（豊水位,固定分母）",
-            "ikyo_normal_fixed_den": "位況（平水位,固定分母）",
-            "ikyo_low_fixed_den": "位況（低水位,固定分母）",
-            "ikyo_drought_fixed_den": "位況（渇水位,固定分母）",
-            # 位況（日データ）
-            "ikyo_high_daily_value": "位況（豊水位,日データ）",
-            "ikyo_normal_daily_value": "位況（平水位,日データ）",
-            "ikyo_low_daily_value": "位況（低水位,日データ）",
-            "ikyo_drought_daily_value": "位況（渇水位,日データ）",
-            "year": "年",
+            "rank_var_den_ref": "ランク（可変分母,参考）",
+            "rank_fixed_den_ref": "ランク（固定分母,参考）",
+            "rank_daily_value_ref": "ランク（日データ,参考）",
         }
         peak_map = {
             "hydro_date": "日付",
@@ -581,8 +597,7 @@ def main(argv: list[str] | None = None) -> int:
             "ikyo_drought_daily_value": "位況渇水位（日データ）",
         }
 
-        df_main_excel = _rename_for_excel(df_ikyo, main_map)
-        df_main_raw_excel = _rename_for_excel(df_ikyo_raw, main_map)
+        df_main_excel = _rename_for_excel(df_main, main_map)
         df_peaks_excel = _rename_for_excel(df_peaks, peak_map)
         df_year_excel = _rename_for_excel(df_year_summary, year_map).T.reset_index()
         df_year_excel.columns = ["項目"] + df_year_excel.columns[1:].tolist()
@@ -592,7 +607,6 @@ def main(argv: list[str] | None = None) -> int:
         export_excel(
             {
                 args.sheet_main: df_main_excel,
-                args.sheet_main_raw: df_main_raw_excel,
                 args.sheet_peaks: df_peaks_excel,
                 args.sheet_year_summary: df_year_excel,
                 args.sheet_year_summary_raw: df_year_raw_excel,
@@ -619,10 +633,23 @@ def main(argv: list[str] | None = None) -> int:
         source_cols = ["hourly_daily_avg_var_den", "hourly_daily_avg_fixed_den"]
         df_ranked = add_ranks(df_main, target_cols=source_cols)
         df_ranked_raw = add_ranks_no_threshold(df_main, target_cols=source_cols)
+        # main 用: 値＋標準ランク＋参考ランクのみ
+        df_main_out = df_ranked.copy()
+        for col in ["rank_var_den", "rank_fixed_den"]:
+            if col in df_ranked_raw.columns:
+                mask = df_main_out[col].isna()
+                ref_series = df_ranked_raw[col]
+                df_main_out[f"{col}_ref"] = ref_series.where(mask)
+                if df_main_out[f"{col}_ref"].isna().all():
+                    df_main_out.drop(columns=[f"{col}_ref"], inplace=True)
+        if "year" in df_main_out.columns:
+            cols = df_main_out.columns.tolist()
+            cols.insert(1, cols.pop(cols.index("year")))
+            df_main_out = df_main_out[cols]
+
+        # サマリ用位況
         df_ikyo = add_ikyo(df_ranked, source_cols=source_cols, apply_threshold=True, use_scaling=True)
-        df_ikyo_raw = add_ikyo(
-            df_ranked_raw, source_cols=source_cols, apply_threshold=False, use_scaling=False
-        )
+        df_ikyo_raw = add_ikyo(df_ranked_raw, source_cols=source_cols, apply_threshold=False, use_scaling=False)
         df_year_summary = build_year_summary(
             df_ikyo,
             df_hour_raw,
@@ -642,18 +669,12 @@ def main(argv: list[str] | None = None) -> int:
             "hydro_date": "日付",
             "hourly_daily_avg_var_den": "日平均（可変分母）",
             "hourly_daily_avg_fixed_den": "日平均（固定分母）",
-            "count_non_null": "非欠損本数",
             "year": "年",
+            "count_non_null": "非欠損本数",
             "rank_var_den": "ランク（可変分母）",
             "rank_fixed_den": "ランク（固定分母）",
-            "ikyo_high_var_den": "位況豊水位（可変分母）",
-            "ikyo_normal_var_den": "位況平水位（可変分母）",
-            "ikyo_low_var_den": "位況低水位（可変分母）",
-            "ikyo_drought_var_den": "位況渇水位（可変分母）",
-            "ikyo_high_fixed_den": "位況豊水位（固定分母）",
-            "ikyo_normal_fixed_den": "位況平水位（固定分母）",
-            "ikyo_low_fixed_den": "位況低水位（固定分母）",
-            "ikyo_drought_fixed_den": "位況渇水位（固定分母）",
+            "rank_var_den_ref": "ランク（可変分母,参考）",
+            "rank_fixed_den_ref": "ランク（固定分母,参考）",
         }
         peak_map = {
             "hydro_date": "日付",
@@ -687,8 +708,7 @@ def main(argv: list[str] | None = None) -> int:
             "ikyo_low_fixed_den": "位況低水位（固定分母）",
             "ikyo_drought_fixed_den": "位況渇水位（固定分母）",
         }
-        df_main_excel = _rename_for_excel(df_ikyo, main_map)
-        df_main_raw_excel = _rename_for_excel(df_ikyo_raw, main_map)
+        df_main_excel = _rename_for_excel(df_main_out, main_map)
         df_peaks_excel = _rename_for_excel(df_peaks, peak_map)
         df_year_excel = _rename_for_excel(df_year_summary, year_map).T.reset_index()
         df_year_excel.columns = ["項目"] + df_year_excel.columns[1:].tolist()
@@ -697,7 +717,6 @@ def main(argv: list[str] | None = None) -> int:
         export_excel(
             {
                 args.sheet_main: _round_numeric(df_main_excel, ndigits=2),
-                args.sheet_main_raw: _round_numeric(df_main_raw_excel, ndigits=2),
                 args.sheet_peaks: _round_numeric(df_peaks_excel, ndigits=2),
                 args.sheet_year_summary: _round_numeric(df_year_excel, ndigits=2),
                 args.sheet_year_summary_raw: _round_numeric(df_year_raw_excel, ndigits=2),

@@ -56,15 +56,19 @@
 
 ## 出力仕様
 - Excel (デフォルトシート名):
-  - `main`: 標準ランク/位況。日データ有りの場合は日データ列込み、無しの場合は時間集計のみ。
-  - `main_raw_rank`: 閾値なし・補正なしの参考ランク/位況。
+  - `main`: 値＋ランク。標準ランクが欠損になった行のみ参考ランク（閾値なし・補正なし）を別列 `_ref` に持たせる。全行欠損なら参考列は省略。位況は含めない。
   - `peaks`: 日別ピーク値と時刻。
-  - `year_summary`: 年次サマリ（標準版、転置形式）。
-  - `year_summary_raw`: 年次サマリ（参考版、転置形式）。
+  - `summary_adj`（旧 year_summary）: 年次サマリ（標準版、転置形式）。
+  - `summary_raw`（旧 year_summary_raw）: 年次サマリ（参考版、転置形式）。
 - 列名は Excel 出力時に日本語へリネームする（例: 日付, 日平均（可変分母）, ランク（固定分母）, 位況渇水位…）。数値は書き出し前に小数第2位へ `ROUND_HALF_UP`。
 - Parquet: `--out-parquet` 指定時のみ出力。
   - 日データあり: `df_hour_raw`, `df_hour_daily`, `df_merged` (位況込み), `df_summary_peak`。
   - 日データなし: `df_hour_raw`, `df_hour_daily`, `df_summary_peak`。
+  - `--out-parquet` を空文字や未指定にすると Parquet 出力はスキップされる。
+
+## 入力ファイルの誤指定検知
+- 時間データ読み込み時: 1日あたりの行数が1件以下しか無い場合、「日データをhour-fileに渡した」可能性としてエラーにする。
+- 日データ読み込み時: 1日あたりの行数が2件以上ある場合、「時間データをdaily-fileに渡した」可能性としてエラーにする。
 
 ## 設定ファイル
 - オプション `--config` で JSON ファイルを指定可能。キーは CLI 引数の `dest` 名 (`hour_file`, `daily_file`, `out_excel`, `out_parquet`, シート名系など) をそのまま使う。
