@@ -16,6 +16,17 @@ import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 
 
+def _read_first_two_cols(path: Path, sheet: str | list[str]) -> pd.DataFrame:
+    """Excelの指定シート(単体/複数)から先頭2列だけ読み込み、複数なら結合して返す。"""
+    df = pd.read_excel(path, sheet_name=sheet, usecols=[0, 1], header=0)
+    if isinstance(df, dict):
+        frames = [v for _, v in df.items() if v is not None and not v.empty]
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+    return df
+
+
 def load_hourly(path: str | Path) -> pd.DataFrame:
     """_H系Excelを読み込み、列名を正規化してhydro_dateを付与。"""
     file_path = Path(path)
@@ -27,7 +38,7 @@ def load_hourly(path: str | Path) -> pd.DataFrame:
         if not candidates:
             raise ValueError(f"シートが見つかりません: {file_path}")
         sheet = candidates
-    df = pd.read_excel(file_path, sheet_name=sheet, usecols=[0, 1], header=0)
+    df = _read_first_two_cols(file_path, sheet)
     df.columns = ["display_dt", "value"]
     df["display_dt"] = pd.to_datetime(df["display_dt"], errors="coerce")
     df["value"] = pd.to_numeric(df["value"], errors="coerce").apply(
@@ -54,7 +65,7 @@ def load_daily(path: str | Path) -> pd.DataFrame:
         if not candidates:
             raise ValueError(f"シートが見つかりません: {file_path}")
         sheet = candidates
-    df = pd.read_excel(file_path, sheet_name=sheet, usecols=[0, 1], header=0)
+    df = _read_first_two_cols(file_path, sheet)
     df.columns = ["datetime", "daily_value"]
     df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
     df["daily_value"] = pd.to_numeric(df["daily_value"], errors="coerce").apply(
