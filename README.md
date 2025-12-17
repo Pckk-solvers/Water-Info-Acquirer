@@ -28,17 +28,30 @@
 cd クローン先のディレクトリ
 ```
 
-使用するライブラリをインストールする。
-``` bash
-pip install -r requirements.txt
-```
-モジュール実行で実行をします。
+#### 推奨（uv）
+依存関係をインストールする。
 ```bash
+uv sync
+```
+起動する。
+```bash
+uv run python main.py
+```
+
+#### 代替（pip）
+```bash
+pip install -r requirements.txt
 python main.py
 ```
 コンソール画面には詳しく、デバックさせているので適宜ご確認ください。<br>
 もし、改善点等がありましたら是非お問い合わせいただけると幸いです。<br>
 その際には可能であれば具体的なコーディング案をいただけると幸いです。お気軽にご相談ください。
+
+## ドキュメント（MkDocs）
+ローカルでドキュメントサイトを起動できます。
+```bash
+uv run mkdocs serve
+```
 
 
 ### 実行後のエラーケース

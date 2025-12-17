@@ -1,0 +1,83 @@
+site_name: Water-Info-Acquirer
+site_description: 公開水文データから水位・流量・雨量データを取得・整理するツール
+repo_name: Pckk-solvers/Water-Info-Acquirer
+repo_url: https://github.com/Pckk-solvers/Water-Info-Acquirer
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: ja
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: ダークモード
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: ライトモード
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - はじめに: index.md
+  - ユーザガイド:
+      - 概要: user/index.md
+      - クイックスタート（exe）: user/quickstart.md
+      - ランチャー: user/launcher.md
+      - 国交省 水文データ取得: user/water-info.md
+      - 気象庁 雨量データ取得: user/jma-rainfall.md
+      - 出力先とログ: user/outputs-and-logs.md
+      - トラブルシューティング: user/troubleshooting.md
+  - 上級:
+      - 概要: advanced/index.md
+      - Python/uvで実行: advanced/run-with-uv.md
+      - Water Info 後処理（CLI）: advanced/postprocess.md
+      - 気象庁側の設定（config.yml）: advanced/jma-config.md
+  - 開発:
+      - 概要: dev/index.md
+      - アーキテクチャ概要: dev/architecture.md
+      - PyInstallerビルド: dev/build-pyinstaller.md
+      - リリース手順: dev/release-process.md
+      - リファクタリング計画: dev/refactoring-plan.md
+      - リファクタリング計画（元資料）: water_info_acquirer_リファクタリング計画書_v_1.md
+      - Water Info 後処理（設計資料）:
+          - 仕様書: dev/postprocess/specification.md
+          - 要件: dev/postprocess/requirements.md
+          - 設計方針: dev/postprocess/design.md
+          - 実装計画: dev/postprocess/implementation_plan.md
+          - タスク: dev/postprocess/task.md
+          - 削除計画: dev/postprocess/delete_plan.md
+  - リリースノート:
+      - releases/index.md
+      - v1.2.0: releases/v1.2.0.md
+      - v1.11: releases/v1.11.md

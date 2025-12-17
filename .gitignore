@@ -12,3 +12,4 @@ outputs
 *.log
 *.csv
 cache
+site

@@ -1,5 +1,8 @@
 # Water-Info-Acquirer リファクタリング計画書 v1.0（案）
 
+!!! note
+    この文書は MkDocs 版の `docs/dev/refactoring-plan.md` にも掲載しています（内容は同等、整備はMkDocs側を優先）。
+
 最終更新: 2025-10-10 JST  
 対象リポジトリ: `Pckk-solvers/Water-Info-Acquirer`
 
