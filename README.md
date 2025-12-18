@@ -53,6 +53,9 @@ python main.py
 uv run mkdocs serve
 ```
 
+GitHub Pages（プロジェクトページ）へ公開する場合は、リポジトリの **Settings → Pages → Source** を **GitHub Actions** に設定してください。  
+以降は `main` への push で自動デプロイされます（`.github/workflows/docs.yml`）。
+
 
 ### 実行後のエラーケース
 実行ができてもエラーが確認されることがございます。<br>

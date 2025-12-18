@@ -1,5 +1,6 @@
 site_name: Water-Info-Acquirer
 site_description: 公開水文データから水位・流量・雨量データを取得・整理するツール
+site_url: https://pckk-solvers.github.io/Water-Info-Acquirer/
 repo_name: Pckk-solvers/Water-Info-Acquirer
 repo_url: https://github.com/Pckk-solvers/Water-Info-Acquirer
 edit_uri: edit/main/docs/
@@ -68,6 +69,7 @@ nav:
       - アーキテクチャ概要: dev/architecture.md
       - PyInstallerビルド: dev/build-pyinstaller.md
       - リリース手順: dev/release-process.md
+      - GitHub Pages公開: dev/github-pages.md
       - リファクタリング計画: dev/refactoring-plan.md
       - リファクタリング計画（元資料）: water_info_acquirer_リファクタリング計画書_v_1.md
       - Water Info 後処理（設計資料）:
