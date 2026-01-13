@@ -55,16 +55,16 @@ nav:
       - 概要: user/index.md
       - クイックスタート（exe）: user/quickstart.md
       - ランチャー: user/launcher.md
-      - 国交省 水文データ取得: user/water-info.md
+      - 国土交通省 水文データ取得: user/water-info.md
       - 気象庁 雨量データ取得: user/jma-rainfall.md
       - 出力先とログ: user/outputs-and-logs.md
       - トラブルシューティング: user/troubleshooting.md
-  - 上級:
+  - 上級者向け:
       - 概要: advanced/index.md
       - Python/uvで実行: advanced/run-with-uv.md
       - Water Info 後処理（CLI）: advanced/postprocess.md
       - 気象庁側の設定（config.yml）: advanced/jma-config.md
-  - 開発:
+  - 開発者向け:
       - 概要: dev/index.md
       - アーキテクチャ概要: dev/architecture.md
       - PyInstallerビルド: dev/build-pyinstaller.md
