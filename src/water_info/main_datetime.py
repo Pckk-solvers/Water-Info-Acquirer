@@ -560,7 +560,7 @@ class WWRApp:
         # 実行ボタン
         Button(main, text="実行", command=self._on_execute, height=2, width=8).pack(pady=(10,5))
         
-        Label(main, text="※本ツールに関する問い合わせ窓口\n国土基盤事業本部 河川部 国土基盤技術研究室 南まさし", bg="#d1f6ff", font=(None, 15, 'bold')).pack(anchor='center', side=BOTTOM, pady=(5,0))
+        Label(main, text="※本ツールに関する問い合わせ窓口\n国土基盤事業本部 流域計画部 技術研究室 南まさし", bg="#d1f6ff", font=(None, 15, 'bold')).pack(anchor='center', side=BOTTOM, pady=(5,0))
 
         # --- サイドパネル（Notebookタブ） ---
         notebook = ttk.Notebook(paned)
