@@ -36,9 +36,15 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         action='store_true',
         help='UIのデバッグログを出力'
     )
+    parser.add_argument(
+        '--dev',
+        action='store_true',
+        help='開発用の初期観測所コードを入力'
+    )
     args = parser.parse_args(argv)
     single_sheet_mode = args.single_sheet
-    debug_ui = args.debug_ui
+    dev_mode = args.dev
+    debug_ui = args.debug_ui or dev_mode
 
     _set_cwd_to_project_root()
     root = tk.Tk()
@@ -48,12 +54,14 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         root.destroy()
 
     try:
+        initial_codes = ["303031283302005", "303031283302006"] if dev_mode else None
         show_water(
             parent=root,
             single_sheet_mode=single_sheet_mode,
             on_open_other=None,
             on_close=_on_close,
             debug_ui=debug_ui,
+            initial_codes=initial_codes,
         )
         root.mainloop()
     except Exception as e:

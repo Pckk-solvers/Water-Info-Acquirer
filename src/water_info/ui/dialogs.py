@@ -29,6 +29,9 @@ def show_results(parent, files: list[str], on_exit) -> None:
     w.title("結果")
     w.config(bg="#d1f6ff")
     w.geometry(f"+{x}+{y}")
+    w.lift()
+    w.attributes("-topmost", True)
+    w.after(300, lambda: w.attributes("-topmost", False))
 
     Label(w, text="Excel作成完了", bg="#d1f6ff").pack(pady=10)
     for f in files:

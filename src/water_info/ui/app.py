@@ -31,6 +31,7 @@ class WWRApp:
         on_open_other=None,
         on_close=None,
         debug_ui: bool = False,
+        initial_codes: list[str] | None = None,
     ):
         self.fetch_hourly = fetch_hourly
         self.fetch_daily = fetch_daily
@@ -40,6 +41,7 @@ class WWRApp:
         self.on_open_other = on_open_other
         self.on_close = on_close
         self._debug_ui = debug_ui
+        self._initial_codes = initial_codes or []
         self.root = Toplevel(parent)
         # 親を非表示にしていても子が前面に来るように設定
         self.root.title(get_module_title("water_info", lang="jp"))
@@ -125,6 +127,7 @@ class WWRApp:
         # Frame 内に Listbox を配置
         self.listbox = Listbox(frame_list)
         self.listbox.pack(fill='both', expand=True)
+        self._load_initial_codes()
 
         # 取得項目選択
         frame_item = Frame(main, bg="#d1f6ff")
@@ -171,7 +174,8 @@ class WWRApp:
         Checkbutton(main, text="指定全期間シート挿入", variable=self.single_sheet_var, bg="#d1f6ff").pack(anchor='center', pady=10)
 
         # 実行ボタン
-        Button(main, text="実行", command=self._on_execute, height=2, width=8).pack(pady=(10,5))
+        self.execute_button = Button(main, text="実行", command=self._on_execute, height=2, width=8)
+        self.execute_button.pack(pady=(10,5))
 
         Label(main, text="※本ツールに関する問い合わせ窓口\n国土基盤事業本部 流域計画部 技術研究室 南まさし", bg="#d1f6ff", font=(None, 15, 'bold')).pack(anchor='center', side=BOTTOM, pady=(5,0))
 
@@ -203,6 +207,13 @@ class WWRApp:
             self.codes.append(code)
             self.listbox.insert('end', code)
         entry.delete(0, 'end')
+
+    def _load_initial_codes(self) -> None:
+        for code in self._initial_codes:
+            code = str(code).strip()
+            if code.isdigit() and code not in self.codes:
+                self.codes.append(code)
+                self.listbox.insert('end', code)
 
     def _remove_code(self):
         for idx in reversed(self.listbox.curselection()):
@@ -253,6 +264,7 @@ class WWRApp:
         if not self._validate():
             return
         log(self._debug_ui, "[UI] execute start")
+        self._set_execute_enabled(False)
 
         # メインウィンドウの座標・サイズを確定
         self.root.update_idletasks()
@@ -263,6 +275,7 @@ class WWRApp:
         request = self._build_request()
         if request is None:
             log(self._debug_ui, "[UI] request build failed")
+            self._set_execute_enabled(True)
             return
         self._start_execution(request, rx + rw + 10, ry)
 
@@ -286,6 +299,7 @@ class WWRApp:
 
     def _finish_processing(self, progress_window: ProgressWindow, results) -> None:
         progress_window.destroy()
+        self._set_execute_enabled(True)
         if results:
             self._show_results([r.file_path for r in results])
 
@@ -311,6 +325,8 @@ class WWRApp:
 
         def _poll():
             log(self._debug_ui, "[UI] poll tick")
+            if not progress_window.exists():
+                return
             controller.poll_queue(
                 ui_queue,
                 on_progress=lambda progress: self._on_progress(progress, progress_window, started_at),
@@ -323,6 +339,8 @@ class WWRApp:
 
     def _on_progress(self, progress, progress_window: ProgressWindow, started_at: float) -> None:
         if progress is None:
+            return
+        if not progress_window.exists():
             return
         log(
             self._debug_ui,
@@ -354,6 +372,10 @@ class WWRApp:
         log(self._debug_ui, f"[UI] done results={len(results)}")
         self._finish_processing(progress_window, results)
 
+    def _set_execute_enabled(self, enabled: bool) -> None:
+        if hasattr(self, "execute_button") and self.execute_button.winfo_exists():
+            self.execute_button.config(state="normal" if enabled else "disabled")
+
 
 def show_water(
     parent,
@@ -364,6 +386,7 @@ def show_water(
     on_open_other=None,
     on_close=None,
     debug_ui: bool = False,
+    initial_codes: list[str] | None = None,
 ):
     """Factory for launcher to create water_info window."""
     return WWRApp(
@@ -375,4 +398,5 @@ def show_water(
         on_open_other=on_open_other,
         on_close=on_close,
         debug_ui=debug_ui,
+        initial_codes=initial_codes,
     )

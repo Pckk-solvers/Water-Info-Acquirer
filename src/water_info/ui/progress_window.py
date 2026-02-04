@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-from tkinter import Label, StringVar, Toplevel, ttk
+from tkinter import Label, StringVar, Toplevel, ttk, TclError
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,9 @@ class ProgressWindow:
 
         self.window.update_idletasks()
 
-    def update(self, snapshot: ProgressSnapshot) -> None:
+    def update(self, snapshot: ProgressSnapshot) -> bool:
+        if not self.exists():
+            return False
         code_label = f" 観測所 {snapshot.current_code}" if snapshot.current_code else ""
         if snapshot.current_station:
             code_label = f"{code_label} {snapshot.current_station}"
@@ -68,15 +70,22 @@ class ProgressWindow:
 
         total = snapshot.unit_total or snapshot.total
         processed = snapshot.unit_processed if snapshot.unit_processed is not None else snapshot.processed
-        self._progress_var.set(f"処理中... ({processed}/{total}){code_label}")
-        self._progress_bar.configure(maximum=max(total, 1))
-        self._progress_bar.configure(value=processed)
-        self._eta_var.set(eta_msg)
-        self.window.update_idletasks()
+        try:
+            self._progress_var.set(f"処理中... ({processed}/{total}){code_label}")
+            self._progress_bar.configure(maximum=max(total, 1))
+            self._progress_bar.configure(value=processed)
+            self._eta_var.set(eta_msg)
+            self.window.update_idletasks()
+        except TclError:
+            return False
+        return True
 
     def destroy(self) -> None:
         self.window.update_idletasks()
         self.window.destroy()
+
+    def exists(self) -> bool:
+        return bool(self.window.winfo_exists())
 
     @staticmethod
     def now() -> float:
