@@ -102,11 +102,11 @@ class WWRApp:
         # GUI 用変数。single_sheet_mode をUIに反映
         self.single_sheet_var = BooleanVar(value=self.single_sheet_mode)
 
-        self._build_ui()
         self._last_validation_msg = None
         self._last_validation_at = 0.0
         self._validation_cooldown_sec = 1.0
         self._clear_error_on_change = True
+        self._build_ui()
 
     def _open_jma(self):
         if self.on_open_other:

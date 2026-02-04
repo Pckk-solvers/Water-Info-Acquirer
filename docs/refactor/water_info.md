@@ -7,11 +7,12 @@ UI / Service / Domain / Infra を分け、取得・整形・出力の共通化�
 ## 何をしたか（要点）
 - **UI分離**: Tkinter UI を `src/water_info/ui/app.py` に移動し、`main_datetime.py` から切り離し
 - **Service導入**: `service/usecase.py` を追加し UI からの入口を集約
+- **Service分割**: 取得/出力フローを `service/flow_fetch.py` / `service/flow_write.py` に分離
 - **Domain導入**: `domain/models.py` で `Period/Options/WaterInfoRequest` を定義し、バリデーションを一元化
 - **Infra共通化**: HTTP・スクレイピング・URL生成・Excel出力・DataFrame整形を `infra/` に分離
 - **取得処理共通化**: 観測所名取得/値抽出/HTML取得を共通関数化
 - **UI入力検証の整理**: domain バリデーションに統一し、即時エラーはフォーム内に表示
-- **テスト追加**: ユーティリティ/URL/整形/出力/バリデーション/スクレイピングのテストを追加
+- **テスト追加**: ユーティリティ/URL/整形/出力/バリデーション/スクレイピング/フロー/取得末尾削除のテストを追加
 
 ## 新規・更新された主要ファイル
 ### UI
@@ -19,6 +20,8 @@ UI / Service / Domain / Infra を分け、取得・整形・出力の共通化�
 
 ### Service
 - `src/water_info/service/usecase.py`（追加・整理）
+- `src/water_info/service/flow_fetch.py`（追加）
+- `src/water_info/service/flow_write.py`（追加）
 
 ### Domain
 - `src/water_info/domain/models.py`（新規）
@@ -30,6 +33,7 @@ UI / Service / Domain / Infra を分け、取得・整形・出力の共通化�
 - `src/water_info/infra/scrape_station.py`
 - `src/water_info/infra/scrape_values.py`
 - `src/water_info/infra/fetching.py`
+- `src/water_info/infra/date_utils.py`
 - `src/water_info/infra/dataframe_utils.py`
 - `src/water_info/infra/excel_writer.py`
 - `src/water_info/infra/excel_summary.py`
@@ -42,6 +46,8 @@ UI / Service / Domain / Infra を分け、取得・整形・出力の共通化�
 - `tests/water_info/test_domain_validation.py`
 - `tests/water_info/test_usecase_fetch_for_code.py`
 - `tests/water_info/test_scrape_smoke.py`
+- `tests/water_info/test_service_flow.py`
+- `tests/water_info/test_fetching_drop_last_each.py`
 - `pytest.ini`
 
 ## アーキテクチャの要点（責務分離）
@@ -56,7 +62,7 @@ UI / Service / Domain / Infra を分け、取得・整形・出力の共通化�
 
 ## テスト実行
 - `uv run pytest -q`
-- 現在のテスト件数: **23件**
+- 現在のテスト件数: **28件**
 
 ## 今後の候補
 - `service` をユースケース単位にさらに分割（取得/出力の責務整理）

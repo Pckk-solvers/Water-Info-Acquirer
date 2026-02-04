@@ -37,11 +37,16 @@ def fetch_hourly_values(
     BeautifulSoup,
     urls: Iterable[str],
     drop_last: bool = False,
+    drop_last_each: bool = False,
 ) -> list[float | str]:
     raw_values: list[str] = []
+    values: list[float | str] = []
     for url in urls:
-        raw_values.extend(fetch_font_values(throttled_get, headers, BeautifulSoup, url))
-    values = coerce_hourly_values(raw_values)
+        raw_values = fetch_font_values(throttled_get, headers, BeautifulSoup, url)
+        chunk = coerce_hourly_values(raw_values)
+        if drop_last_each and chunk:
+            chunk.pop()
+        values.extend(chunk)
     if drop_last and values:
         values.pop()
     return values
