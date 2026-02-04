@@ -1,5 +1,3 @@
-import pytest
-
 from src.water_info.domain.models import Options, Period, WaterInfoRequest
 from src.water_info.service.usecase import fetch_for_code
 

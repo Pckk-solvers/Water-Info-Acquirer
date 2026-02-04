@@ -6,6 +6,8 @@ import calendar
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 from ..infra.dataframe_utils import build_daily_dataframe, build_hourly_dataframe
 from ..infra.fetching import fetch_daily_values, fetch_hourly_values, fetch_station_name
 from ..infra.url_builder import build_daily_base, build_daily_base_url, build_daily_url, build_hourly_base, build_hourly_url
@@ -37,10 +39,8 @@ def fetch_hourly_dataframe_for_code(
     month_start: str,
     month_end: str,
     mode_type: str,
-    pd,
     throttled_get,
     headers: dict,
-    BeautifulSoup,
 ):
     if mode_type == "S":
         value_col = "水位"
@@ -72,7 +72,7 @@ def fetch_hourly_dataframe_for_code(
 
     first_date = url_month[0]
     first_url = build_hourly_url(code, num, mode_str, first_date, f"{year_end}1231")
-    station_name = fetch_station_name(throttled_get, headers, BeautifulSoup, first_url)
+    station_name = fetch_station_name(throttled_get, headers, first_url)
 
     out_dir = Path("water_info")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,6 @@ def fetch_hourly_dataframe_for_code(
     values = fetch_hourly_values(
         throttled_get,
         headers,
-        BeautifulSoup,
         url_list,
         drop_last_each=mode_type in ["S", "U"],
     )
@@ -90,7 +89,7 @@ def fetch_hourly_dataframe_for_code(
     year_start_i = int(year_start)
     month_start_i = int(new_month[0][:2])
     start_date = datetime(year_start_i, month_start_i, 1, 0, 0)
-    df = build_hourly_dataframe(pd, values, start_date, value_col)
+    df = build_hourly_dataframe(values, start_date, value_col)
     return df, file_name, value_col
 
 
@@ -101,10 +100,8 @@ def fetch_daily_dataframe_for_code(
     month_start: str,
     month_end: str,
     mode_type: str,
-    pd,
     throttled_get,
     headers: dict,
-    BeautifulSoup,
 ):
     try:
         num, data_label, chart_title, file_suffix = build_daily_base(mode_type)
@@ -113,7 +110,7 @@ def fetch_daily_dataframe_for_code(
         return None, None, None, None
 
     first_url = build_daily_url(base_url, code, num, f"{year_start}0101", f"{year_start}1231")
-    station_name = fetch_station_name(throttled_get, headers, BeautifulSoup, first_url)
+    station_name = fetch_station_name(throttled_get, headers, first_url)
 
     out_dir = Path("water_info")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -123,7 +120,7 @@ def fetch_daily_dataframe_for_code(
     all_values, all_dates = [], []
     for year in years:
         url = build_daily_url(base_url, code, num, f"{year}0101", f"{year}1231")
-        vals = fetch_daily_values(throttled_get, headers, BeautifulSoup, pd, url)
+        vals = fetch_daily_values(throttled_get, headers, url)
         last = calendar.monthrange(year, 12)[1]
         dates = pd.date_range(start=f"{year}-01-01", end=f"{year}-12-{last}", freq="D")
         n = min(len(dates), len(vals))
@@ -136,5 +133,5 @@ def fetch_daily_dataframe_for_code(
         int(month_end.replace("月", "")),
         calendar.monthrange(int(year_end), int(month_end.replace("月", "")))[1],
     )
-    df = build_daily_dataframe(pd, all_values, all_dates, data_label, start_dt, end_dt)
+    df = build_daily_dataframe(all_values, all_dates, data_label, start_dt, end_dt)
     return df, file_name, data_label, chart_title

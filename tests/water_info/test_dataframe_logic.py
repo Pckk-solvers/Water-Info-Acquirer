@@ -1,16 +1,15 @@
 import pandas as pd
 import pytest
 
-from src.water_info import main_datetime
-from src.water_info import datemode
+from src.water_info import entry
 
 
 def test_process_data_for_code_empty_data_raises(fake_bs4, fake_station_payload, make_values_payload, fake_throttled_get_factory, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     payloads = [fake_station_payload, make_values_payload(["x"])]
-    monkeypatch.setattr(main_datetime, "throttled_get", fake_throttled_get_factory(payloads))
-    with pytest.raises(main_datetime.EmptyExcelWarning):
-        main_datetime.process_data_for_code(
+    monkeypatch.setattr(entry, "throttled_get", fake_throttled_get_factory(payloads))
+    with pytest.raises(entry.EmptyExcelWarning):
+        entry.process_data_for_code(
             code="123",
             Y1="2024",
             Y2="2024",
@@ -24,9 +23,9 @@ def test_process_data_for_code_empty_data_raises(fake_bs4, fake_station_payload,
 def test_process_period_date_display_for_code_empty_data_raises(fake_bs4, fake_station_payload, make_values_payload, fake_throttled_get_factory, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     payloads = [fake_station_payload, make_values_payload(["x"])]
-    monkeypatch.setattr(datemode, "throttled_get", fake_throttled_get_factory(payloads))
-    with pytest.raises(datemode.EmptyExcelWarning):
-        datemode.process_period_date_display_for_code(
+    monkeypatch.setattr(entry, "throttled_get", fake_throttled_get_factory(payloads))
+    with pytest.raises(entry.EmptyExcelWarning):
+        entry.process_period_date_display_for_code(
             code="456",
             Y1="2024",
             Y2="2024",
@@ -41,9 +40,9 @@ def test_process_data_for_code_display_dt_and_sheet_year(fake_bs4, fake_station_
     monkeypatch.chdir(tmp_path)
     values = [str(i) for i in range(1, 24 * 31 + 1)]
     payloads = [fake_station_payload, make_values_payload(values)]
-    monkeypatch.setattr(main_datetime, "throttled_get", fake_throttled_get_factory(payloads))
+    monkeypatch.setattr(entry, "throttled_get", fake_throttled_get_factory(payloads))
 
-    file_path = main_datetime.process_data_for_code(
+    file_path = entry.process_data_for_code(
         code="789",
         Y1="2024",
         Y2="2024",
@@ -70,9 +69,9 @@ def test_process_period_date_display_for_code_excel_smoke(fake_bs4, fake_station
     monkeypatch.chdir(tmp_path)
     values = ["1", "2", "3", "4", "5"]
     payloads = [fake_station_payload, make_values_payload(values)]
-    monkeypatch.setattr(datemode, "throttled_get", fake_throttled_get_factory(payloads))
+    monkeypatch.setattr(entry, "throttled_get", fake_throttled_get_factory(payloads))
 
-    file_path = datemode.process_period_date_display_for_code(
+    file_path = entry.process_period_date_display_for_code(
         code="999",
         Y1="2024",
         Y2="2024",

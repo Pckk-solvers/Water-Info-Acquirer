@@ -1,8 +1,6 @@
-import pandas as pd
 import pytest
 
-from src.water_info import main_datetime
-from src.water_info import datemode
+from src.water_info.infra import http_html
 from src.water_info.infra import http_client
 
 
@@ -82,8 +80,7 @@ def _reset_request_counter(monkeypatch):
 
 @pytest.fixture()
 def fake_bs4(monkeypatch):
-    monkeypatch.setattr(main_datetime, "BeautifulSoup", FakeSoup)
-    monkeypatch.setattr(datemode, "BeautifulSoup", FakeSoup)
+    monkeypatch.setattr(http_html, "BeautifulSoup", FakeSoup)
     return FakeSoup
 
 

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from ..infra.date_utils import month_floor, shift_month
 from ..infra.excel_summary import build_daily_empty_summary, build_year_summary
 from ..infra.excel_writer import add_scatter_chart, set_column_widths, write_table
 
 
 def write_hourly_excel(
-    pd,
     df,
     file_name: str | Path,
     value_col: str,
@@ -102,8 +103,8 @@ def write_hourly_excel(
                 y_axis={"name": ytitle},
             )
 
-        daily_df = build_daily_empty_summary(pd, df, value_col)
-        year_summary_df = build_year_summary(pd, df, value_col)
+        daily_df = build_daily_empty_summary(df, value_col)
+        year_summary_df = build_year_summary(df, value_col)
 
         ws = write_table(
             writer,
@@ -127,7 +128,6 @@ def write_hourly_excel(
 
 
 def write_daily_excel(
-    pd,
     df,
     file_name: str | Path,
     data_label: str,

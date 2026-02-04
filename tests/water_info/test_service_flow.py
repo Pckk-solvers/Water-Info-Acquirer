@@ -22,10 +22,8 @@ def test_fetch_hourly_dataframe_for_code_builds_df_and_path(monkeypatch, tmp_pat
         month_start="1月",
         month_end="1月",
         mode_type="S",
-        pd=pd,
         throttled_get=lambda *a, **k: None,
         headers={},
-        BeautifulSoup=None,
     )
 
     assert value_col == "水位"
@@ -44,7 +42,6 @@ def test_write_hourly_excel_creates_file(tmp_path):
     )
     file_path = tmp_path / "hourly.xlsx"
     flow_write.write_hourly_excel(
-        pd=pd,
         df=df,
         file_name=file_path,
         value_col="水位",
@@ -73,10 +70,8 @@ def test_fetch_daily_dataframe_for_code_builds_df_and_path(monkeypatch, tmp_path
         month_start="1月",
         month_end="1月",
         mode_type="S",
-        pd=pd,
         throttled_get=lambda *a, **k: None,
         headers={},
-        BeautifulSoup=None,
     )
 
     assert data_label == "水位"
@@ -89,7 +84,6 @@ def test_write_daily_excel_creates_file(tmp_path):
     df = pd.DataFrame({"水位": [1.0, 2.0, 3.0]}, index=pd.date_range("2024-01-01", periods=3, freq="D"))
     file_path = tmp_path / "daily.xlsx"
     flow_write.write_daily_excel(
-        pd=pd,
         df=df,
         file_name=file_path,
         data_label="水位",

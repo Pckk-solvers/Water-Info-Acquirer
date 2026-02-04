@@ -40,7 +40,7 @@ def _preload_dependencies(status_label: tk.Label, buttons: list[tk.Button]) -> N
     _ensure_src_on_path()
     errors: list[str] = []
     try:
-        importlib.import_module("water_info.main_datetime")
+        importlib.import_module("water_info.entry")
     except Exception as exc:
         errors.append(f"water_info のロードに失敗: {exc}")
     try:
@@ -87,7 +87,7 @@ def main() -> None:
             _open_target(next_target)
 
         if target == "water":
-            from water_info.main_datetime import show_water
+            from water_info.entry import show_water
 
             current_child = show_water(parent=root, on_open_other=_on_open_other, on_close=_on_close)
         else:

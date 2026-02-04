@@ -7,9 +7,8 @@ import time
 import subprocess
 from datetime import datetime
 
-import tkinter.font as tkFont
 from tkinter import (
-    Frame, Label, Button, Entry, Listbox, Toplevel, Menu,
+    Frame, Label, Button, Entry, Listbox, Toplevel, Menu, Tk,
     StringVar, BooleanVar, Radiobutton, Checkbutton,
     PanedWindow, ttk, LEFT, TOP, BOTTOM
 )
@@ -249,9 +248,6 @@ class WWRApp:
 
     def _populate_side_panel(self, parent):
 
-        # フォント定義
-        title_font = tkFont.Font(family="Meiryo", size=10, weight="bold")
-        desc_font = tkFont.Font(family="Meiryo", size=9)
         self._desc_labels = []  # 後で wraplength を更新するために保持
         sections = [
             ("- ツールの説明 -", "本ツールは「国土交通省・水文水質データベース」で公開されている水位・流量・雨量データを取得するツールです。"
@@ -457,6 +453,23 @@ class WWRApp:
             text="終了",
             command=self._handle_close,   # or self.root.destroy
         ).pack(pady=5)
+
+
+def show_error(message: str):
+    """
+    予期せぬエラーをダイアログで表示
+    """
+    win = Tk()
+    win.title("想定外エラー")
+    win.config(bg="#ff7755")
+    for text in [
+        "想定外のエラーが発生した可能性があります", message,
+        "一度全て閉じてから再試行してください",
+        "問い合わせ窓口に相談してください"
+    ]:
+        Label(win, text=text, bg="#ff7755").pack(padx=10, pady=5)
+    Button(win, text="終了", command=win.destroy).pack(pady=10)
+    win.mainloop()
 
 
 def show_water(

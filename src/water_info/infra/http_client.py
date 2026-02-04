@@ -6,8 +6,8 @@ import threading
 import time
 from typing import Optional
 
-requests = None
-req_exc = None
+import requests
+from requests import exceptions as req_exc
 
 HEADERS = {
     "User-Agent": (
@@ -37,17 +37,6 @@ _REQUEST_LOCK = threading.Lock()
 _REQUEST_COUNTER = 0
 
 
-def _ensure_http_client() -> None:
-    """requests 関連の import を初回利用時に遅延させる。"""
-    global requests, req_exc
-    if requests is None or req_exc is None:
-        import requests as requests_module
-        from requests import exceptions as exceptions_module
-
-        requests = requests_module
-        req_exc = exceptions_module
-
-
 def _calc_delay(request_index: int) -> float:
     if request_index <= 0:
         return 0.0
@@ -59,7 +48,6 @@ def throttled_get(url: str, headers: dict, timeout: int = 30):
     """
     リクエスト間隔を最低限確保しつつ、一時的な失敗時には再試行を行うGETラッパー。
     """
-    _ensure_http_client()
     global _REQUEST_COUNTER
     last_error: Optional[Exception] = None
     for attempt in range(1, REQUEST_MAX_RETRIES + 1):

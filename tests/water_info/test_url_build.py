@@ -1,7 +1,6 @@
 import pytest
 
-from src.water_info import main_datetime
-from src.water_info import datemode
+from src.water_info import entry
 
 
 def _capture_first_url(monkeypatch, module):
@@ -24,9 +23,9 @@ def _capture_first_url(monkeypatch, module):
     ],
 )
 def test_process_data_for_code_builds_expected_url(monkeypatch, mode_type, expected_kind, expected_segment):
-    captured = _capture_first_url(monkeypatch, main_datetime)
+    captured = _capture_first_url(monkeypatch, entry)
     with pytest.raises(RuntimeError):
-        main_datetime.process_data_for_code(
+        entry.process_data_for_code(
             code="123",
             Y1="2024",
             Y2="2024",
@@ -53,9 +52,9 @@ def test_process_data_for_code_builds_expected_url(monkeypatch, mode_type, expec
     ],
 )
 def test_process_period_date_display_for_code_builds_expected_url(monkeypatch, mode_type, expected_kind, expected_segment):
-    captured = _capture_first_url(monkeypatch, datemode)
+    captured = _capture_first_url(monkeypatch, entry)
     with pytest.raises(RuntimeError):
-        datemode.process_period_date_display_for_code(
+        entry.process_period_date_display_for_code(
             code="999",
             Y1="2023",
             Y2="2024",

@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 
 from src.app_names import get_app_title
 
-from .main_datetime import show_water, show_error
+from .entry import show_water, show_error
 
 
 def _set_cwd_to_project_root() -> None:

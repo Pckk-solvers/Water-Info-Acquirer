@@ -8,7 +8,7 @@ def test_fetch_hourly_values_drop_last_each(monkeypatch):
         "u2": ["4", "5", "6"],
     }
 
-    def _fake_fetch(_get, _headers, _bs, url):
+    def _fake_fetch(_get, _headers, url):
         return payloads[url]
 
     monkeypatch.setattr(fetching, "fetch_font_values", _fake_fetch)
@@ -16,7 +16,6 @@ def test_fetch_hourly_values_drop_last_each(monkeypatch):
     values = fetching.fetch_hourly_values(
         throttled_get=None,
         headers={},
-        BeautifulSoup=None,
         urls=urls,
         drop_last_each=True,
     )
