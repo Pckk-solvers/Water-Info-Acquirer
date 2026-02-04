@@ -41,6 +41,7 @@ def fetch_hourly_dataframe_for_code(
     mode_type: str,
     throttled_get,
     headers: dict,
+    progress_callback=None,
 ):
     if mode_type == "S":
         value_col = "水位"
@@ -73,6 +74,8 @@ def fetch_hourly_dataframe_for_code(
     first_date = url_month[0]
     first_url = build_hourly_url(code, num, mode_str, first_date, f"{year_end}1231")
     station_name = fetch_station_name(throttled_get, headers, first_url)
+    if progress_callback:
+        progress_callback(increment=False, station_name=station_name)
 
     out_dir = Path("water_info")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -84,6 +87,7 @@ def fetch_hourly_dataframe_for_code(
         headers,
         url_list,
         drop_last_each=mode_type in ["S", "U"],
+        on_chunk=lambda: progress_callback(increment=True) if progress_callback else None,
     )
 
     year_start_i = int(year_start)
@@ -102,6 +106,7 @@ def fetch_daily_dataframe_for_code(
     mode_type: str,
     throttled_get,
     headers: dict,
+    progress_callback=None,
 ):
     try:
         num, data_label, chart_title, file_suffix = build_daily_base(mode_type)
@@ -111,6 +116,8 @@ def fetch_daily_dataframe_for_code(
 
     first_url = build_daily_url(base_url, code, num, f"{year_start}0101", f"{year_start}1231")
     station_name = fetch_station_name(throttled_get, headers, first_url)
+    if progress_callback:
+        progress_callback(increment=False, station_name=station_name)
 
     out_dir = Path("water_info")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -126,6 +133,8 @@ def fetch_daily_dataframe_for_code(
         n = min(len(dates), len(vals))
         all_dates += list(dates[:n])
         all_values += vals[:n]
+        if progress_callback:
+            progress_callback(increment=True)
 
     start_dt = datetime(int(year_start), int(month_start.replace("月", "")), 1)
     end_dt = datetime(

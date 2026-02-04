@@ -13,7 +13,7 @@ class EmptyExcelWarning(Exception):
     pass
 
 
-def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
+def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, progress_callback=None):
     df, file_name, value_col = fetch_hourly_dataframe_for_code(
         code=code,
         year_start=Y1,
@@ -23,6 +23,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
         mode_type=mode_type,
         throttled_get=throttled_get,
         headers=HEADERS,
+        progress_callback=progress_callback,
     )
     if df is None:
         return None
@@ -43,7 +44,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
     return file_name
 
 
-def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False):
+def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, progress_callback=None):
     """
     年単位URL（各年のBGNDATE=YYYY0101, ENDDATE=YYYY1231）を用いて指定年分のデータを取得し、
     開始月・終了月で指定された期間（例：2022/1～2023/9）にフィルタリング後、
@@ -61,6 +62,7 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
         mode_type=mode_type,
         throttled_get=throttled_get,
         headers=HEADERS,
+        progress_callback=progress_callback,
     )
     if df is None:
         print("mode_typeは 'S', 'R', または 'U' を指定してください。")

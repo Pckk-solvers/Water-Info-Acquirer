@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Callable, Iterable
 
 from .http_html import fetch_html, parse_html
 from .scrape_station import extract_station_name
@@ -37,6 +37,7 @@ def fetch_hourly_values(
     urls: Iterable[str],
     drop_last: bool = False,
     drop_last_each: bool = False,
+    on_chunk: Callable[[], None] | None = None,
 ) -> list[float | str]:
     raw_values: list[str] = []
     values: list[float | str] = []
@@ -46,6 +47,8 @@ def fetch_hourly_values(
         if drop_last_each and chunk:
             chunk.pop()
         values.extend(chunk)
+        if on_chunk:
+            on_chunk()
     if drop_last and values:
         values.pop()
     return values
