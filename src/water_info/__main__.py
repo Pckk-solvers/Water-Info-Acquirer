@@ -7,7 +7,8 @@ from typing import Iterable, Optional
 
 from src.app_names import get_app_title
 
-from .main_datetime import show_water, show_error
+from .entry import show_water
+from .ui.dialogs import show_error
 
 
 def _set_cwd_to_project_root() -> None:
@@ -30,8 +31,20 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         action='store_true',
         help='1シートに全データを出力してテンプレートにマージ（デフォルトは年別+月別）'
     )
+    parser.add_argument(
+        '--debug-ui',
+        action='store_true',
+        help='UIのデバッグログを出力'
+    )
+    parser.add_argument(
+        '--dev',
+        action='store_true',
+        help='開発用の初期観測所コードを入力'
+    )
     args = parser.parse_args(argv)
     single_sheet_mode = args.single_sheet
+    dev_mode = args.dev
+    debug_ui = args.debug_ui or dev_mode
 
     _set_cwd_to_project_root()
     root = tk.Tk()
@@ -41,7 +54,15 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         root.destroy()
 
     try:
-        show_water(parent=root, single_sheet_mode=single_sheet_mode, on_open_other=None, on_close=_on_close)
+        initial_codes = ["303031283302005", "303031283302006"] if dev_mode else None
+        show_water(
+            parent=root,
+            single_sheet_mode=single_sheet_mode,
+            on_open_other=None,
+            on_close=_on_close,
+            debug_ui=debug_ui,
+            initial_codes=initial_codes,
+        )
         root.mainloop()
     except Exception as e:
         show_error(str(e))

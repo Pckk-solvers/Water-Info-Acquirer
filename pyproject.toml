@@ -21,4 +21,15 @@ dev = [
     "mkdocs-material>=9.7.0",
     "pyinstaller>=6.16.0",
     "pytest>=9.0.1",
+    "ruff>=0.15.0",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+exclude = ["src/jma_rainfall_pipeline"]
+
+[tool.ruff.lint]
+select = ["F", "E", "W"]
+ignore = ["E501"]

@@ -1,9 +1,10 @@
 """Summary builders for water_info Excel outputs."""
-
 from __future__ import annotations
 
+import pandas as pd
 
-def build_daily_empty_summary(pd, df, value_col: str):
+
+def build_daily_empty_summary(df, value_col: str):
     tmp = pd.DataFrame(
         [[dt.strftime('%Y/%m/%d'), val] for dt, val in zip(df['display_dt'], df[value_col])],
         columns=['date', value_col],
@@ -18,7 +19,7 @@ def build_daily_empty_summary(pd, df, value_col: str):
     return daily_df
 
 
-def build_year_summary(pd, df, value_col: str):
+def build_year_summary(df, value_col: str):
     year_list = []
     for year, group in df.groupby('sheet_year', sort=True):
         non_null = group[value_col].dropna()

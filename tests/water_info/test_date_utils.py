@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from src.water_info.main_datetime import month_floor, shift_month
+from src.water_info.infra.date_utils import month_floor, shift_month
 
 
 def test_month_floor_returns_month_start():
