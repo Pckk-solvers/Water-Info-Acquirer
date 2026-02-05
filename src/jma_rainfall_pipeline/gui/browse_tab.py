@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime, timedelta, time
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Dict, List, Set, Tuple, TYPE_CHECKING
 
 from jma_rainfall_pipeline.logger.app_logger import get_logger
 from jma_rainfall_pipeline.utils.config_loader import (
@@ -17,11 +17,7 @@ from .error_dialog import show_error
 
 if TYPE_CHECKING:
     # 型チェック時のみインポート（実行時は遅延インポートで起動を軽くする）
-    from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import (
-        fetch_prefecture_codes,
-        fetch_station_codes,
-    )
-    from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
+    pass
 
 logger = get_logger(__name__)
 
@@ -198,13 +194,18 @@ class BrowseWindow(ttk.Frame):
         sta_scroll.config(command=self.sta_listbox.yview)
         sta_scroll.grid(row=1, column=1, sticky="ns")
 
-        # 操作ボタン
+        # 操作ボタン（軽い強調色）
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill=tk.X, pady=(0, 5), padx=10)
-        ttk.Button(btn_frame, text="リストに追加", command=self._add_to_selected).pack(side=tk.LEFT)
+        style = ttk.Style(self)
+        style.configure("Action.TButton", foreground="black", background="#e57373")
+        style.map("Action.TButton", background=[("active", "#ef5350")], foreground=[("active", "black")])
+
+        self.add_button = ttk.Button(btn_frame, text="リストに追加", command=self._add_to_selected, style="Action.TButton")
+        self.add_button.pack(side=tk.LEFT)
         ttk.Button(btn_frame, text="選択項目削除 (複数可)", command=self._remove_selected).pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(btn_frame, text="すべてクリア", command=self._clear_selected).pack(side=tk.LEFT, padx=(5, 0))
-        self.fetch_button = ttk.Button(btn_frame, text="データ取得", command=self._fetch_data)
+        self.fetch_button = ttk.Button(btn_frame, text="データ取得", command=self._fetch_data, style="Action.TButton")
         self.fetch_button.pack(side=tk.RIGHT)
 
         # 選択済み一覧
@@ -298,7 +299,7 @@ class BrowseWindow(ttk.Frame):
         self._set_status("都道府県一覧を読み込み中です…")
         self._show_pref_overlay("読み込み中…")
         self.pref_listbox.config(state=tk.DISABLED)
-        self.fetch_button.state(["disabled"])
+        self._set_fetch_enabled(False)
 
         def worker() -> None:
             try:
@@ -309,11 +310,11 @@ class BrowseWindow(ttk.Frame):
             except Exception as exc:  # pragma: no cover - GUIで例外ダイアログを表示
                 self.after(
                     0,
-                    lambda: show_error(
+                    lambda err=exc: show_error(
                         self.master,
                         "都道府県の取得エラー",
                         "都道府県一覧の取得中にエラーが発生しました。",
-                        exc,
+                        err,
                     ),
                 )
                 self.after(0, lambda: self._set_status("都道府県一覧の取得に失敗しました"))
@@ -383,7 +384,6 @@ class BrowseWindow(ttk.Frame):
             else:
                 # 旧形式の場合は都道府県コードを使用
                 block = code_part
-                pref_code_from_text = pref_code
             obs = self.station_method_map.get(sta_text, "s1")
             key = (pref_code, block, obs)
             if key in self.selected_station_keys:
@@ -409,7 +409,7 @@ class BrowseWindow(ttk.Frame):
         if not selected_items:
             self._set_status("削除する観測所を選択してください（Ctrl+クリックで複数選択可）")
             return
-        
+
         # 削除する項目数をカウント
         removed_count = 0
         for item in selected_items:
@@ -420,7 +420,7 @@ class BrowseWindow(ttk.Frame):
                     self.selected_stations.remove(station_key)
                 removed_count += 1
             self.selected_tree.delete(item)
-        
+
         self._update_fetch_button_state()
         if removed_count > 1:
             self._set_status(f"{removed_count}件の観測所を削除しました")
@@ -499,7 +499,7 @@ class BrowseWindow(ttk.Frame):
                 custom_log_handler = None
 
         self._set_status("データの取得を開始しました。処理中です…")
-        self.fetch_button.state(["disabled"])
+        self._set_fetch_enabled(False)
         try:
             logger.info(
                 "Fetching weather data for %s stations from %s to %s with %s interval",
@@ -527,7 +527,7 @@ class BrowseWindow(ttk.Frame):
                 output_files.extend(list(csv_dir.glob("*.csv")))
             if self.excel_output_var.get():
                 output_files.extend(list(excel_dir.glob("*.xlsx")))
-            
+
             recent_files = [
                 f for f in output_files if (current_time - f.stat().st_mtime) < 60
             ]
@@ -555,7 +555,7 @@ class BrowseWindow(ttk.Frame):
 
                 if output_info:
                     message = (
-                        f"データをエクスポートしました。\n" +
+                        "データをエクスポートしました。\n" +
                         "\n".join(output_info)
                     )
                 else:
@@ -606,10 +606,11 @@ class BrowseWindow(ttk.Frame):
         self._set_status("クイック選択を適用しました")
 
     def _update_fetch_button_state(self) -> None:
-        if self.selected_stations:
-            self.fetch_button.state(["!disabled"])
-        else:
-            self.fetch_button.state(["disabled"])
+        self._set_fetch_enabled(bool(self.selected_stations))
+
+    def _set_fetch_enabled(self, enabled: bool) -> None:
+        if self.fetch_button.winfo_exists():
+            self.fetch_button.state(["!disabled"] if enabled else ["disabled"])
 
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)

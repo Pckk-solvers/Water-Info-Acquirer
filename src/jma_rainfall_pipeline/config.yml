@@ -4,37 +4,37 @@
 # 使用中の設定項目
 # =============================================================================
 
-# 出力先ディレクトリ設定（現在使用中）
-output:
-  csv_dir: "jma/csv"        # CSVファイルの出力先
-  excel_dir: "jma/excel"    # Excelファイルの出力先
-  db_url: "sqlite:///data/precip.db"  # データベースURL（現在未使用だが将来の拡張用）
-
 # 観測所一覧のキャッシュ設定（現在使用中）
 enable_station_cache: true      # キャッシュ機能の有効/無効
 stations_cache_ttl_hours: 168   # キャッシュ有効期間（時間）
 stations_refresh_on_start: false # 起動時に強制更新するか
 
-# ログ設定（現在使用中）
-logging:
-  level: "INFO"                 # ログレベル（DEBUG, INFO, WARNING, ERROR, CRITICAL）
-  file: "jma/logs/app.log"          # ログファイルのパス
-  max_size_mb: 10               # ログファイルの最大サイズ（MB）
-  backup_count: 5               # バックアップファイルの保持数
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # ログフォーマット
-
 # =============================================================================
-# 未使用の設定項目（将来の拡張用）
+# 設定可能だが現在未使用の項目（将来の拡張用）
 # =============================================================================
 
-# ベースとなる気象庁サイトのURL（現在未使用 - ハードコードされている）
+# 出力先ディレクトリ設定（GUIで上書きされるため通常は不要）
+# output:
+#   csv_dir: "outputs/jma/csv"        # CSVファイルの出力先
+#   excel_dir: "outputs/jma/excel"    # Excelファイルの出力先
+#   db_url: "sqlite:///data/precip.db"  # データベースURL（将来の拡張用）
+
+# ログ設定（未使用 - デフォルトは outputs/jma/jma_app.log）
+# logging:
+#   level: "INFO"                 # ログレベル（DEBUG, INFO, WARNING, ERROR, CRITICAL）
+#   file: "outputs/jma/jma_app.log"  # ログファイルのパス
+#   max_size_mb: 10               # ログファイルの最大サイズ（MB）
+#   backup_count: 5               # バックアップファイルの保持数
+#   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # ログフォーマット
+
+# ベースとなる気象庁サイトのURL（未使用 - ハードコードされている）
 # base_url: "https://www.data.jma.go.jp"
 
-# デフォルトの取得間隔（現在未使用 - GUIで動的に設定）
+# デフォルトの取得間隔（未使用 - GUIで動的に設定）
 # default_interval: "1h"
 
-# 都道府県一覧（現在未使用 - 動的取得を使用）
+# 都道府県一覧（未使用 - 動的取得を使用）
 # prefectures: []
 
-# 動的取得用のキャッシュストア（現在未使用 - ファイルベースキャッシュを使用）
+# 動的取得用のキャッシュストア（未使用 - ファイルベースキャッシュを使用）
 # stations: {}

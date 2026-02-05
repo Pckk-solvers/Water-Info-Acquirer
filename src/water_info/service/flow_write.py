@@ -21,11 +21,15 @@ def _write_source_sheet(writer, source_info: dict) -> None:
         ("出典", source_info.get("source_name", "")),
         ("URL", source_info.get("source_url", "")),
         ("取得日", source_info.get("retrieved_at", datetime.now().strftime("%Y-%m-%d %H:%M"))),
+        ("観測所名", source_info.get("station_name", "")),
         ("観測所コード", source_info.get("station_code", "")),
-        ("取得期間", source_info.get("period", "")),
+        ("取得期間(開始)", source_info.get("period_start", "")),
+        ("取得期間(終了)", source_info.get("period_end", "")),
         ("取得項目", source_info.get("item", "")),
         ("データ種別", source_info.get("data_kind", "")),
         ("URLログ", source_info.get("url_log", "")),
+        ("出力ファイル名", source_info.get("output_file", "")),
+        ("取得条件概要", source_info.get("summary", "")),
     ]
     for idx, (label, value) in enumerate(rows):
         ws.write(idx, 0, label)

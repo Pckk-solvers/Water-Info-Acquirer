@@ -15,6 +15,7 @@ _PREF_MAP: Dict[str, str] = {}
 _STATION_CACHE: Dict[str, List[Dict[str, str]]] = {}
 
 SOURCE_NAME = "気象庁 気象統計情報"
+SOURCE_URL = "https://www.data.jma.go.jp/"
 PROCESSING_SUMMARY = "HTMLを解析し、列整形・欠損処理を行ったデータセットです。"
 
 
@@ -64,38 +65,38 @@ OUTPUT_COLUMNS = {
 
 def _normalize_time_column(df: pd.DataFrame) -> Optional[pd.Series]:
     """日時情報を正規化します。
-    
+
     23:59:59.999999 のような時刻を翌日の 00:00:00 に変換する特別な処理を含みます。
     """
     try:
         # 日次データかどうかをチェック（'date'カラムはあるが'time'や'hour'カラムはない場合）
         is_daily = "date" in df.columns and "time" not in df.columns and "hour" not in df.columns
-        
+
         if "datetime" in df.columns:
             # 直接datetimeカラムを処理
             normalized = pd.to_datetime(df["datetime"], errors="coerce")
             if is_daily:
                 return normalized.dt.strftime("%Y/%m/%d")
-            
+
             # 深夜0時近くの値をチェック
             near_midnight = (normalized.dt.hour == 23) & (normalized.dt.minute == 59)
             normalized[near_midnight] = normalized[near_midnight] + pd.Timedelta(minutes=1)
             return normalized.dt.strftime("%Y/%m/%d %H:%M")
-            
+
         elif "date" in df.columns and "time" in df.columns:
             # 時刻が別カラムの場合の処理
             time_col = df["time"].astype(str).str.strip()
-            
+
             # 23:59:59.999999 のようなパターンをチェック
             is_midnight = time_col.str.contains(r'23:59:59\.?\d*$', regex=True)
-            
+
             # 日付シリーズを作成し、深夜の場合は1日加算
             date_series = pd.to_datetime(df["date"].astype(str).str.strip(), errors="coerce")
             date_series[is_midnight] = date_series[is_midnight] + pd.Timedelta(days=1)
-            
+
             # 時刻をフォーマットし、23:59:59.xxx を 00:00:00 に置換
             time_series = time_col.replace(r'23:59:59\.?\d*$', '00:00:00', regex=True)
-            
+
             # 日付と時刻を結合
             normalized = pd.to_datetime(
                 date_series.dt.strftime("%Y-%m-%d") + " " + time_series,
@@ -103,31 +104,31 @@ def _normalize_time_column(df: pd.DataFrame) -> Optional[pd.Series]:
                 errors='coerce'
             )
             return normalized.dt.strftime("%Y/%m/%d %H:%M")
-            
+
         elif "date" in df.columns and "hour" in df.columns:
             # 時間が別カラムの時間データを処理
             date_part = pd.to_datetime(df["date"], errors="coerce")
             hour_part = pd.to_numeric(df["hour"], errors="coerce").fillna(0)
-            
+
             # 24時近くの時間（例：23.999）を処理
             is_midnight = (hour_part >= 23.99) & (hour_part <= 24.0)
             date_part[is_midnight] = date_part[is_midnight] + pd.Timedelta(days=1)
             hour_part[is_midnight] = 0
-            
+
             # 浮動小数点の誤差を防ぐために分単位で丸める
             minutes = ((hour_part - hour_part.astype(int)) * 60).round().astype(int)
             hours = hour_part.astype(int)
-            
+
             normalized = date_part + pd.to_timedelta(hours, unit='h') + pd.to_timedelta(minutes, unit='m')
             return normalized.dt.strftime("%Y/%m/%d %H:%M")
-            
+
         elif "date" in df.columns:
             # 日付のみのデータを処理
             normalized = pd.to_datetime(df["date"], errors="coerce")
             return normalized.dt.strftime("%Y/%m/%d")
-            
+
         return None
-        
+
     except Exception as e:
         logger.warning(f"日時カラムの正規化中にエラーが発生しました: {e}")
         return None
@@ -169,9 +170,9 @@ def _export_precipitation_excel(
                            pd.to_timedelta(df['hour'].fillna(0), unit='h')
             else:
                 dt_series = pd.to_datetime(df['date'], errors='coerce')
-            
+
             precipitation_df["日時"] = dt_series
-        
+
         # その他のカラムを追加
         for column, display_name in available_columns.items():
             precipitation_df[display_name] = df[column]
@@ -186,32 +187,32 @@ def _export_precipitation_excel(
         else:
             excel_output_dir = Path(excel_output_dir)
         excel_output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # CSVファイル名からExcelファイル名を生成
         excel_filename = csv_path.name.replace('.csv', '.xlsx')
         excel_path = excel_output_dir / excel_filename
-        
+
         # XlsxWriterエンジンを使用してExcelライターを作成
         with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
             # データフレームをExcelに書き込み
             precipitation_df.to_excel(writer, sheet_name='Sheet1', index=False)
-            
+
             # ワークブックとワークシートオブジェクトを取得
             workbook = writer.book
             worksheet = writer.sheets['Sheet1']
-            
+
             # 日時フォーマットを定義（表示形式を統一）
             datetime_format = workbook.add_format({
                 'num_format': 'yyyy/mm/dd hh:mm',
                 'align': 'left'
             })
-            
+
             # 日時カラムの幅とフォーマットを設定
             if "日時" in precipitation_df.columns:
                 # 日時カラムを文字列に変換してから書き込み
                 if not precipitation_df["日時"].empty:
                     # 日時データを文字列に変換（表示形式を統一）
-                    if any(not pd.isna(t) and hasattr(t, 'hour') and (t.hour > 0 or t.minute > 0) 
+                    if any(not pd.isna(t) and hasattr(t, 'hour') and (t.hour > 0 or t.minute > 0)
                            for t in precipitation_df["日時"] if pd.notna(t)):
                         # 時刻を含む場合
                         precipitation_df["日時"] = precipitation_df["日時"].dt.strftime('%Y/%m/%d %H:%M')
@@ -220,70 +221,60 @@ def _export_precipitation_excel(
                         # 日付のみの場合
                         precipitation_df["日時"] = precipitation_df["日時"].dt.strftime('%Y/%m/%d')
                         col_width = 12
-                    
+
                     # データを再度書き込み
                     worksheet.write_column(1, 0, precipitation_df["日時"], datetime_format)
                     worksheet.set_column('A:A', col_width, datetime_format)
                 else:
                     worksheet.set_column('A:A', 12, datetime_format)
 
-            _write_overview_sheet(workbook, overview_info)
-        
+            _write_source_sheet(workbook, overview_info)
+
         logger.info(f"Excelファイルを日時フォーマット付きで正常にエクスポートしました: {excel_path.resolve()}")
         return excel_path
-        
+
     except Exception as e:
         logger.error(f"Excelエクスポート中にエラーが発生しました: {e}")
         return None
 
 
-def _write_overview_sheet(workbook: Any, overview_info: Optional[Dict[str, Any]]) -> None:
-    """データ概要シートを末尾に追加する。"""
+def _write_source_sheet(workbook: Any, overview_info: Optional[Dict[str, Any]]) -> None:
+    """出典シートを末尾に追加する。"""
     if not overview_info:
         return
 
-    sheet = workbook.add_worksheet("データ概要")
-    bold = workbook.add_format({"bold": True})
-
-    sheet.write(0, 0, "項目", bold)
-    sheet.write(0, 1, "内容", bold)
-
+    sheet = workbook.add_worksheet("出典")
     exported_at = overview_info.get("exported_at")
-    exported_str = exported_at.strftime("%Y-%m-%d %H:%M:%S") if isinstance(exported_at, datetime) else str(exported_at)
+    exported_str = exported_at.strftime("%Y-%m-%d %H:%M") if isinstance(exported_at, datetime) else str(exported_at)
+    period = overview_info.get("period", {})
+    station_code = overview_info.get("station_code")
     rows = [
-        ("データ出力日時", exported_str),
-        (
-            "観測対象",
-            f"{overview_info.get('prefecture_name')} {overview_info.get('station_name')} "
-            f"(prec_no={overview_info.get('prefecture_code')}, block_no={overview_info.get('station_code')})",
-        ),
-        ("観測間隔", overview_info.get("interval")),
-        (
-            "取得期間",
-            f"{overview_info.get('period', {}).get('start')} ～ {overview_info.get('period', {}).get('end')}",
-        ),
-        ("加工概要", PROCESSING_SUMMARY),
         ("出典", SOURCE_NAME),
+        ("URL", SOURCE_URL),
+        ("取得日", exported_str),
+        ("都道府県名", overview_info.get("prefecture_name")),
+        ("観測所名", overview_info.get("station_name")),
+        ("観測所コード", station_code),
+        ("観測間隔", overview_info.get("interval")),
+        ("取得期間(開始)", period.get("start")),
+        ("取得期間(終了)", period.get("end")),
+        ("取得項目", "降水量"),
+        ("データ種別", "気象庁観測データ"),
+        ("URLログ", "コンソール出力"),
+        ("出力ファイル名", overview_info.get("output_file")),
+        (
+            "取得条件概要",
+            f"{overview_info.get('prefecture_name')} {overview_info.get('station_name')} "
+            f"({overview_info.get('interval')}) "
+            f"{period.get('start')} - {period.get('end')}",
+        ),
     ]
 
-    for idx, (label, value) in enumerate(rows, start=1):
+    for idx, (label, value) in enumerate(rows):
         sheet.write(idx, 0, label)
         sheet.write(idx, 1, value)
 
-    start_row = len(rows) + 2
-    sheet.write(start_row, 0, "No.", bold)
-    sheet.write(start_row, 1, "URL", bold)
-
-    urls = overview_info.get("request_urls") or []
-    if urls:
-        for offset, url in enumerate(urls, start=1):
-            sheet.write(start_row + offset, 0, offset)
-            sheet.write_url(start_row + offset, 1, url, string=url)
-    else:
-        sheet.write(start_row + 1, 0, "-", bold)
-        sheet.write(start_row + 1, 1, "リクエストURLはありません")
-
-    sheet.set_column("A:A", 18)
+    sheet.set_column("A:A", 16)
     sheet.set_column("B:B", 80)
 
 
@@ -329,7 +320,7 @@ def export_weather_data(
     if output_dir is None:
         output_dirs = get_output_directories()
         output_dir = Path(output_dirs['csv_dir'])
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pref_map = _get_pref_map()
@@ -358,6 +349,7 @@ def export_weather_data(
 
     filename = f"{pref_name}_{station_name}_{interval}_{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}.csv"
     filepath = output_dir / filename
+    overview_info["output_file"] = filename
 
     if columns is None:
         columns = [col for col in OUTPUT_COLUMNS.get(interval, []) if col in df.columns]
@@ -367,7 +359,7 @@ def export_weather_data(
         valid_columns = df.columns.tolist()
 
     export_df = df[valid_columns]
-    
+
     # CSV出力が有効な場合のみCSVファイルを作成
     if export_csv:
         export_df.to_csv(filepath, index=False, encoding='utf-8-sig')

@@ -78,7 +78,7 @@ def fetch_hourly_dataframe_for_code(
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
-    out_dir = Path("water_info")
+    out_dir = Path("outputs") / "water_info"
     out_dir.mkdir(parents=True, exist_ok=True)
     file_name = out_dir / f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}"
 
@@ -124,7 +124,7 @@ def fetch_daily_dataframe_for_code(
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
-    out_dir = Path("water_info")
+    out_dir = Path("outputs") / "water_info"
     out_dir.mkdir(parents=True, exist_ok=True)
     file_name = out_dir / f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}"
 
