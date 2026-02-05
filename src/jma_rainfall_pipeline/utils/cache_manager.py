@@ -27,7 +27,7 @@ class CacheManager:
         package_root = Path(__file__).resolve().parents[1]
         project_root = package_root.parents[1]
         self._config_path = package_root / CONFIG_FILENAME
-        self._cache_dir = project_root / 'cache'
+        self._cache_dir = project_root / 'outputs' / 'jma' / 'cache'
         self._station_dir = self._cache_dir / 'stations'
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._station_dir.mkdir(parents=True, exist_ok=True)

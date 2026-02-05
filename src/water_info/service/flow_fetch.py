@@ -11,6 +11,7 @@ import pandas as pd
 from ..infra.dataframe_utils import build_daily_dataframe, build_hourly_dataframe
 from ..infra.fetching import fetch_daily_values, fetch_hourly_values, fetch_station_name
 from ..infra.url_builder import build_daily_base, build_daily_base_url, build_daily_url, build_hourly_base, build_hourly_url
+from ..infra.url_logger import log_urls
 
 _MONTH_LIST = [
     "0101", "0201", "0301", "0401", "0501", "0601",
@@ -77,11 +78,15 @@ def fetch_hourly_dataframe_for_code(
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
-    out_dir = Path("water_info")
+    out_dir = Path("outputs") / "water_info"
     out_dir.mkdir(parents=True, exist_ok=True)
     file_name = out_dir / f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}"
 
     url_list = [build_hourly_url(code, num, mode_str, um, f"{year_end}1231") for um in url_month]
+    log_urls(
+        header=f"hourly code={code} mode={mode_type} period={year_start}/{month_start}-{year_end}/{month_end}",
+        urls=url_list,
+    )
     values = fetch_hourly_values(
         throttled_get,
         headers,
@@ -119,14 +124,16 @@ def fetch_daily_dataframe_for_code(
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
-    out_dir = Path("water_info")
+    out_dir = Path("outputs") / "water_info"
     out_dir.mkdir(parents=True, exist_ok=True)
     file_name = out_dir / f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}"
 
     years = list(range(int(year_start), int(year_end) + 1))
     all_values, all_dates = [], []
+    daily_urls: list[str] = []
     for year in years:
         url = build_daily_url(base_url, code, num, f"{year}0101", f"{year}1231")
+        daily_urls.append(url)
         vals = fetch_daily_values(throttled_get, headers, url)
         last = calendar.monthrange(year, 12)[1]
         dates = pd.date_range(start=f"{year}-01-01", end=f"{year}-12-{last}", freq="D")
@@ -135,6 +142,10 @@ def fetch_daily_dataframe_for_code(
         all_values += vals[:n]
         if progress_callback:
             progress_callback(increment=True)
+    log_urls(
+        header=f"daily code={code} mode={mode_type} period={year_start}/{month_start}-{year_end}/{month_end}",
+        urls=daily_urls,
+    )
 
     start_dt = datetime(int(year_start), int(month_start.replace("月", "")), 1)
     end_dt = datetime(

@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 
 from ..infra.date_utils import month_floor, shift_month
 from ..infra.excel_summary import build_daily_empty_summary, build_year_summary
 from ..infra.excel_writer import add_scatter_chart, set_column_widths, write_table
+
+_SOURCE_SHEET = "出典"
+
+
+def _write_source_sheet(writer, source_info: dict) -> None:
+    ws = writer.book.add_worksheet(_SOURCE_SHEET)
+    writer.sheets[_SOURCE_SHEET] = ws
+    rows = [
+        ("出典", source_info.get("source_name", "")),
+        ("URL", source_info.get("source_url", "")),
+        ("取得日", source_info.get("retrieved_at", datetime.now().strftime("%Y-%m-%d %H:%M"))),
+        ("観測所名", source_info.get("station_name", "")),
+        ("観測所コード", source_info.get("station_code", "")),
+        ("取得期間(開始)", source_info.get("period_start", "")),
+        ("取得期間(終了)", source_info.get("period_end", "")),
+        ("取得項目", source_info.get("item", "")),
+        ("データ種別", source_info.get("data_kind", "")),
+        ("URLログ", source_info.get("url_log", "")),
+        ("出力ファイル名", source_info.get("output_file", "")),
+        ("取得条件概要", source_info.get("summary", "")),
+    ]
+    for idx, (label, value) in enumerate(rows):
+        ws.write(idx, 0, label)
+        ws.write(idx, 1, value)
+    set_column_widths(ws, {"A:A": 12, "B:B": 60})
 
 
 def write_hourly_excel(
@@ -17,6 +43,7 @@ def write_hourly_excel(
     value_col: str,
     mode_type: str,
     single_sheet: bool,
+    source_info: dict | None = None,
     empty_error_type: type[Exception] | None = None,
 ):
     if empty_error_type is not None:
@@ -123,6 +150,7 @@ def write_hourly_excel(
             startcol=3,
         )
         set_column_widths(ws, {"D:D": 8, "E:E": 20, "F:F": 10, "G:G": 18})
+        _write_source_sheet(writer, source_info or {})
 
     return file_name
 
@@ -133,6 +161,7 @@ def write_daily_excel(
     data_label: str,
     chart_title: str,
     single_sheet: bool,
+    source_info: dict | None = None,
 ):
     with pd.ExcelWriter(file_name, engine="xlsxwriter", datetime_format="yyyy/mm/dd") as writer:
         wb = writer.book
@@ -222,5 +251,6 @@ def write_daily_excel(
                 },
                 y_axis={"name": chart_title},
             )
+        _write_source_sheet(writer, source_info or {})
 
     return file_name
