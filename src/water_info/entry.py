@@ -5,6 +5,7 @@ from __future__ import annotations
 from .service.flow_fetch import fetch_hourly_dataframe_for_code, fetch_daily_dataframe_for_code
 from .service.flow_write import write_hourly_excel, write_daily_excel
 from .infra.http_client import HEADERS, throttled_get
+from .infra.url_builder import build_daily_base_url, build_hourly_base
 from .ui.app import show_water as _show_water
 
 
@@ -31,12 +32,23 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, p
     if df.empty or df[value_col].dropna().empty:
         raise EmptyExcelWarning(f"観測所コード {code}：指定期間に有効なデータが見つかりませんでした")
 
+    _, mode_str = build_hourly_base(mode_type)
+    source_info = {
+        "source_name": "国土交通省 水文水質データベース",
+        "source_url": f"http://www1.river.go.jp/cgi-bin/Dsp{mode_str}Data.exe",
+        "station_code": code,
+        "period": f"{Y1}/{M1}-{Y2}/{M2}",
+        "item": {"S": "水位", "R": "流量", "U": "雨量"}[mode_type],
+        "data_kind": "時刻",
+        "url_log": "コンソール出力",
+    }
     write_hourly_excel(
         df=df,
         file_name=file_name,
         value_col=value_col,
         mode_type=mode_type,
         single_sheet=single_sheet,
+        source_info=source_info,
         empty_error_type=EmptyExcelWarning,
     )
 
@@ -71,12 +83,22 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
     if df.empty or df[data_label].dropna().empty:
         raise EmptyExcelWarning(f"観測所コード {code}：指定期間に有効なデータが見つかりませんでした")
 
+    source_info = {
+        "source_name": "国土交通省 水文水質データベース",
+        "source_url": build_daily_base_url(mode_type),
+        "station_code": code,
+        "period": f"{Y1}/{M1}-{Y2}/{M2}",
+        "item": {"S": "水位", "R": "流量", "U": "雨量"}[mode_type],
+        "data_kind": "日",
+        "url_log": "コンソール出力",
+    }
     write_daily_excel(
         df=df,
         file_name=file_name,
         data_label=data_label,
         chart_title=chart_title,
         single_sheet=single_sheet,
+        source_info=source_info,
     )
 
     print(f"生成完了: {file_name}")
