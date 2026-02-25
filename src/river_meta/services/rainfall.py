@@ -10,12 +10,15 @@ from river_meta.rainfall.analysis import build_annual_max_dataframe, build_hourl
 from river_meta.rainfall.chart_exporter import export_rainfall_charts
 from river_meta.rainfall.excel_exporter import export_station_rainfall_excel
 from river_meta.rainfall.parquet_store import (
+    ParquetEntry,
     build_parquet_path,
+    find_missing_months,
     load_and_concat_monthly_parquets,
     load_records_parquet,
     migrate_legacy_jma_parquets,
     parquet_exists,
     save_records_parquet,
+    scan_parquet_dir,
 )
 from river_meta.rainfall.jma_adapter import fetch_jma_rainfall
 from river_meta.rainfall.models import (
@@ -68,9 +71,142 @@ class RainfallAnalyzeResult:
     chart_paths: list[str] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class RainfallGenerateInput:
+    """Parquet ディレクトリを入力として Excel/グラフを生成するための設定。"""
+    parquet_dir: str
+    export_excel: bool = True
+    export_chart: bool = True
+    decimal_places: int = 2
+
+
+@dataclass(slots=True)
+class RainfallGenerateResult:
+    """generate モードの出力結果。"""
+    entries: list[ParquetEntry] = field(default_factory=list)
+    incomplete_entries: list[ParquetEntry] = field(default_factory=list)
+    excel_paths: list[str] = field(default_factory=list)
+    chart_paths: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
 def _noop_log(_: str) -> None:
     return None
 
+
+def run_rainfall_generate(
+    config: RainfallGenerateInput,
+    *,
+    log: LogFn | None = None,
+    should_stop: CancelFn | None = None,
+) -> RainfallGenerateResult:
+    """Parquet ディレクトリを入力として Excel/グラフを生成する。
+
+    完全年（JMAなら12ヶ月分のParquetが揃っている年）のみ出力する。
+    不完全年は ``incomplete_entries`` に格納してスキップする。
+    """
+    import pandas as pd
+
+    logger = log or _noop_log
+    all_errors: list[str] = []
+    excel_paths: list[str] = []
+    chart_paths: list[str] = []
+
+    entries = scan_parquet_dir(config.parquet_dir)
+    if not entries:
+        logger("[generate] Parquet ファイルが見つかりません。")
+        return RainfallGenerateResult(errors=["No parquet files found"])
+
+    complete_entries: list[ParquetEntry] = []
+    incomplete_entries: list[ParquetEntry] = []
+
+    for entry in entries:
+        if entry.complete:
+            complete_entries.append(entry)
+        else:
+            missing = find_missing_months(
+                config.parquet_dir, entry.source, entry.station_key, entry.year,
+            )
+            logger(
+                f"[generate][WARN] 観測所={entry.station_key} 年={entry.year}"
+                f" 不足月={missing} — スキップ"
+            )
+            incomplete_entries.append(entry)
+
+    if not complete_entries:
+        logger("[generate] 完全年のデータがありません。")
+        return RainfallGenerateResult(
+            entries=entries,
+            incomplete_entries=incomplete_entries,
+            errors=["No complete year data found"],
+        )
+
+    out_dir_path = Path(config.parquet_dir)
+
+    for entry in complete_entries:
+        if _is_cancelled(should_stop):
+            all_errors.append("cancelled")
+            break
+
+        logger(f"[generate] 処理中: {entry.source} 観測所={entry.station_key} 年={entry.year}")
+
+        # Parquet 読み込み
+        if entry.source == "jma":
+            source_df = load_and_concat_monthly_parquets(
+                config.parquet_dir, entry.source, entry.station_key, entry.year,
+            )
+        else:
+            pq_path = build_parquet_path(
+                config.parquet_dir, entry.source, entry.station_key, entry.year,
+            )
+            source_df = load_records_parquet(pq_path)
+
+        if source_df is None or source_df.empty:
+            continue
+
+        station_name = ""
+        if "station_name" in source_df.columns:
+            station_name = str(source_df["station_name"].iloc[0])
+
+        timeseries_df = build_hourly_timeseries_dataframe(source_df)
+        annual_max_df = build_annual_max_dataframe(timeseries_df)
+        del source_df
+
+        if config.export_excel and not timeseries_df.empty:
+            safe_name = station_name.replace("/", "_").replace("\\", "_")
+            filename = f"{entry.station_key}_{safe_name}.xlsx" if safe_name else f"{entry.station_key}.xlsx"
+            excel_dir = out_dir_path / "excel"
+            excel_dir.mkdir(parents=True, exist_ok=True)
+            output_path = excel_dir / filename
+
+            path = export_station_rainfall_excel(
+                timeseries_df,
+                annual_max_df,
+                output_path=str(output_path),
+                decimal_places=config.decimal_places,
+            )
+            if path is not None:
+                excel_paths.append(str(path))
+
+        if config.export_chart and not timeseries_df.empty and not annual_max_df.empty:
+            generated = export_rainfall_charts(
+                timeseries_df,
+                annual_max_df,
+                output_dir=str(out_dir_path / "charts"),
+                station_key=entry.station_key,
+                station_name=station_name,
+            )
+            chart_paths.extend(str(p) for p in generated)
+
+        del timeseries_df, annual_max_df
+
+    return RainfallGenerateResult(
+        entries=entries,
+        incomplete_entries=incomplete_entries,
+        excel_paths=sorted(excel_paths),
+        chart_paths=sorted(chart_paths),
+        errors=all_errors,
+    )
 
 def run_rainfall_collect(
     config: RainfallRunInput,
@@ -209,7 +345,9 @@ def run_rainfall_analyze(
             if export_excel and not timeseries_df.empty:
                 safe_name = str(station_actual_name).replace("/", "_").replace("\\", "_")
                 filename = f"{station_key}_{safe_name}.xlsx" if safe_name else f"{station_key}.xlsx"
-                output_path = out_dir_path / filename
+                excel_dir = out_dir_path / "excel"
+                excel_dir.mkdir(parents=True, exist_ok=True)
+                output_path = excel_dir / filename
 
                 path = export_station_rainfall_excel(
                     timeseries_df,

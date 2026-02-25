@@ -20,7 +20,15 @@ except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency fal
     def run_csv_to_gpkg(*args, **kwargs):  # type: ignore[no-redef]
         raise ModuleNotFoundError("run_csv_to_gpkg requires optional GIS dependencies") from _gpkg_import_error
 
-from .rainfall import RainfallAnalyzeResult, RainfallRunInput, run_rainfall_analyze, run_rainfall_collect
+from .rainfall import (
+    RainfallAnalyzeResult,
+    RainfallGenerateInput,
+    RainfallGenerateResult,
+    RainfallRunInput,
+    run_rainfall_analyze,
+    run_rainfall_collect,
+    run_rainfall_generate,
+)
 from .river_meta import RiverMetaRunInput, RiverMetaRunResult, collect_station_ids, run_river_meta
 from .station_ids import StationIdsRunInput, StationIdsRunResult, run_station_ids_collect
 
@@ -41,5 +49,7 @@ __all__ = [
     "StationIdsRunInput",
     "StationIdsRunResult",
     "RainfallAnalyzeResult",
+    "RainfallGenerateInput",
+    "RainfallGenerateResult",
     "RainfallRunInput",
 ]

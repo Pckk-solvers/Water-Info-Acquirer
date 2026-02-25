@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -150,3 +152,90 @@ def migrate_legacy_jma_parquets(
 
     return renamed
 
+
+# ---------------------------------------------------------------------------
+# Parquet スキャン
+# ---------------------------------------------------------------------------
+
+# ファイル名パターン:
+#   月単位: {source}_{station_key}_{year}_{month:02d}.parquet
+#   年単位: {source}_{station_key}_{year}.parquet
+_MONTHLY_PATTERN = re.compile(
+    r"^(?P<source>[a-z_]+)_(?P<station_key>.+)_(?P<year>\d{4})_(?P<month>\d{2})\.parquet$"
+)
+_YEARLY_PATTERN = re.compile(
+    r"^(?P<source>[a-z_]+)_(?P<station_key>.+)_(?P<year>\d{4})\.parquet$"
+)
+
+
+@dataclass(frozen=True)
+class ParquetEntry:
+    """Parquet スキャン結果の1エントリ（観測所×年）。"""
+    source: str
+    station_key: str
+    year: int
+    months: list[int] = field(default_factory=list)
+    complete: bool = False
+
+
+def scan_parquet_dir(output_dir: str | Path) -> list[ParquetEntry]:
+    """parquet/ 配下をスキャンして観測所×年ごとの状態を返す。"""
+    parquet_dir = Path(output_dir) / "parquet"
+    if not parquet_dir.exists():
+        return []
+
+    # (source, station_key, year) -> set of months
+    index: dict[tuple[str, str, int], set[int]] = {}
+    yearly_keys: set[tuple[str, str, int]] = set()
+
+    for path in sorted(parquet_dir.glob("*.parquet")):
+        if path.stat().st_size == 0:
+            continue
+
+        m = _MONTHLY_PATTERN.match(path.name)
+        if m:
+            key = (m.group("source"), m.group("station_key"), int(m.group("year")))
+            index.setdefault(key, set()).add(int(m.group("month")))
+            continue
+
+        m = _YEARLY_PATTERN.match(path.name)
+        if m:
+            key = (m.group("source"), m.group("station_key"), int(m.group("year")))
+            yearly_keys.add(key)
+            index.setdefault(key, set())
+
+    entries: list[ParquetEntry] = []
+    for (source, station_key, year), months in sorted(index.items()):
+        sorted_months = sorted(months)
+        if source == "water_info":
+            # water_info は年単位ファイルなので常に complete
+            entries.append(ParquetEntry(
+                source=source, station_key=station_key, year=year,
+                months=[], complete=True,
+            ))
+        else:
+            # JMA: 12ヶ月揃っていれば complete
+            entries.append(ParquetEntry(
+                source=source, station_key=station_key, year=year,
+                months=sorted_months, complete=(len(sorted_months) == 12),
+            ))
+
+    return entries
+
+
+def find_missing_months(
+    output_dir: str | Path,
+    source: str,
+    station_key: str,
+    year: int,
+) -> list[int]:
+    """JMA の場合に1〜12のうち欠けている月番号リストを返す。water_info は常に空リスト。"""
+    if source == "water_info":
+        pq_path = build_parquet_path(output_dir, source, station_key, year)
+        return [] if (pq_path.exists() and pq_path.stat().st_size > 0) else [0]
+
+    present = set()
+    for m in range(1, 13):
+        if parquet_exists(output_dir, source, station_key, year, month=m):
+            present.add(m)
+    return [m for m in range(1, 13) if m not in present]

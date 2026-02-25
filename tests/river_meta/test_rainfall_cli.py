@@ -21,6 +21,7 @@ def test_rainfall_cli_analyze_year_success(monkeypatch):
         config,
         *,
         export_excel,
+        export_chart,
         output_dir,
         decimal_places,
         log,
@@ -33,6 +34,7 @@ def test_rainfall_cli_analyze_year_success(monkeypatch):
             timeseries_df=pd.DataFrame(),
             annual_max_df=pd.DataFrame(),
             excel_paths=[],
+            chart_paths=[],
         )
 
     monkeypatch.setattr("river_meta.rainfall.cli.run_rainfall_analyze", _fake_analyze)

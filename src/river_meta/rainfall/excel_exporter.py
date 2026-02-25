@@ -101,10 +101,31 @@ def _apply_display_transforms(df: pd.DataFrame) -> None:
     if "データ元" in df.columns:
         df["データ元"] = df["データ元"].map(_SOURCE_LABEL_MAP).fillna(df["データ元"])
 
-    # 観測所キー: アンダースコア → ハイフン、列名変更
+    # 観測所キー: ソースに応じて列名を変更
     if "観測所キー" in df.columns:
-        df["観測所キー"] = df["観測所キー"].astype(str).str.replace("_", "-", regex=False)
-        df.rename(columns={"観測所キー": "地域番号-地点番号"}, inplace=True)
+        # ソースを判定 (データ元列がある場合)
+        source_raw = ""
+        if "データ元" in df.columns and len(df) > 0:
+            first_source = str(df["データ元"].iloc[0])
+            # 日本語変換後の値で判定
+            if first_source in ("気象庁", "jma"):
+                source_raw = "jma"
+            elif first_source in ("水文水質DB", "water_info"):
+                source_raw = "water_info"
+
+        # 値をstr型に統一
+        df["観測所キー"] = df["観測所キー"].astype(str)
+
+        if source_raw == "water_info":
+            df.rename(columns={"観測所キー": "観測所記号"}, inplace=True)
+        else:
+            # JMA: アンダースコア → ハイフン
+            df["観測所キー"] = df["観測所キー"].str.replace("_", "-", regex=False)
+            df.rename(columns={"観測所キー": "地域番号-地点番号"}, inplace=True)
+
+    # 年間完全性: bool → 完全/非完全
+    if "年間完全性" in df.columns:
+        df["年間完全性"] = df["年間完全性"].map({True: "完全", False: "非完全"}).fillna("非完全")
 
 
 def _format_missing_count_with_total(df: pd.DataFrame) -> None:
@@ -119,8 +140,9 @@ def _drop_station_columns(df: pd.DataFrame) -> pd.DataFrame:
     """1ファイル=1観測所のため冗長なカラムを除去する。"""
     cols_to_drop = [c for c in _DROP_COLUMNS if c in df.columns]
     # リネーム後の列名もチェック
-    if "地域番号-地点番号" in df.columns:
-        cols_to_drop.append("地域番号-地点番号")
+    for col in ("地域番号-地点番号", "観測所記号"):
+        if col in df.columns:
+            cols_to_drop.append(col)
     return df.drop(columns=cols_to_drop, errors="ignore")
 
 

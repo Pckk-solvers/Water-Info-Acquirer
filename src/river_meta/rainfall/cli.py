@@ -7,7 +7,13 @@ import threading
 from datetime import datetime
 from typing import Sequence
 
-from river_meta.services.rainfall import RainfallRunInput, run_rainfall_analyze, run_rainfall_collect
+from river_meta.services.rainfall import (
+    RainfallGenerateInput,
+    RainfallRunInput,
+    run_rainfall_analyze,
+    run_rainfall_collect,
+    run_rainfall_generate,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,8 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="river-rainfall",
         description="Collect/analyze rainfall data from JMA and water_info.",
     )
-    parser.add_argument("--mode", choices=["collect", "analyze"], default="analyze", help="実行モード")
-    parser.add_argument("--source", required=True, help="データソース (jma / water_info / both)")
+    parser.add_argument("--mode", choices=["collect", "analyze", "generate"], default="analyze", help="実行モード")
+    parser.add_argument("--source", default=None, help="データソース (jma / water_info / both)。generate時は不要")
     parser.add_argument("--interval", default="1hour", help="集計間隔 (10min / 1hour / 1day)")
 
     parser.add_argument("--year", type=int, default=None, help="対象年（例: 2025）")
@@ -78,6 +84,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     signal.signal(signal.SIGINT, _handle_sigint)
     try:
+        if args.mode == "generate":
+            gen_config = RainfallGenerateInput(
+                parquet_dir=args.output_dir,
+                export_excel=args.export_excel,
+                export_chart=args.export_chart,
+                decimal_places=args.decimal_places,
+            )
+            gen_result = run_rainfall_generate(
+                gen_config,
+                log=lambda msg: print(msg, file=sys.stderr),
+                should_stop=stop_event.is_set,
+            )
+            _print_generate_result(gen_result)
+            return _exit_code_from_errors(gen_result.errors)
+
+        if args.source is None:
+            parser.error("collect/analyze モードでは --source が必須です。")
+            return 2
+
         if args.mode == "collect":
             dataset = run_rainfall_collect(
                 config,
@@ -202,6 +227,21 @@ def _print_analyze_result(result) -> None:
             print(f"chart={path}", file=sys.stderr)
     if result.dataset.errors:
         for error in result.dataset.errors:
+            print(f"error={error}", file=sys.stderr)
+
+
+def _print_generate_result(result) -> None:
+    print(f"parquet_entries={len(result.entries)}", file=sys.stderr)
+    print(f"complete={len(result.entries) - len(result.incomplete_entries)}", file=sys.stderr)
+    print(f"incomplete={len(result.incomplete_entries)}", file=sys.stderr)
+    if result.excel_paths:
+        for path in result.excel_paths:
+            print(f"excel={path}", file=sys.stderr)
+    if result.chart_paths:
+        for path in result.chart_paths:
+            print(f"chart={path}", file=sys.stderr)
+    if result.errors:
+        for error in result.errors:
             print(f"error={error}", file=sys.stderr)
 
 

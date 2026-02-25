@@ -19,6 +19,18 @@ import pandas as pd
 
 matplotlib.use("Agg")  # GUIバックエンドを使わない
 
+# 日本語フォント設定 (Windows: MS Gothic / Yu Gothic, macOS: Hiragino, Linux: IPAGothic)
+import platform as _platform
+
+_os_name = _platform.system()
+if _os_name == "Windows":
+    matplotlib.rcParams["font.family"] = ["MS Gothic", "Yu Gothic", "Meiryo", "sans-serif"]
+elif _os_name == "Darwin":
+    matplotlib.rcParams["font.family"] = ["Hiragino Sans", "Hiragino Kaku Gothic Pro", "sans-serif"]
+else:
+    matplotlib.rcParams["font.family"] = ["IPAGothic", "IPAPGothic", "Noto Sans CJK JP", "sans-serif"]
+matplotlib.rcParams["axes.unicode_minus"] = False
+
 # ---------------------------------------------------------------------------
 # 指標定義
 # ---------------------------------------------------------------------------
@@ -135,7 +147,11 @@ def export_rainfall_charts(
     if annual_max_df is None or annual_max_df.empty:
         return []
 
-    out_dir = Path(output_dir)
+    # 観測所ごとのサブディレクトリ
+    safe_station_name = str(station_name).replace("/", "_").replace("\\", "_") if station_name else ""
+    safe_station_key = str(station_key).replace("/", "_").replace("\\", "_")
+    subdir_name = f"{safe_station_name}_{safe_station_key}" if safe_station_name else safe_station_key
+    out_dir = Path(output_dir) / subdir_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 時系列を datetime インデックスにしておく
@@ -173,12 +189,19 @@ def export_rainfall_charts(
         # 累加雨量 (切り取り範囲先頭からの累積)
         window["累加雨量(mm)"] = window[rainfall_col].cumsum()
 
-        # ファイル名
+        # 品質情報を追加
+        if "品質" in ts.columns:
+            window["品質"] = ts["品質"].reindex(window.index).fillna("正常")
+        else:
+            window["品質"] = "正常"
+
+        # ファイル名（サブディレクトリ内なので station_key プレフィックス不要）
         safe_name = metric_raw.replace("/", "_")
-        filename = f"{station_key}_{year}_{safe_name}.png"
+        filename = f"{year}_{safe_name}.png"
         output_path = out_dir / filename
 
-        title = f"{station_name} {year}年 {metric_raw} 年最大雨量" if station_name else f"{station_key} {year}年 {metric_raw} 年最大雨量"
+        title_metric = metric_raw.replace("雨量", "最大雨量")
+        title = f"{station_name} {year}年 {title_metric}" if station_name else f"{station_key} {year}年 {title_metric}"
 
         _render_chart(
             window=window,
@@ -198,9 +221,41 @@ def export_rainfall_charts(
 # ---------------------------------------------------------------------------
 
 # カラー定義
-_BAR_COLOR = "#4A90D9"
+_BAR_COLOR = "#2E6EB5"
 _LINE_COLOR = "#E74C3C"
 _PEAK_LINE_COLOR = "#2ECC71"
+_MISSING_COLOR = "#CCCCCC"
+
+
+def _nice_step(max_value: float, n_ticks: int) -> float:
+    """max_value を n_ticks 分割するきりのいいステップ値を返す。
+
+    例: max_value=370, n_ticks=5 → step=100 (0, 100, 200, 300, 400)
+    """
+    if max_value <= 0 or n_ticks <= 1:
+        return max(max_value, 1.0)
+    raw = max_value / (n_ticks - 1)
+    import math
+    magnitude = 10 ** math.floor(math.log10(raw)) if raw > 0 else 1
+    normalized = raw / magnitude
+    if normalized <= 1:
+        nice = 1
+    elif normalized <= 2:
+        nice = 2
+    elif normalized <= 5:
+        nice = 5
+    else:
+        nice = 10
+    return nice * magnitude
+
+
+def _hour_label(dt: pd.Timestamp) -> str:
+    """datetime の hour を 1〜24 表記に変換する。
+
+    1時間累加雨量の慣例に従い、0時 → 24 と表示する。
+    """
+    h = dt.hour
+    return "24" if h == 0 else f"{h}"
 
 
 def _render_chart(
@@ -213,22 +268,35 @@ def _render_chart(
     output_path: Path,
 ) -> None:
     """2軸複合チャートを描画してPNG保存する。"""
+    import numpy as np
+
     fig, ax1 = plt.subplots(figsize=(14, 6))
 
     times = window.index
     rainfall = window[rainfall_col].values
     cumulative = window["累加雨量(mm)"].values
 
-    # --- 左軸: 時刻雨量 (棒グラフ) ---
-    bar_width = timedelta(hours=0.8)
-    ax1.bar(times, rainfall, width=bar_width, color=_BAR_COLOR, alpha=0.7, label="時間雨量", zorder=2)
-    ax1.set_xlabel("観測時刻", fontsize=11)
+    # --- 欠測帯の描画 (背景灰色帯) ---
+    if "品質" in window.columns:
+        half_h = timedelta(minutes=30)
+        missing_drawn = False
+        for dt_idx in times:
+            if str(window.at[dt_idx, "品質"]) == "欠測":
+                ax1.axvspan(
+                    dt_idx - half_h, dt_idx + half_h,
+                    color=_MISSING_COLOR, alpha=0.3, zorder=0,
+                    label="欠測" if not missing_drawn else None,
+                )
+                missing_drawn = True
+
+    # --- 左軸: 時刻雨量 (棒グラフ・隙間なし) ---
+    bar_width = timedelta(hours=1)
+    ax1.bar(times, rainfall, width=bar_width, color=_BAR_COLOR, edgecolor="black", linewidth=0.5, alpha=0.85, label="時間雨量", zorder=2)
     ax1.set_ylabel("時間雨量 (mm)", color=_BAR_COLOR, fontsize=11)
     ax1.tick_params(axis="y", labelcolor=_BAR_COLOR)
 
     # Y軸の上限を少し余裕をもたせる
-    max_rainfall = max(rainfall) if len(rainfall) > 0 else 1
-    ax1.set_ylim(0, max_rainfall * 1.3 if max_rainfall > 0 else 1)
+    max_rainfall = float(max(rainfall)) if len(rainfall) > 0 else 1.0
 
     # --- 右軸: 累加雨量 (折れ線グラフ) ---
     ax2 = ax1.twinx()
@@ -236,16 +304,47 @@ def _render_chart(
     ax2.set_ylabel("累加雨量 (mm)", color=_LINE_COLOR, fontsize=11)
     ax2.tick_params(axis="y", labelcolor=_LINE_COLOR)
 
-    max_cumulative = max(cumulative) if len(cumulative) > 0 else 1
-    ax2.set_ylim(0, max_cumulative * 1.1 if max_cumulative > 0 else 1)
+    max_cumulative = float(max(cumulative)) if len(cumulative) > 0 else 1.0
+
+    # --- 両軸の目盛を手動設定して揃える ---
+    n_divisions = 6  # 0を含めて7目盛
+    left_step = _nice_step(max_rainfall * 1.3, n_divisions + 1)
+    right_step = _nice_step(max_cumulative * 1.1, n_divisions + 1)
+    left_ticks = [left_step * i for i in range(n_divisions + 1)]
+    right_ticks = [right_step * i for i in range(n_divisions + 1)]
+    ax1.set_yticks(left_ticks)
+    ax1.set_ylim(0, left_ticks[-1])
+    ax2.set_yticks(right_ticks)
+    ax2.set_ylim(0, right_ticks[-1])
 
     # --- ピーク時刻マーカー ---
     ax1.axvline(x=event_dt, color=_PEAK_LINE_COLOR, linestyle="--", linewidth=1.5, label="ピーク時刻", zorder=4)
 
-    # --- X軸設定 ---
+    # --- X軸設定: 1〜24時表記、回転なし ---
     ax1.xaxis.set_major_locator(mdates.HourLocator(interval=label_interval))
-    ax1.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d\n%H:%M"))
-    plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha="right", fontsize=8)
+    ax1.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda x, _: _hour_label(mdates.num2date(x)))  # type: ignore[arg-type]
+    )
+    plt.setp(ax1.xaxis.get_majorticklabels(), rotation=0, ha="center", fontsize=8)
+    ax1.set_xlabel("時刻", fontsize=11)
+
+    # --- 日付境界線 (24時の棒と1時の棒の境界 = 00:30 位置) ---
+    window_start = times.min()
+    window_end = times.max()
+    first_midnight = (window_start + timedelta(days=1)).normalize()
+    dt = first_midnight
+    boundary_offset = timedelta(minutes=30)
+    while dt <= window_end:
+        boundary = dt + boundary_offset
+        ax1.axvline(x=boundary, color="black", linewidth=1.0, zorder=1)
+        ax1.text(
+            boundary, ax1.get_ylim()[1] * 0.97,
+            dt.strftime("%m/%d"),
+            ha="left", va="top", fontsize=8, fontweight="bold",
+            bbox={"facecolor": "white", "alpha": 0.7, "edgecolor": "none", "pad": 1},
+            zorder=5,
+        )
+        dt += timedelta(days=1)
 
     # --- タイトル・凡例 ---
     ax1.set_title(title, fontsize=14, fontweight="bold", pad=12)

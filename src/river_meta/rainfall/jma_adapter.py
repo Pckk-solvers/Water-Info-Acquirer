@@ -125,7 +125,7 @@ def fetch_jma_rainfall(
             continue
 
         station_name = station.station_name if station else ""
-        station_key = station.station_key if station else str(block_no)
+        station_key = station.station_key if station else f"{prec_no}_{block_no}"
 
         for row in df.to_dict(orient="records"):
             if _is_cancelled(should_stop):

@@ -7,6 +7,7 @@ from .analysis import (
 from .build_station_index import build_jma_station_index
 from .chart_exporter import export_rainfall_charts
 from .excel_exporter import export_station_rainfall_excel
+from .parquet_store import ParquetEntry, find_missing_months, scan_parquet_dir
 from .jma_adapter import fetch_jma_rainfall
 from .models import (
     JMAStationInput,
@@ -41,6 +42,9 @@ __all__ = [
     "year_to_japanese_era",
     "export_rainfall_charts",
     "export_consolidated_rainfall_excel",
+    "ParquetEntry",
+    "scan_parquet_dir",
+    "find_missing_months",
     "JMAStationInput",
     "RainfallDataset",
     "RainfallQuery",
