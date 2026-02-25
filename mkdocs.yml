@@ -45,6 +45,7 @@ nav:
   - 開発者向け:
       - 概要: dev/index.md
       - アーキテクチャ概要: dev/architecture.md
+      - river_meta 雨量共通フォーマット化: dev/river-meta-rainfall-unified-design.md
       - PyInstallerビルド: dev/build-pyinstaller.md
       - リリース手順: dev/release-process.md
       - GitHub Pages公開: dev/github-pages.md

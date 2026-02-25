@@ -1,15 +1,15 @@
 """設定ファイル読み込みユーティリティ"""
 
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
 import yaml
 
-from ..logger.app_logger import get_logger
 from .path_utils import get_project_root
 
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def get_default_config_path() -> Path:

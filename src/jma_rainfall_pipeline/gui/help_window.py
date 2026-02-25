@@ -1,10 +1,7 @@
 """ヘルプウィンドウ"""
 import tkinter as tk
 from tkinter import ttk, scrolledtext
-from jma_rainfall_pipeline.logger.app_logger import get_logger
 from src.app_names import get_module_title
-
-logger = get_logger(__name__)
 
 
 class HelpWindow:

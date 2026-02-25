@@ -4,12 +4,13 @@ import platform
 import subprocess
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
 from datetime import datetime, timedelta, time
 from pathlib import Path
+from time import perf_counter
+from tkinter import filedialog, messagebox, ttk
 from typing import Dict, List, Set, Tuple, TYPE_CHECKING
 
-from jma_rainfall_pipeline.logger.app_logger import get_logger
+from jma_rainfall_pipeline.logger.app_logger import setup_logging
 from jma_rainfall_pipeline.utils.config_loader import (
     get_output_directories,
 )
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
     # 型チェック時のみインポート（実行時は遅延インポートで起動を軽くする）
     pass
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class BrowseWindow(ttk.Frame):
@@ -43,6 +44,8 @@ class BrowseWindow(ttk.Frame):
         self.interval_var = tk.StringVar()
         self.csv_output_var = tk.BooleanVar(value=False)  # CSV出力フラグ（初期状態はFalse）
         self.excel_output_var = tk.BooleanVar(value=True)  # Excel出力フラグ（初期状態はTrue）
+        self.log_output_var = tk.BooleanVar(value=True)  # ログ出力フラグ（初期状態はTrue）
+        self.log_level_var = tk.StringVar(value="INFO")  # ログレベル
         self.status_var = tk.StringVar(value="準備完了")
         self.custom_output_dir_var = tk.StringVar(value="")
         self.output_dir_display_var = tk.StringVar(value="未指定 (設定ファイルの出力先を使用)")
@@ -128,6 +131,24 @@ class BrowseWindow(ttk.Frame):
             text="Excelを出力",
             variable=self.excel_output_var
         ).pack(side=tk.LEFT, padx=5, pady=5)
+
+        ttk.Checkbutton(
+            checkbox_frame,
+            text="ログを出力",
+            variable=self.log_output_var,
+            command=self._update_log_level_state,
+        ).pack(side=tk.LEFT, padx=5, pady=5)
+
+        ttk.Label(checkbox_frame, text="ログレベル").pack(side=tk.LEFT, padx=(12, 4), pady=5)
+        self.log_level_combo = ttk.Combobox(
+            checkbox_frame,
+            textvariable=self.log_level_var,
+            values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            width=10,
+            state="readonly",
+        )
+        self.log_level_combo.pack(side=tk.LEFT, padx=5, pady=5)
+        self._update_log_level_state()
 
         path_frame = ttk.Frame(output_frame)
         path_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -274,24 +295,6 @@ class BrowseWindow(ttk.Frame):
             "excel_dir": excel_dir,
             "log_file": log_file,
         }
-
-    def _configure_custom_log_handler(self, log_file: Path) -> logging.Handler:
-        root_logger = logging.getLogger()
-        handler = logging.FileHandler(log_file, encoding="utf-8")
-        handler.setLevel(logging.INFO)
-
-        formatter = None
-        for existing in root_logger.handlers:
-            formatter = getattr(existing, "formatter", None)
-            if formatter:
-                break
-
-        if formatter is None:
-            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-        handler.setFormatter(formatter)
-        root_logger.addHandler(handler)
-        return handler
 
     def _load_prefectures_async(self) -> None:
         """都道府県一覧の取得をバックグラウンドで行い、起動をブロックしない。"""
@@ -477,8 +480,6 @@ class BrowseWindow(ttk.Frame):
             self._set_status("観測所が選択されていません")
             return
 
-        from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
-
         output_paths = self._get_effective_output_paths()
         csv_dir: Path = output_paths["csv_dir"]
         excel_dir: Path = output_paths["excel_dir"]
@@ -487,27 +488,42 @@ class BrowseWindow(ttk.Frame):
         csv_dir.mkdir(parents=True, exist_ok=True)
         if self.excel_output_var.get():
             excel_dir.mkdir(parents=True, exist_ok=True)
-        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.log_output_var.get():
+            log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        use_custom_output = bool(self.custom_output_dir_var.get().strip())
-        custom_log_handler: logging.Handler | None = None
-        if use_custom_output:
-            try:
-                custom_log_handler = self._configure_custom_log_handler(log_file_path)
-            except Exception as exc:
-                logger.warning("Failed to attach custom log handler: %s", exc)
-                custom_log_handler = None
+        # 実行時にログ出力先を確定して初期化する。
+        # これにより、ユーザー指定の出力フォルダへログを合わせられる。
+        try:
+            setup_logging(
+                log_file_override=log_file_path,
+                level_override=self.log_level_var.get(),
+                enable_log_output=self.log_output_var.get(),
+                logger_scope="jma",
+            )
+        except Exception as exc:
+            logging.basicConfig(level=logging.INFO)
+            logger.warning("ログ初期化に失敗しました。標準設定で続行します: %s", exc)
 
         self._set_status("データの取得を開始しました。処理中です…")
         self._set_fetch_enabled(False)
+        started = perf_counter()
         try:
+            from jma_rainfall_pipeline.controller.weather_data_controller import WeatherDataController
+
+            selected_preview = ", ".join([f"{pref}-{block}-{method}" for pref, block, method in valid_stations[:5]])
+            if len(valid_stations) > 5:
+                selected_preview += ", ..."
             logger.info(
-                "Fetching weather data for %s stations from %s to %s with %s interval",
+                "取得ジョブ開始: 観測所=%s, 期間=%s～%s, 間隔=%s, 出力(csv=%s, excel=%s, log=%s)",
                 len(valid_stations),
                 start,
                 end,
                 interval_option,
+                csv_dir,
+                excel_dir if self.excel_output_var.get() else "disabled",
+                log_file_path if self.log_output_var.get() else "disabled",
             )
+            logger.info("対象観測所(先頭): %s", selected_preview if selected_preview else "なし")
             controller = WeatherDataController(interval=interval)
             controller.fetch_and_export_data(
                 valid_stations,
@@ -518,7 +534,8 @@ class BrowseWindow(ttk.Frame):
                 export_excel=self.excel_output_var.get(),
                 excel_output_dir=excel_dir,
             )
-            logger.info("Weather data fetch and export completed successfully")
+            elapsed = perf_counter() - started
+            logger.info("取得ジョブ完了: 観測所=%s, 経過秒=%.1f", len(valid_stations), elapsed)
 
             current_time = datetime.now().timestamp()
             # Get files from appropriate directories based on output settings
@@ -539,7 +556,8 @@ class BrowseWindow(ttk.Frame):
                     output_info.append(f"CSV出力先: {csv_dir}")
                 if self.excel_output_var.get():
                     output_info.append(f"Excel出力先: {excel_dir}")
-                output_info.append(f"ログ出力先: {log_file_path}")
+                if self.log_output_var.get():
+                    output_info.append(f"ログ出力先: {log_file_path}")
 
                 message = (
                     f"以下のファイルをエクスポートしました:\n\n{files_list}\n\n" +
@@ -551,7 +569,8 @@ class BrowseWindow(ttk.Frame):
                     output_info.append(f"CSV出力先: {csv_dir}")
                 if self.excel_output_var.get():
                     output_info.append(f"Excel出力先: {excel_dir}")
-                output_info.append(f"ログ出力先: {log_file_path}")
+                if self.log_output_var.get():
+                    output_info.append(f"ログ出力先: {log_file_path}")
 
                 if output_info:
                     message = (
@@ -573,6 +592,8 @@ class BrowseWindow(ttk.Frame):
                     self._open_output_directory(str(log_file_path.parent))
             self._set_status("データの取得とエクスポートが完了しました")
         except Exception as exc:  # pragma: no cover - GUIで例外ダイアログを表示
+            elapsed = perf_counter() - started
+            logger.exception("取得ジョブ失敗: 経過秒=%.1f", elapsed)
             show_error(
                 self.master,
                 "データ取得エラー",
@@ -581,10 +602,6 @@ class BrowseWindow(ttk.Frame):
             )
             self._set_status("データ取得中にエラーが発生しました")
         finally:
-            if custom_log_handler:
-                root_logger = logging.getLogger()
-                root_logger.removeHandler(custom_log_handler)
-                custom_log_handler.close()
             self._update_fetch_button_state()
 
     def _set_quick_range(self, preset: str) -> None:
@@ -615,6 +632,12 @@ class BrowseWindow(ttk.Frame):
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)
         self.update_idletasks()
+
+    def _update_log_level_state(self) -> None:
+        if self.log_output_var.get():
+            self.log_level_combo.configure(state="readonly")
+        else:
+            self.log_level_combo.configure(state="disabled")
 
     def _show_pref_overlay(self, message: str) -> None:
         """都道府県リスト上にオーバーレイを表示する。"""
