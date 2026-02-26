@@ -9,9 +9,15 @@
 """
 
 import sys
+from pathlib import Path
 
 
 def main() -> int:
+    # 独自のsrcディレクトリをPYTHONPATH的に追加
+    src_dir = Path(__file__).parent / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+        
     # --gui フラグがあるか、引数がなければGUIモード
     args = sys.argv[1:]
     if not args or args == ["--gui"]:

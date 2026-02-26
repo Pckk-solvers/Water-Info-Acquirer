@@ -8,6 +8,7 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
+import json
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
@@ -16,18 +17,14 @@ from river_meta.services.rainfall import (
     RainfallGenerateInput,
     RainfallRunInput,
     run_rainfall_analyze,
-    run_rainfall_collect,
     run_rainfall_generate,
 )
+from pathlib import Path
+from .gui_station_selector import StationSelector
+from .tooltip import ToolTip
 
 
 Event = tuple[str, object]
-
-SOURCE_LABEL_TO_TOKEN = {
-    "気象庁（JMA）": "jma",
-    "水文水質データベース": "water_info",
-    "気象庁 + 水文水質データベース": "both",
-}
 
 
 # =========================================================================
@@ -39,13 +36,18 @@ class RainfallGuiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Rainfall 雨量データツール")
-        self.geometry("920x700")
-        self.minsize(860, 640)
+        self.geometry("1180x780")
+        self.minsize(1020, 680)
         self._event_queue: queue.Queue[Event] = queue.Queue()
         self._running = False
         self._stop_event: threading.Event | None = None
+        self._close_requested = False
+        self._tooltips: list[ToolTip] = []
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._sync_run_button_label()
         self.after(120, self._drain_events)
+        self.after_idle(self._stabilize_initial_layout)
 
     # -----------------------------------------------------------------
     # UI 構築
@@ -55,7 +57,7 @@ class RainfallGuiApp(tk.Tk):
         root = ttk.Frame(self, padding=10)
         root.pack(fill="both", expand=True)
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(1, weight=1)   # Notebook が伸縮
+        root.rowconfigure(1, weight=4)   # Notebook が主に伸縮
         root.rowconfigure(3, weight=1)   # ログも伸縮
 
         # --- タイトル ---
@@ -82,15 +84,18 @@ class RainfallGuiApp(tk.Tk):
         ttk.Label(footer, text="出力先フォルダ").grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.output_entry = ttk.Entry(footer, textvariable=self.output_dir)
         self.output_entry.grid(row=0, column=1, sticky="ew")
-        ttk.Button(footer, text="...", width=3, command=self._browse_output).grid(
-            row=0, column=2, padx=(4, 0),
+        self.browse_btn = ttk.Button(
+            footer, text="...", width=3, command=self._browse_output, style="StationColor.TButton",
         )
+        self.browse_btn.grid(row=0, column=2, padx=(4, 0))
 
         btn_frame = ttk.Frame(footer)
         btn_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        self.run_btn = ttk.Button(btn_frame, text="実行", command=self._run)
+        self.run_btn = ttk.Button(btn_frame, text="実行", command=self._run, style="StationColor.TButton")
         self.run_btn.pack(side="left")
-        self.stop_btn = ttk.Button(btn_frame, text="停止", command=self._stop, state="disabled")
+        self.stop_btn = ttk.Button(
+            btn_frame, text="停止", command=self._stop, state="disabled", style="StationColor.TButton",
+        )
         self.stop_btn.pack(side="left", padx=(8, 0))
         self.status = tk.StringVar(value="待機中")
         ttk.Label(btn_frame, text="状態:").pack(side="left", padx=(24, 4))
@@ -101,17 +106,53 @@ class RainfallGuiApp(tk.Tk):
         log_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, wrap="none", height=8, font=("Consolas", 9))
+        self.log_text = tk.Text(log_frame, wrap="none", height=6, font=("Consolas", 9))
         self.log_text.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         scroll.grid(row=0, column=1, sticky="ns")
-        self.log_text.configure(yscrollcommand=scroll.set)
+        xscroll = ttk.Scrollbar(log_frame, orient="horizontal", command=self.log_text.xview)
+        xscroll.grid(row=1, column=0, sticky="ew")
+        self.log_text.configure(yscrollcommand=scroll.set, xscrollcommand=xscroll.set)
+        self._setup_tooltips()
+
+    def _setup_tooltips(self) -> None:
+        def run_tip_text() -> str:
+            idx = self.notebook.index(self.notebook.select())
+            if idx == 0:
+                return "現在の設定でデータ取得を開始します。"
+            return "現在のParquetデータから整理・出力を実行します。"
+
+        self._tooltips.extend(
+            [
+                ToolTip(self.run_btn, text_fn=run_tip_text),
+                ToolTip(self.stop_btn, "実行中の処理に停止要求を送ります。"),
+            ]
+        )
+
+    def _stabilize_initial_layout(self) -> None:
+        """初回描画時の欠け対策として、レイアウトを1回再確定する。"""
+        try:
+            self.update_idletasks()
+            self.collect_tab.refresh_layout()
+            self.generate_tab.refresh_layout()
+            width = self.winfo_width()
+            height = self.winfo_height()
+            if width > 10 and height > 10:
+                # 一部環境で初回描画欠けが出るため、1pxだけサイズを揺らして再描画を促す
+                self.geometry(f"{width + 1}x{height}")
+                self.geometry(f"{width}x{height}")
+            self.update_idletasks()
+        except tk.TclError:
+            pass
 
     # -----------------------------------------------------------------
     # タブ切替
     # -----------------------------------------------------------------
 
     def _on_tab_changed(self, _event: tk.Event) -> None:  # type: ignore[type-arg]
+        self._sync_run_button_label()
+        if self._running:
+            return
         idx = self.notebook.index(self.notebook.select())
         if idx == 1:  # 整理タブ選択時 → Parquetスキャン
             output_dir = self.output_dir.get().strip()
@@ -132,35 +173,47 @@ class RainfallGuiApp(tk.Tk):
             return
 
         idx = self.notebook.index(self.notebook.select())
+        collect_config: RainfallRunInput | None = None
+        if idx == 0:
+            try:
+                collect_config = self.collect_tab.build_run_input()
+            except ValueError as exc:
+                self.status.set("入力エラー")
+                messagebox.showerror("入力エラー", str(exc))
+                return
+        else:
+            if self.generate_tab.use_selected_station_filter() and not self.generate_tab.get_target_stations():
+                self.status.set("入力エラー")
+                messagebox.showerror(
+                    "入力エラー",
+                    "「選択行の観測所のみ出力」が有効ですが、対象行が選択されていません。",
+                )
+                return
+
         self._stop_event = threading.Event()
         self._running = True
-        self.run_btn.configure(state="disabled")
-        self.stop_btn.configure(state="normal")
-        self.status.set("実行中")
+        self._set_running_ui(True)
+        self.status.set("実行中（データ取得）" if idx == 0 else "実行中（整理・出力）")
 
         if idx == 0:
-            self._run_collect(output_dir)
+            self._run_collect(output_dir, collect_config)
         else:
             self._run_generate(output_dir)
 
-    def _run_collect(self, output_dir: str) -> None:
-        try:
-            config = self.collect_tab.build_run_input()
-        except ValueError as exc:
-            messagebox.showerror("入力エラー", str(exc))
+    def _run_collect(self, output_dir: str, config: RainfallRunInput | None) -> None:
+        if config is None:
+            self.status.set("入力エラー")
             self._finalize_ui()
             return
-
         self._append_log("[データ取得] 実行開始")
 
         def worker() -> None:
             try:
                 result = run_rainfall_analyze(
                     config,
-                    export_excel=self.generate_tab.export_excel.get(),
-                    export_chart=self.generate_tab.export_chart.get(),
+                    export_excel=False,
+                    export_chart=False,
                     output_dir=output_dir,
-                    decimal_places=self.generate_tab.get_decimal_places(),
                     log=self._log_from_worker,
                     should_stop=self._stop_event.is_set,
                 )
@@ -174,12 +227,15 @@ class RainfallGuiApp(tk.Tk):
 
     def _run_generate(self, output_dir: str) -> None:
         self._append_log("[整理・出力] 実行開始")
+        target_stations = self.generate_tab.get_target_stations()
+        if target_stations:
+            self._append_log(f"[整理・出力] 観測所フィルタ: {len(target_stations)}件")
 
         gen_config = RainfallGenerateInput(
             parquet_dir=output_dir,
             export_excel=self.generate_tab.export_excel.get(),
             export_chart=self.generate_tab.export_chart.get(),
-            decimal_places=self.generate_tab.get_decimal_places(),
+            target_stations=target_stations,
         )
 
         def worker() -> None:
@@ -209,66 +265,102 @@ class RainfallGuiApp(tk.Tk):
     # -----------------------------------------------------------------
 
     def _on_collect_done(self, result) -> None:
-        records = len(result.dataset.records)
-        self._append_log(f"[データ取得] 完了 — {len(result.excel_paths)}件 Excel, {len(result.chart_paths)}件 グラフ")
-        for path in result.excel_paths:
-            self._append_log(f"  Excel: {path}")
-        for path in result.chart_paths:
-            self._append_log(f"  グラフ: {path}")
-        for error in result.dataset.errors:
-            self._append_log(f"  [WARN] {self._translate_error(error)}")
+        notify_user = not self._close_requested
+        errors = [str(e) for e in result.dataset.errors]
+        cancelled = "cancelled" in errors
+        translated_errors = [self._translate_error(e) for e in errors if e != "cancelled"]
 
-        details = []
-        if result.excel_paths:
-            details.append(f"Excel: {len(result.excel_paths)}件")
-        if result.chart_paths:
-            details.append(f"グラフ: {len(result.chart_paths)}枚")
-        errors = result.dataset.errors
-
-        if errors and not details:
-            self.status.set("エラー")
-            messagebox.showerror("データ取得", "\n".join(self._translate_error(e) for e in errors))
-        elif errors:
-            self.status.set("部分成功")
-        elif self._stop_event and self._stop_event.is_set():
+        if cancelled:
+            self._append_log("[データ取得] 停止")
+            for error in translated_errors:
+                self._append_log(f"  [WARN] {error}")
             self.status.set("停止完了")
+            if notify_user:
+                messagebox.showinfo("データ取得", "停止要求により処理を中断しました。")
+            return
+
+        self._append_log("[データ取得] 完了")
+        for error in translated_errors:
+            self._append_log(f"  [WARN] {error}")
+
+        if translated_errors:
+            self.status.set("エラー")
+            if notify_user:
+                messagebox.showerror("データ取得", "\n".join(translated_errors))
         else:
             self.status.set("完了")
-            messagebox.showinfo("データ取得", "\n".join(details) if details else "完了しました。")
+            if notify_user:
+                messagebox.showinfo("データ取得", "完了しました。")
 
     def _on_generate_done(self, result) -> None:
+        notify_user = not self._close_requested
+        excel_paths = [p for p in result.excel_paths if Path(p).exists()]
+        chart_paths = [p for p in result.chart_paths if Path(p).exists()]
+        errors = [str(e) for e in result.errors]
+        cancelled = "cancelled" in errors
+        visible_errors = [e for e in errors if e != "cancelled"]
+
         total = len(result.entries)
         complete = total - len(result.incomplete_entries)
-        self._append_log(f"[整理・出力] 完了 — 全{total}エントリ / 完全{complete} / 不完全{len(result.incomplete_entries)}")
-        for path in result.excel_paths:
-            self._append_log(f"  Excel: {path}")
-        for path in result.chart_paths:
-            self._append_log(f"  グラフ: {path}")
-        for error in result.errors:
+        if cancelled:
+            self._append_log(
+                f"[整理・出力] 停止 — 全{total}エントリ / 完全{complete} / 不完全{len(result.incomplete_entries)}"
+            )
+        else:
+            self._append_log(
+                f"[整理・出力] 完了 — 全{total}エントリ / 完全{complete} / 不完全{len(result.incomplete_entries)}"
+            )
+            for path in excel_paths:
+                self._append_log(f"  Excel: {path}")
+            for path in chart_paths:
+                self._append_log(f"  グラフ: {path}")
+        for error in visible_errors:
             self._append_log(f"  [WARN] {error}")
 
         details = [
             f"Parquetエントリ: {total}件（完全: {complete}）",
         ]
-        if result.excel_paths:
-            details.append(f"Excel: {len(result.excel_paths)}件")
-        if result.chart_paths:
-            details.append(f"グラフ: {len(result.chart_paths)}枚")
+        if excel_paths:
+            details.append(f"Excel: {len(excel_paths)}件")
+        if chart_paths:
+            details.append(f"グラフ: {len(chart_paths)}枚")
         if result.incomplete_entries:
             details.append(f"不完全年（スキップ）: {len(result.incomplete_entries)}件")
 
-        if result.errors and not result.excel_paths and not result.chart_paths:
-            self.status.set("エラー")
-            messagebox.showerror("整理・出力", "\n".join(result.errors))
-        elif self._stop_event and self._stop_event.is_set():
+        if cancelled:
             self.status.set("停止完了")
+            if notify_user:
+                output_details = []
+                if excel_paths:
+                    output_details.append(f"Excel: {len(excel_paths)}件")
+                if chart_paths:
+                    output_details.append(f"グラフ: {len(chart_paths)}枚")
+                if output_details:
+                    messagebox.showinfo(
+                        "整理・出力",
+                        "停止要求により処理を中断しました。\n中断前に一部出力済みです。\n" + "\n".join(output_details),
+                    )
+                else:
+                    messagebox.showinfo("整理・出力", "停止要求により処理を中断しました。")
+        elif visible_errors and not excel_paths and not chart_paths:
+            self.status.set("エラー")
+            if notify_user:
+                messagebox.showerror("整理・出力", "\n".join(visible_errors))
+        elif visible_errors:
+            self.status.set("部分成功")
+            msg_lines = details + ["", "エラー詳細:"] + visible_errors[:8]
+            if len(visible_errors) > 8:
+                msg_lines.append(f"... 他 {len(visible_errors) - 8} 件")
+            if notify_user:
+                messagebox.showwarning("整理・出力（部分成功）", "\n".join(msg_lines))
         else:
             self.status.set("完了")
-            messagebox.showinfo("整理・出力", "\n".join(details))
+            if notify_user:
+                messagebox.showinfo("整理・出力", "\n".join(details))
 
         # テーブル更新
         output_dir = self.output_dir.get().strip()
-        if output_dir:
+        if output_dir and not self._close_requested:
             self.generate_tab.scan(output_dir)
 
     # -----------------------------------------------------------------
@@ -286,19 +378,27 @@ class RainfallGuiApp(tk.Tk):
                 elif event == "done_generate":
                     self._on_generate_done(payload)
                 elif event == "error_exec":
-                    self._append_log(f"[ERROR] {payload}")
+                    formatted = self._format_exec_error(payload)
+                    self._append_log(f"[ERROR] {formatted}")
                     self.status.set("エラー")
-                    messagebox.showerror("実行エラー", str(payload))
+                    if not self._close_requested:
+                        messagebox.showerror("実行エラー", formatted)
                 elif event == "finalize":
                     self._finalize_ui()
         except queue.Empty:
             pass
-        self.after(120, self._drain_events)
+        try:
+            self.after(120, self._drain_events)
+        except tk.TclError:
+            # ウィンドウ破棄直後は after が失敗する
+            pass
 
     def _finalize_ui(self) -> None:
         self._running = False
-        self.run_btn.configure(state="normal")
-        self.stop_btn.configure(state="disabled")
+        self._set_running_ui(False)
+        self._sync_run_button_label()
+        if self._close_requested:
+            self.destroy()
 
     # -----------------------------------------------------------------
     # ヘルパー
@@ -309,12 +409,69 @@ class RainfallGuiApp(tk.Tk):
         if path:
             self.output_dir.set(path)
 
+    def _on_close(self) -> None:
+        if not self._running:
+            self.destroy()
+            return
+        if self._close_requested:
+            force = messagebox.askyesno(
+                "強制終了確認",
+                "停止待機中です。強制終了しますか？\n処理途中の結果は失われる可能性があります。",
+            )
+            if force:
+                self.destroy()
+            return
+        ok = messagebox.askyesno("終了確認", "実行中の処理を停止して終了しますか？")
+        if not ok:
+            return
+        self._close_requested = True
+        self.status.set("停止要求中（終了待機）")
+        self._stop()
+
+    def _sync_run_button_label(self) -> None:
+        idx = self.notebook.index(self.notebook.select())
+        if idx == 0:
+            self.run_btn.configure(text="データ取得を実行")
+        else:
+            self.run_btn.configure(text="整理・出力を実行")
+
+    def _set_running_ui(self, running: bool) -> None:
+        run_state = "disabled" if running else "normal"
+        stop_state = "normal" if running else "disabled"
+        entry_state = "disabled" if running else "normal"
+
+        self.run_btn.configure(state=run_state)
+        self.stop_btn.configure(state=stop_state)
+        self.output_entry.configure(state=entry_state)
+        self.browse_btn.configure(state=run_state)
+        if running:
+            self.notebook.state(["disabled"])
+        else:
+            self.notebook.state(["!disabled"])
+        self.collect_tab.set_enabled(not running)
+        self.generate_tab.set_enabled(not running)
+
     def _log_from_worker(self, message: str) -> None:
         self._event_queue.put(("log", message))
 
     def _append_log(self, message: str) -> None:
         self.log_text.insert("end", message.rstrip() + "\n")
         self.log_text.see("end")
+
+    @staticmethod
+    def _format_exec_error(error: object) -> str:
+        text = str(error)
+        lower = text.lower()
+        hints: list[str] = []
+        if "permission" in lower or "access is denied" in lower:
+            hints.append("出力先フォルダへの書き込み権限を確認してください。")
+        if "not found" in lower or "no such file" in lower:
+            hints.append("出力先フォルダや必要ファイルの存在を確認してください。")
+        if "timeout" in lower:
+            hints.append("ネットワーク状況を確認し、対象期間を短くして再実行してください。")
+        if not hints:
+            return text
+        return text + "\n\n対処のヒント:\n- " + "\n- ".join(hints)
 
     @staticmethod
     def _translate_error(error: str) -> str:
@@ -339,6 +496,9 @@ class CollectTab(ttk.Frame):
     def __init__(self, parent: ttk.Notebook) -> None:
         super().__init__(parent, padding=10)
         self.columnconfigure(1, weight=1)
+        self._enabled = True
+        self._source_buttons: list[ttk.Radiobutton] = []
+        self._tooltips: list[ToolTip] = []
         self._build()
 
     def _build(self) -> None:
@@ -347,50 +507,62 @@ class CollectTab(ttk.Frame):
         # --- 取得元 ---
         src_frame = ttk.LabelFrame(self, text="取得元", padding=8)
         src_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-        self.source = tk.StringVar(value="both")
+        self.source = tk.StringVar(value="jma")
         for i, (label, token) in enumerate([
             ("気象庁（JMA）", "jma"),
             ("水文水質データベース", "water_info"),
-            ("両方", "both"),
         ]):
-            ttk.Radiobutton(src_frame, text=label, variable=self.source, value=token).grid(
-                row=0, column=i, sticky="w", padx=(0, 16),
-            )
+            rb = ttk.Radiobutton(src_frame, text=label, variable=self.source, value=token)
+            rb.grid(row=0, column=i, sticky="w", padx=(0, 16))
+            self._source_buttons.append(rb)
+        self.source.trace_add("write", lambda *_: self._on_source_changed())
 
         # --- 対象年 ---
         year_frame = ttk.LabelFrame(self, text="対象年", padding=8)
         year_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         self.start_year = tk.StringVar(value=str(last_year))
         self.end_year = tk.StringVar(value=str(last_year))
-        ttk.Entry(year_frame, textvariable=self.start_year, width=8).pack(side="left")
+        self.start_year_entry = ttk.Entry(year_frame, textvariable=self.start_year, width=8)
+        self.start_year_entry.pack(side="left")
         ttk.Label(year_frame, text=" ～ ").pack(side="left")
-        ttk.Entry(year_frame, textvariable=self.end_year, width=8).pack(side="left")
+        self.end_year_entry = ttk.Entry(year_frame, textvariable=self.end_year, width=8)
+        self.end_year_entry.pack(side="left")
 
-        # --- 観測所指定 ---
+        # --- 観測所指定 (新UI) ---
         station_frame = ttk.LabelFrame(self, text="観測所指定", padding=8)
-        station_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-        station_frame.columnconfigure(1, weight=1)
-        ttk.Label(station_frame, text="都道府県（カンマ区切り）").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
-        self.pref_list = tk.StringVar(value="大阪,京都,兵庫,和歌山,奈良")
-        ttk.Entry(station_frame, textvariable=self.pref_list).grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Label(station_frame, text="観測所コード（カンマ区切り）").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
-        self.station_codes = tk.StringVar(value="")
-        ttk.Entry(station_frame, textvariable=self.station_codes).grid(row=1, column=1, sticky="ew", pady=4)
-
-        # --- JMAオプション ---
-        opt_frame = ttk.LabelFrame(self, text="JMAオプション", padding=8)
-        opt_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-        self.jma_log_output = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt_frame, text="JMAログ出力を有効化", variable=self.jma_log_output).pack(side="left")
-        self.jma_log_level = tk.StringVar(value="INFO")
-        ttk.Label(opt_frame, text="  レベル:").pack(side="left", padx=(16, 4))
-        ttk.Combobox(
-            opt_frame, textvariable=self.jma_log_level,
-            values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-            state="readonly", width=10,
-        ).pack(side="left")
+        station_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
+        self.rowconfigure(2, weight=1) # 観測所指定フレームを広げる
+        
+        jma_json = Path(__file__).resolve().parents[1] / "resources" / "jma_station_index.json"
+        wi_json = Path(__file__).resolve().parents[1] / "resources" / "waterinfo_station_index.json"
+        
+        self.station_selector = StationSelector(
+            station_frame,
+            jma_json_path=jma_json,
+            waterinfo_json_path=wi_json,
+        )
+        self.station_selector.pack(fill="both", expand=True)
 
     # -----------------------------------------------------------------
+
+    def _on_source_changed(self) -> None:
+        if hasattr(self, "station_selector"):
+            src = self.source.get()
+            if src in {"jma", "water_info"}:
+                self.station_selector.set_source(src)
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = enabled
+        state = "normal" if enabled else "disabled"
+        for rb in self._source_buttons:
+            rb.configure(state=state)
+        self.start_year_entry.configure(state=state)
+        self.end_year_entry.configure(state=state)
+        self.station_selector.set_enabled(enabled)
+
+    def refresh_layout(self) -> None:
+        self.update_idletasks()
+        self.station_selector.refresh_layout()
 
     def build_run_input(self) -> RainfallRunInput:
         """現在のUI状態から RainfallRunInput を構築する。"""
@@ -406,13 +578,12 @@ class CollectTab(ttk.Frame):
         except ValueError as exc:
             raise ValueError("対象年は整数で入力してください。") from exc
         if start_y > end_y:
-            start_y, end_y = end_y, start_y
+            raise ValueError("開始年は終了年以下で入力してください。")
         years = list(range(start_y, end_y + 1))
 
-        prefectures = self._parse_csv(self.pref_list.get())
-        codes = self._parse_csv(self.station_codes.get())
-        if not prefectures and not codes:
-            raise ValueError("都道府県または観測所コードのどちらかを入力してください。")
+        codes = self.station_selector.get_selected_codes()
+        if not codes:
+            raise ValueError("リストから観測所を選択するか、コードを直接入力してください。")
 
         jma_prefs: list[str] = []
         jma_codes: list[str] = []
@@ -420,13 +591,9 @@ class CollectTab(ttk.Frame):
         wi_codes: list[str] = []
 
         if source == "jma":
-            jma_prefs, jma_codes = prefectures, codes
+            jma_codes = codes
         elif source == "water_info":
-            wi_prefs, wi_codes = prefectures, codes
-        else:
-            jma_prefs = prefectures
-            wi_prefs = prefectures
-            jma_codes, wi_codes = self._split_codes(codes)
+            wi_codes = codes
 
         return RainfallRunInput(
             source=source,
@@ -436,27 +603,8 @@ class CollectTab(ttk.Frame):
             jma_station_codes=jma_codes,
             waterinfo_prefectures=wi_prefs,
             waterinfo_station_codes=wi_codes,
-            jma_log_level=self.jma_log_level.get().strip().upper() if source in {"jma", "both"} else None,
-            jma_enable_log_output=bool(self.jma_log_output.get()) if source in {"jma", "both"} else None,
             include_raw=False,
         )
-
-    @staticmethod
-    def _parse_csv(value: str) -> list[str]:
-        return [item.strip() for item in str(value).split(",") if item.strip()]
-
-    @staticmethod
-    def _split_codes(codes: list[str]) -> tuple[list[str], list[str]]:
-        jma: list[str] = []
-        wi: list[str] = []
-        for code in codes:
-            token = code.strip()
-            if token.isdigit() and len(token) >= 8:
-                wi.append(token)
-            else:
-                jma.append(token)
-        return jma, wi
-
 
 # =========================================================================
 # タブ2: 整理・出力
@@ -470,7 +618,48 @@ class GenerateTab(ttk.Frame):
         super().__init__(parent, padding=10)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)  # Treeview が伸縮
+        self._enabled = True
+        self._scan_running = False
+        self._pending_scan: tuple[str, bool] | None = None
+        self._entry_by_item_id: dict[str, object] = {}
+        self._jma_name_by_block: dict[str, str] = {}
+        self._waterinfo_name_by_id: dict[str, str] = {}
+        self._load_station_name_index()
+        self._tooltips: list[ToolTip] = []
         self._build()
+
+    def _load_station_name_index(self) -> None:
+        jma_json = Path(__file__).resolve().parents[1] / "resources" / "jma_station_index.json"
+        if jma_json.exists():
+            try:
+                with jma_json.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                by_block = data.get("by_block_no", {})
+                if isinstance(by_block, dict):
+                    for block_no, rows in by_block.items():
+                        if not isinstance(rows, list) or not rows:
+                            continue
+                        name = str(rows[0].get("station_name") or "").strip()
+                        if name:
+                            self._jma_name_by_block[str(block_no)] = name
+            except Exception:
+                pass
+
+        wi_json = Path(__file__).resolve().parents[1] / "resources" / "waterinfo_station_index.json"
+        if wi_json.exists():
+            try:
+                with wi_json.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                by_station_id = data.get("by_station_id", {})
+                if isinstance(by_station_id, dict):
+                    for sid, row in by_station_id.items():
+                        if not isinstance(row, dict):
+                            continue
+                        name = str(row.get("station_name") or "").strip()
+                        if name:
+                            self._waterinfo_name_by_id[str(sid)] = name
+            except Exception:
+                pass
 
     def _build(self) -> None:
         # --- ヒント ---
@@ -492,11 +681,10 @@ class GenerateTab(ttk.Frame):
         opt_frame.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         self.export_excel = tk.BooleanVar(value=True)
         self.export_chart = tk.BooleanVar(value=True)
-        self.decimal_places = tk.StringVar(value="2")
-        ttk.Checkbutton(opt_frame, text="Excel出力", variable=self.export_excel).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(opt_frame, text="降雨グラフPNG出力", variable=self.export_chart).pack(side="left", padx=(0, 16))
-        ttk.Label(opt_frame, text="小数桁数:").pack(side="left", padx=(16, 4))
-        ttk.Entry(opt_frame, textvariable=self.decimal_places, width=5).pack(side="left")
+        self.export_excel_check = ttk.Checkbutton(opt_frame, text="Excel出力", variable=self.export_excel)
+        self.export_excel_check.pack(side="left", padx=(0, 16))
+        self.export_chart_check = ttk.Checkbutton(opt_frame, text="降雨グラフPNG出力", variable=self.export_chart)
+        self.export_chart_check.pack(side="left", padx=(0, 16))
 
         # --- Parquetテーブル ---
         table_frame = ttk.LabelFrame(self, text="Parquetデータ状況", padding=4)
@@ -504,15 +692,19 @@ class GenerateTab(ttk.Frame):
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
 
-        columns = ("source", "station_key", "year", "months", "complete")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=8)
+        columns = ("source", "station_code", "station_name", "year", "months", "complete")
+        self.tree = ttk.Treeview(
+            table_frame, columns=columns, show="headings", height=8, selectmode="extended",
+        )
         self.tree.heading("source", text="データ元")
-        self.tree.heading("station_key", text="観測所キー")
+        self.tree.heading("station_code", text="観測所コード")
+        self.tree.heading("station_name", text="観測所")
         self.tree.heading("year", text="年")
         self.tree.heading("months", text="月数")
         self.tree.heading("complete", text="完全性")
         self.tree.column("source", width=100, anchor="center")
-        self.tree.column("station_key", width=140, anchor="center")
+        self.tree.column("station_code", width=140, anchor="center")
+        self.tree.column("station_name", width=200, anchor="w")
         self.tree.column("year", width=60, anchor="center")
         self.tree.column("months", width=60, anchor="center")
         self.tree.column("complete", width=80, anchor="center")
@@ -520,29 +712,120 @@ class GenerateTab(ttk.Frame):
         tree_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         tree_scroll.grid(row=0, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=tree_scroll.set)
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_selection_changed)
 
         # --- スキャンボタン ---
         btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=3, column=0, sticky="w")
-        ttk.Button(btn_frame, text="スキャン更新", command=self._manual_scan).pack(side="left")
+        btn_frame.grid(row=3, column=0, sticky="ew")
+        self.scan_btn = ttk.Button(
+            btn_frame, text="スキャン更新", command=self._manual_scan, style="StationColor.TButton",
+        )
+        self.scan_btn.pack(side="left")
+        self.clear_selection_btn = ttk.Button(
+            btn_frame, text="選択解除", command=self._clear_row_selection, style="StationColor.TButton",
+        )
+        self.clear_selection_btn.pack(side="left", padx=(8, 0))
+        self.use_selection_filter = tk.BooleanVar(value=False)
+        self.selection_filter_check = ttk.Checkbutton(
+            btn_frame,
+            text="選択行の観測所のみ出力",
+            variable=self.use_selection_filter,
+            command=self._update_target_summary,
+        )
+        self.selection_filter_check.pack(side="left", padx=(12, 0))
+        self.target_summary = tk.StringVar(
+            value="対象: 全観測所（完全データのみ出力／不完全年は自動スキップ）"
+        )
+        ttk.Label(btn_frame, textvariable=self.target_summary, foreground="#666").pack(side="left", padx=(12, 0))
         self.scan_status = tk.StringVar(value="")
-        ttk.Label(btn_frame, textvariable=self.scan_status, foreground="#666").pack(side="left", padx=(12, 0))
+        ttk.Label(btn_frame, textvariable=self.scan_status, foreground="#666").pack(side="right")
+        self._setup_tooltips()
+
+    def _setup_tooltips(self) -> None:
+        self._tooltips.extend(
+            [
+                ToolTip(self.scan_btn, "出力先の parquet/ を再スキャンして一覧を更新します。"),
+                ToolTip(
+                    self.selection_filter_check,
+                    "有効時は選択行の観測所だけを対象にします（どちらの場合も不完全年は自動スキップ）。",
+                ),
+            ]
+        )
 
     # -----------------------------------------------------------------
 
-    def scan(self, output_dir: str) -> None:
-        """Parquetディレクトリをスキャンしてテーブルを更新する。"""
-        from pathlib import Path
-        parquet_dir = Path(output_dir) / "parquet"
-        if parquet_dir.exists():
-            file_count = len(list(parquet_dir.glob("*.parquet")))
-            self.parquet_detect.set(f"✓ parquet/ 検出（{file_count}ファイル）")
-            self.parquet_detect_label.configure(foreground="#228B22")
+    def scan(self, output_dir: str, *, user_initiated: bool = False) -> None:
+        """Parquetディレクトリを非同期スキャンしてテーブルを更新する。"""
+        target = output_dir.strip()
+        if not target:
+            return
+        if self._scan_running:
+            self._pending_scan = (target, user_initiated)
+            self.scan_status.set("スキャン待機中...")
+            return
+        self._start_scan(target, user_initiated)
+
+    def _start_scan(self, output_dir: str, user_initiated: bool) -> None:
+        self._scan_running = True
+        self.scan_status.set("スキャン中...")
+        self.parquet_detect.set("スキャン中...")
+        self.parquet_detect_label.configure(foreground="#666")
+        self._apply_scan_button_state()
+
+        def worker() -> None:
+            try:
+                parquet_dir = Path(output_dir) / "parquet"
+                if parquet_dir.exists():
+                    file_count = sum(1 for _ in parquet_dir.glob("*.parquet"))
+                    detect_text = f"✓ parquet/ 検出（{file_count}ファイル）"
+                    detect_color = "#228B22"
+                else:
+                    detect_text = "✗ parquet/ が見つかりません"
+                    detect_color = "#CC0000"
+                entries = scan_parquet_dir(output_dir)
+                payload = ("ok", detect_text, detect_color, entries)
+            except Exception as exc:  # noqa: BLE001
+                payload = ("error", f"{type(exc).__name__}: {exc}")
+            try:
+                self.after(0, self._finish_scan, payload, user_initiated)
+            except tk.TclError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_scan(self, payload: tuple, user_initiated: bool) -> None:
+        self._scan_running = False
+        try:
+            kind = payload[0]
+            if kind == "ok":
+                _kind, detect_text, detect_color, entries = payload
+                self.parquet_detect.set(detect_text)
+                self.parquet_detect_label.configure(foreground=detect_color)
+                self._refresh_table(entries)
+            else:
+                _kind, message = payload
+                self.parquet_detect.set("✗ スキャンに失敗しました")
+                self.parquet_detect_label.configure(foreground="#CC0000")
+                self.scan_status.set("スキャン失敗")
+                if user_initiated and self._can_show_modal():
+                    messagebox.showerror("スキャンエラー", str(message))
+        finally:
+            next_scan = self._pending_scan
+            self._pending_scan = None
+            if next_scan is not None:
+                self._start_scan(next_scan[0], next_scan[1])
+            else:
+                self._apply_scan_button_state()
+
+    def _can_show_modal(self) -> bool:
+        app = self.winfo_toplevel()
+        return not bool(getattr(app, "_close_requested", False))
+
+    def _apply_scan_button_state(self) -> None:
+        if self._enabled and not self._scan_running:
+            self.scan_btn.configure(state="normal")
         else:
-            self.parquet_detect.set("✗ parquet/ が見つかりません")
-            self.parquet_detect_label.configure(foreground="#CC0000")
-        entries = scan_parquet_dir(output_dir)
-        self._refresh_table(entries)
+            self.scan_btn.configure(state="disabled")
 
     def _manual_scan(self) -> None:
         app = self.winfo_toplevel()
@@ -552,30 +835,100 @@ class GenerateTab(ttk.Frame):
         if not output_dir:
             messagebox.showinfo("スキャン", "出力先フォルダを先に指定してください。")
             return
-        self.scan(output_dir)
+        self.scan(output_dir, user_initiated=True)
 
     def _refresh_table(self, entries) -> None:
+        selected_pairs = self._get_selected_station_pairs()
         for item in self.tree.get_children():
             self.tree.delete(item)
+        self._entry_by_item_id.clear()
 
         complete_count = 0
         for entry in entries:
-            source_label = "JMA" if entry.source == "jma" else "水文水質DB"
+            source_label = "気象庁" if entry.source == "jma" else "水文水質DB"
+            station_code = self._to_display_station_code(entry.source, entry.station_key)
+            station_name = self._resolve_display_station_name(entry.source, station_code)
             month_count = len(entry.months) if entry.months else ("—" if entry.source == "water_info" else "0")
             status = "✓" if entry.complete else "✗"
             if entry.complete:
                 complete_count += 1
-            self.tree.insert("", "end", values=(
-                source_label, entry.station_key, entry.year, month_count, status,
+            iid = self.tree.insert("", "end", values=(
+                source_label, station_code, station_name, entry.year, month_count, status,
             ))
+            self._entry_by_item_id[iid] = entry
+            if (entry.source, entry.station_key) in selected_pairs:
+                self.tree.selection_add(iid)
 
         self.scan_status.set(f"{len(entries)}件（完全: {complete_count}）")
+        self._update_target_summary()
 
-    def get_decimal_places(self) -> int:
-        try:
-            return int(self.decimal_places.get().strip())
-        except ValueError:
-            return 2
+    def _on_tree_selection_changed(self, _event: tk.Event) -> None:  # type: ignore[type-arg]
+        self._update_target_summary()
+
+    def _clear_row_selection(self) -> None:
+        self.tree.selection_remove(self.tree.selection())
+        self._update_target_summary()
+
+    @staticmethod
+    def _to_display_station_code(source: str, station_key: str) -> str:
+        raw = str(station_key)
+        if source != "jma":
+            return raw
+        # JMA の内部キーは "都道府県2桁_block_no" 形式なので、表示は block_no のみ
+        if "_" in raw:
+            return raw.split("_", 1)[1]
+        return raw
+
+    def _resolve_display_station_name(self, source: str, station_code: str) -> str:
+        if source == "jma":
+            return self._jma_name_by_block.get(station_code, "")
+        return self._waterinfo_name_by_id.get(station_code, "")
+
+    def _get_selected_station_pairs(self) -> set[tuple[str, str]]:
+        pairs: set[tuple[str, str]] = set()
+        for item_id in self.tree.selection():
+            entry = self._entry_by_item_id.get(item_id)
+            if entry is None:
+                continue
+            source = getattr(entry, "source", "")
+            station_key = getattr(entry, "station_key", "")
+            if str(source).strip() and str(station_key).strip():
+                pairs.add((str(source), str(station_key)))
+        return pairs
+
+    def _update_target_summary(self) -> None:
+        if not self.use_selection_filter.get():
+            self.target_summary.set("対象: 全観測所（完全データのみ出力／不完全年は自動スキップ）")
+            return
+        pairs = self._get_selected_station_pairs()
+        if not pairs:
+            self.target_summary.set("対象: 0観測所（行を選択してください。不完全年は自動スキップ）")
+            return
+        self.target_summary.set(
+            f"対象: {len(pairs)}観測所（選択行のみ／完全データのみ出力・不完全年は自動スキップ）"
+        )
+
+    def use_selected_station_filter(self) -> bool:
+        return bool(self.use_selection_filter.get())
+
+    def get_target_stations(self) -> list[tuple[str, str]]:
+        if not self.use_selected_station_filter():
+            return []
+        pairs = self._get_selected_station_pairs()
+        return sorted(pairs, key=lambda x: (x[0], x[1]))
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = enabled
+        state = "normal" if enabled else "disabled"
+        self.export_excel_check.configure(state=state)
+        self.export_chart_check.configure(state=state)
+        self.selection_filter_check.configure(state=state)
+        self.clear_selection_btn.configure(state=state)
+        self._apply_scan_button_state()
+
+    def refresh_layout(self) -> None:
+        self.update_idletasks()
+        self.tree.update_idletasks()
 
 
 # =========================================================================

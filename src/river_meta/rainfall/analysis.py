@@ -225,6 +225,9 @@ def build_annual_max_dataframe(timeseries_df: pd.DataFrame) -> pd.DataFrame:
     if result.empty:
         return pd.DataFrame(columns=ANNUAL_MAX_COLUMNS)
     result["発生日時"] = pd.to_datetime(result["発生日時"], errors="coerce")
+    # 指標を定義順（1h, 3h, 6h, 12h, 24h, 48h）でソート
+    metric_order = [c.replace("(mm)", "") for c in metric_columns]
+    result["指標"] = pd.Categorical(result["指標"], categories=metric_order, ordered=True)
     return result.sort_values(["観測所キー", "年", "指標"]).reset_index(drop=True)
 
 

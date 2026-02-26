@@ -252,10 +252,10 @@ def _nice_step(max_value: float, n_ticks: int) -> float:
 def _hour_label(dt: pd.Timestamp) -> str:
     """datetime の hour を 1〜24 表記に変換する。
 
-    1時間累加雨量の慣例に従い、0時 → 24 と表示する。
+    1時間累加雨量の慣例に従い、hour+1 で表示する。
+    0時 → 1、23時 → 24。
     """
-    h = dt.hour
-    return "24" if h == 0 else f"{h}"
+    return f"{dt.hour + 1}"
 
 
 def _render_chart(
@@ -328,12 +328,12 @@ def _render_chart(
     plt.setp(ax1.xaxis.get_majorticklabels(), rotation=0, ha="center", fontsize=8)
     ax1.set_xlabel("時刻", fontsize=11)
 
-    # --- 日付境界線 (24時の棒と1時の棒の境界 = 00:30 位置) ---
+    # --- 日付境界線 (24時=23:00 と 1時=00:00 の境界 = 23:30 位置) ---
     window_start = times.min()
     window_end = times.max()
     first_midnight = (window_start + timedelta(days=1)).normalize()
     dt = first_midnight
-    boundary_offset = timedelta(minutes=30)
+    boundary_offset = timedelta(minutes=-30)  # 00:00 の30分前 = 23:30
     while dt <= window_end:
         boundary = dt + boundary_offset
         ax1.axvline(x=boundary, color="black", linewidth=1.0, zorder=1)

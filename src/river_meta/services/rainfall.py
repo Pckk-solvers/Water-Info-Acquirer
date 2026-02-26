@@ -78,6 +78,7 @@ class RainfallGenerateInput:
     export_excel: bool = True
     export_chart: bool = True
     decimal_places: int = 2
+    target_stations: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -92,6 +93,28 @@ class RainfallGenerateResult:
 
 def _noop_log(_: str) -> None:
     return None
+
+
+def _append_cancelled_once(errors: list[str]) -> None:
+    if "cancelled" not in errors:
+        errors.append("cancelled")
+
+
+def _rollback_created_parquets(paths: list[Path], logger: LogFn) -> None:
+    if not paths:
+        return
+    # 重複排除しつつ順序は維持
+    unique_paths = list(dict.fromkeys(paths))
+    removed = 0
+    for path in unique_paths:
+        try:
+            if path.exists():
+                path.unlink()
+                removed += 1
+        except Exception as exc:  # noqa: BLE001
+            logger(f"[Parquet][WARN] ロールバック削除失敗: {path.name} ({type(exc).__name__}: {exc})")
+    if removed:
+        logger(f"[Parquet] 停止により {removed} 件の新規Parquetをロールバック削除しました。")
 
 
 def run_rainfall_generate(
@@ -117,10 +140,24 @@ def run_rainfall_generate(
         logger("[generate] Parquet ファイルが見つかりません。")
         return RainfallGenerateResult(errors=["No parquet files found"])
 
+    target_set = {
+        (str(source), str(station_key))
+        for source, station_key in config.target_stations
+        if str(source).strip() and str(station_key).strip()
+    }
+    if target_set:
+        entries = [entry for entry in entries if (entry.source, entry.station_key) in target_set]
+        if not entries:
+            logger("[generate] 指定された観測所に一致する Parquet が見つかりません。")
+            return RainfallGenerateResult(errors=["No parquet files for selected stations"])
+
     complete_entries: list[ParquetEntry] = []
     incomplete_entries: list[ParquetEntry] = []
 
     for entry in entries:
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            break
         if entry.complete:
             complete_entries.append(entry)
         else:
@@ -134,6 +171,13 @@ def run_rainfall_generate(
             incomplete_entries.append(entry)
 
     if not complete_entries:
+        if "cancelled" in all_errors:
+            logger("[generate] 停止要求により処理を中断しました。")
+            return RainfallGenerateResult(
+                entries=entries,
+                incomplete_entries=incomplete_entries,
+                errors=all_errors,
+            )
         logger("[generate] 完全年のデータがありません。")
         return RainfallGenerateResult(
             entries=entries,
@@ -145,7 +189,7 @@ def run_rainfall_generate(
 
     for entry in complete_entries:
         if _is_cancelled(should_stop):
-            all_errors.append("cancelled")
+            _append_cancelled_once(all_errors)
             break
 
         logger(f"[generate] 処理中: {entry.source} 観測所={entry.station_key} 年={entry.year}")
@@ -172,6 +216,11 @@ def run_rainfall_generate(
         annual_max_df = build_annual_max_dataframe(timeseries_df)
         del source_df
 
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            del timeseries_df, annual_max_df
+            break
+
         if config.export_excel and not timeseries_df.empty:
             safe_name = station_name.replace("/", "_").replace("\\", "_")
             filename = f"{entry.station_key}_{safe_name}.xlsx" if safe_name else f"{entry.station_key}.xlsx"
@@ -187,6 +236,11 @@ def run_rainfall_generate(
             )
             if path is not None:
                 excel_paths.append(str(path))
+
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            del timeseries_df, annual_max_df
+            break
 
         if config.export_chart and not timeseries_df.empty and not annual_max_df.empty:
             generated = export_rainfall_charts(
@@ -228,7 +282,7 @@ def run_rainfall_collect(
         all_errors = []
         for source in sources:
             if _is_cancelled(should_stop):
-                all_errors.append("cancelled")
+                _append_cancelled_once(all_errors)
                 break
             if source == "jma":
                 part = _collect_jma(config, query=query, logger=logger, should_stop=should_stop)
@@ -270,6 +324,7 @@ def run_rainfall_analyze(
     excel_paths: set[str] = set()
     chart_paths: list[str] = []
     years = config.years if config.years else ([config.year] if config.year else [])
+    created_parquet_paths: list[Path] = []
 
     # We first collect the fully resolved stations to iterate over them safely without querying API twice
     resolved_sources = _resolve_sources(config.source)
@@ -297,12 +352,12 @@ def run_rainfall_analyze(
 
     for source_type, station_key, station_name, station_obj_list in stations_to_process:
         if _is_cancelled(should_stop):
-            all_errors.append("cancelled")
+            _append_cancelled_once(all_errors)
             break
 
         for year in years:
             if _is_cancelled(should_stop):
-                all_errors.append("cancelled")
+                _append_cancelled_once(all_errors)
                 break
 
             # --- JMA: 月単位で取得・キャッシュ ---
@@ -317,6 +372,7 @@ def run_rainfall_analyze(
                     should_stop=should_stop,
                     all_errors=all_errors,
                     records_counter=lambda n: None,  # noqa: ARG005
+                    created_parquet_paths=created_parquet_paths,
                 )
             else:
                 # --- water_info: 年単位で取得・キャッシュ ---
@@ -329,6 +385,7 @@ def run_rainfall_analyze(
                     logger=logger,
                     should_stop=should_stop,
                     all_errors=all_errors,
+                    created_parquet_paths=created_parquet_paths,
                 )
 
             if source_df is None or source_df.empty:
@@ -341,6 +398,11 @@ def run_rainfall_analyze(
             timeseries_df = build_hourly_timeseries_dataframe(source_df)
             annual_max_df = build_annual_max_dataframe(timeseries_df)
             del source_df  # メモリ解放
+
+            if _is_cancelled(should_stop):
+                _append_cancelled_once(all_errors)
+                del timeseries_df, annual_max_df
+                break
 
             if export_excel and not timeseries_df.empty:
                 safe_name = str(station_actual_name).replace("/", "_").replace("\\", "_")
@@ -358,6 +420,11 @@ def run_rainfall_analyze(
                 if path is not None:
                     excel_paths.add(str(path))
 
+            if _is_cancelled(should_stop):
+                _append_cancelled_once(all_errors)
+                del timeseries_df, annual_max_df
+                break
+
             if export_chart and not timeseries_df.empty and not annual_max_df.empty:
                 generated = export_rainfall_charts(
                     timeseries_df,
@@ -369,6 +436,9 @@ def run_rainfall_analyze(
                 chart_paths.extend(str(p) for p in generated)
 
             del timeseries_df, annual_max_df  # メモリ解放
+
+    if "cancelled" in all_errors:
+        _rollback_created_parquets(created_parquet_paths, logger)
 
     dataset = RainfallDataset(records=[], errors=all_errors)
     empty = pd.DataFrame()
@@ -391,6 +461,7 @@ def _fetch_jma_year_monthly(
     should_stop: CancelFn | None,
     all_errors: list[str],
     records_counter: Callable[[int], None],
+    created_parquet_paths: list[Path],
 ) -> pd.DataFrame | None:
     """JMA の1年分データを月単位で取得・キャッシュし、結合して返す。"""
     import calendar
@@ -407,7 +478,7 @@ def _fetch_jma_year_monthly(
 
     for month in range(1, 13):
         if _is_cancelled(should_stop):
-            all_errors.append("cancelled")
+            _append_cancelled_once(all_errors)
             break
 
         if parquet_exists(output_dir, "jma", station_key, year, month=month):
@@ -426,6 +497,9 @@ def _fetch_jma_year_monthly(
             config.jma_log_level, config.jma_enable_log_output,
         )
         all_errors.extend(part.errors)
+        if _is_cancelled(should_stop) or "cancelled" in part.errors:
+            _append_cancelled_once(all_errors)
+            break
 
         if not part.records:
             logger(f"[JMA] 観測所={station_key} {year}/{month:02d} データなし")
@@ -437,6 +511,7 @@ def _fetch_jma_year_monthly(
 
         pq_path = build_parquet_path(output_dir, "jma", station_key, year, month=month)
         save_records_parquet(part.records, pq_path)
+        created_parquet_paths.append(pq_path)
         logger(f"[Parquet] 保存完了: {pq_path.name}")
         del part
 
@@ -457,8 +532,13 @@ def _fetch_waterinfo_year(
     logger: LogFn,
     should_stop: CancelFn | None,
     all_errors: list[str],
+    created_parquet_paths: list[Path],
 ) -> pd.DataFrame | None:
     """water_info の1年分データを年単位で取得・キャッシュして返す。"""
+
+    if _is_cancelled(should_stop):
+        _append_cancelled_once(all_errors)
+        return None
 
     pq_path = build_parquet_path(output_dir, "water_info", station_key, year)
 
@@ -475,6 +555,9 @@ def _fetch_waterinfo_year(
         station_obj_list, query, config.include_raw, logger, should_stop,
     )
     all_errors.extend(part.errors)
+    if _is_cancelled(should_stop) or "cancelled" in part.errors:
+        _append_cancelled_once(all_errors)
+        return None
 
     if not part.records:
         logger(f"[水文水質DB] 観測所={station_key} 年={year} データなし")
@@ -482,6 +565,7 @@ def _fetch_waterinfo_year(
 
     logger(f"[水文水質DB] 観測所={station_key} 年={year} 取得完了 ({len(part.records)}件)")
     save_records_parquet(part.records, pq_path)
+    created_parquet_paths.append(pq_path)
     logger(f"[Parquet] 保存完了: {pq_path.name}")
 
     source_df = part.to_dataframe()

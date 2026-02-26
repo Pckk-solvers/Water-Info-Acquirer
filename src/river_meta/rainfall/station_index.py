@@ -52,6 +52,17 @@ def resolve_jma_stations_from_codes(
             continue
 
         candidates = by_block.get(code)
+        
+        # block_no で見つからない場合、新設した AMeDAS station_id (5桁など) で検索を試みる
+        if not candidates:
+            found_by_id = []
+            for block_candidates in by_block.values():
+                for c in block_candidates:
+                    if str(c.get("station_id", "")).strip() == code:
+                        found_by_id.append(c)
+            if found_by_id:
+                candidates = found_by_id
+
         if not candidates:
             issues.append(StationResolveIssue(code=code, reason="not_found"))
             continue

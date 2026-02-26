@@ -127,6 +127,41 @@ def _apply_display_transforms(df: pd.DataFrame) -> None:
     if "年間完全性" in df.columns:
         df["年間完全性"] = df["年間完全性"].map({True: "完全", False: "非完全"}).fillna("非完全")
 
+    # 観測時刻: datetime → 日付 + 時（1-24表記）
+    if "観測時刻" in df.columns:
+        dt_col = pd.to_datetime(df["観測時刻"], errors="coerce")
+        col_idx = df.columns.get_loc("観測時刻")
+        df.insert(col_idx, "日付", dt_col.dt.strftime("%Y/%m/%d"))
+        df.insert(col_idx + 1, "時", dt_col.dt.hour + 1)
+        df.drop(columns=["観測時刻"], inplace=True)
+
+    # 発生日時: datetime → 発生日 + 発生時（1-24表記）
+    if "発生日時" in df.columns:
+        dt_col = pd.to_datetime(df["発生日時"], errors="coerce")
+        col_idx = df.columns.get_loc("発生日時")
+        df.insert(col_idx, "発生日", dt_col.dt.strftime("%Y/%m/%d"))
+        df.insert(col_idx + 1, "発生時", dt_col.dt.hour + 1)
+        df.drop(columns=["発生日時"], inplace=True)
+
+    # N時間最大発生日時: 年別サマリ用（1時間〜48時間）
+    for col_name in list(df.columns):
+        if col_name.endswith("最大発生日時"):
+            prefix = col_name.replace("最大発生日時", "")  # e.g. "1時間"
+            dt_col = pd.to_datetime(df[col_name], errors="coerce")
+            col_idx = df.columns.get_loc(col_name)
+            df.insert(col_idx, f"{prefix}最大発生日", dt_col.dt.strftime("%Y/%m/%d"))
+            df.insert(col_idx + 1, f"{prefix}最大発生時", dt_col.dt.hour + 1)
+            df.drop(columns=[col_name], inplace=True)
+
+    # 集計開始/集計終了: 年別サマリ用
+    for col_name in ("集計開始", "集計終了"):
+        if col_name in df.columns:
+            dt_col = pd.to_datetime(df[col_name], errors="coerce")
+            col_idx = df.columns.get_loc(col_name)
+            df.insert(col_idx, f"{col_name}日", dt_col.dt.strftime("%Y/%m/%d"))
+            df.insert(col_idx + 1, f"{col_name}時", dt_col.dt.hour + 1)
+            df.drop(columns=[col_name], inplace=True)
+
 
 def _format_missing_count_with_total(df: pd.DataFrame) -> None:
     """1時間欠測数を分母付きフォーマットに変換する (例: '123/8760')。"""
