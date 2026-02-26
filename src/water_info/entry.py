@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .service.flow_fetch import fetch_hourly_dataframe_for_code, fetch_daily_dataframe_for_code
 from .service.flow_write import write_hourly_excel, write_daily_excel
 from .infra.http_client import HEADERS, throttled_get
@@ -12,6 +14,13 @@ from .ui.app import show_water as _show_water
 class EmptyExcelWarning(Exception):
     """出力用データが空のときに投げる例外"""
     pass
+
+
+def _resolve_gui_output_path(file_name: str | Path) -> Path:
+    """water_info GUI のExcel出力先を outputs/water_info に固定する。"""
+    out_dir = Path("outputs") / "water_info"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / Path(file_name).name
 
 
 def source_info_item_label(mode_type: str) -> str:
@@ -38,6 +47,7 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, p
 
     _, mode_str = build_hourly_base(mode_type)
     station_name = file_name.name.split("_")[1] if file_name else ""
+    output_path = _resolve_gui_output_path(file_name if file_name else f"{code}.xlsx")
     source_info = {
         "source_name": "国土交通省 水文水質データベース",
         "source_url": f"http://www1.river.go.jp/cgi-bin/Dsp{mode_str}Data.exe",
@@ -49,12 +59,12 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, p
         "item": source_info_item_label(mode_type),
         "data_kind": "時刻",
         "url_log": "コンソール出力",
-        "output_file": file_name.name if file_name else "",
+        "output_file": output_path.name,
         "summary": f"{station_name}({code}) {Y1}/{M1}-{Y2}/{M2} {source_info_item_label(mode_type)}",
     }
     write_hourly_excel(
         df=df,
-        file_name=file_name,
+        file_name=output_path,
         value_col=value_col,
         mode_type=mode_type,
         single_sheet=single_sheet,
@@ -62,8 +72,8 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, p
         empty_error_type=EmptyExcelWarning,
     )
 
-    print(f"Excelファイルの作成が完了しました。 {file_name}")
-    return file_name
+    print(f"Excelファイルの作成が完了しました。 {output_path}")
+    return output_path
 
 
 def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, progress_callback=None):
@@ -94,6 +104,7 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
         raise EmptyExcelWarning(f"観測所コード {code}：指定期間に有効なデータが見つかりませんでした")
 
     station_name = file_name.name.split("_")[1] if file_name else ""
+    output_path = _resolve_gui_output_path(file_name if file_name else f"{code}.xlsx")
     source_info = {
         "source_name": "国土交通省 水文水質データベース",
         "source_url": build_daily_base_url(mode_type),
@@ -105,20 +116,20 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
         "item": source_info_item_label(mode_type),
         "data_kind": "日",
         "url_log": "コンソール出力",
-        "output_file": file_name.name if file_name else "",
+        "output_file": output_path.name,
         "summary": f"{station_name}({code}) {Y1}/{M1}-{Y2}/{M2} {source_info_item_label(mode_type)}",
     }
     write_daily_excel(
         df=df,
-        file_name=file_name,
+        file_name=output_path,
         data_label=data_label,
         chart_title=chart_title,
         single_sheet=single_sheet,
         source_info=source_info,
     )
 
-    print(f"生成完了: {file_name}")
-    return file_name
+    print(f"生成完了: {output_path}")
+    return output_path
 
 
 def show_water(parent, single_sheet_mode=False, on_open_other=None, on_close=None, debug_ui: bool = False, initial_codes=None):

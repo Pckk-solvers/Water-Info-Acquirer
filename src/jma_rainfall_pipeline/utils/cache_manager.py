@@ -1,17 +1,19 @@
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-import yaml
-
 logger = logging.getLogger(__name__)
 
-CONFIG_FILENAME = 'config.yml'
+DISABLE_CACHE_ENV = "RIVER_RAINFALL_DISABLE_JMA_CACHE"
+DEFAULT_CACHE_ENABLED = True
+DEFAULT_STATIONS_CACHE_TTL_HOURS = 168
+DEFAULT_STATIONS_REFRESH_ON_START = False
 
 
 @dataclass
@@ -24,20 +26,19 @@ class CacheManager:
     """Handle on-disk caching of JMA code lookups."""
 
     def __init__(self) -> None:
-        package_root = Path(__file__).resolve().parents[1]
-        project_root = package_root.parents[1]
-        self._config_path = package_root / CONFIG_FILENAME
+        project_root = Path(__file__).resolve().parents[3]
         self._cache_dir = project_root / 'outputs' / 'jma' / 'cache'
         self._station_dir = self._cache_dir / 'stations'
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-        self._station_dir.mkdir(parents=True, exist_ok=True)
 
-        cfg = self._load_config()
-        self._cache_enabled = bool(cfg.get('enable_station_cache', True))
-        self._ttl_hours = int(cfg.get('stations_cache_ttl_hours', 168) or 0)
-        self._refresh_on_start = bool(cfg.get('stations_refresh_on_start', False))
+        disabled_by_env = _is_enabled_env(DISABLE_CACHE_ENV)
+        self._cache_enabled = DEFAULT_CACHE_ENABLED and not disabled_by_env
+        self._ttl_hours = int(DEFAULT_STATIONS_CACHE_TTL_HOURS)
+        self._refresh_on_start = DEFAULT_STATIONS_REFRESH_ON_START
         self._refresh_consumed = False
         self._pref_cache = self._cache_dir / 'prefectures.json'
+        if self._cache_enabled:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._station_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -92,16 +93,6 @@ class CacheManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _load_config(self) -> dict[str, Any]:
-        if not self._config_path.exists():
-            return {}
-        try:
-            with self._config_path.open('r', encoding='utf-8') as fp:
-                return yaml.safe_load(fp) or {}
-        except Exception as exc:  # pragma: no cover - config errors should not break runtime
-            logger.warning('Failed to read config file %s: %s', self._config_path, exc)
-            return {}
-
     def _load_entry(self, path: Path) -> Optional[CacheEntry]:
         if not self.enabled:
             return None
@@ -146,6 +137,11 @@ class CacheManager:
     def _key_to_path(self, key: str) -> Path:
         safe_key = re.sub(r'[^0-9A-Za-z_.-]', '_', key)
         return self._cache_dir / f'{safe_key}.json'
+
+
+def _is_enabled_env(name: str) -> bool:
+    value = str(os.environ.get(name, "")).strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 CACHE_MANAGER = CacheManager()

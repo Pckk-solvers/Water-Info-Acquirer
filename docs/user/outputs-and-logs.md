@@ -4,8 +4,8 @@
 
 | 機能 | 既定の出力先 |
 | --- | --- |
-| 国交省 水文データ取得 | `water_info/` |
-| 気象庁 雨量データ取得 | `jma/`（例: `jma/csv`, `jma/excel`, `jma/logs/app.log`） |
+| 国交省 水文データ取得 | `outputs/water_info/` |
+| 気象庁 雨量データ取得 | `outputs/jma/`（例: `outputs/jma/csv`, `outputs/jma/excel`, `outputs/jma/jma_app.log`） |
 
 !!! note "基準ディレクトリ"
     exeで起動している場合、これらのフォルダは **exeがあるフォルダ** を基準に作成されます。  
@@ -13,9 +13,8 @@
 
 ## ログ
 
-- **気象庁 雨量データ取得** はログファイルを出力します（既定: `jma/logs/app.log`）。
+- **気象庁 雨量データ取得** はログファイルを出力します（既定: `outputs/jma/jma_app.log`）。
 - **国交省 水文データ取得** は、主に画面のポップアップでエラーを通知します（exe版はコンソール表示がありません）。
 
 !!! tip "詳細ログが必要な場合"
     Python/uvで起動すると、標準出力にデバッグ情報が出ます。手順は [Python/uvで実行](../advanced/run-with-uv.md) を参照してください。
-

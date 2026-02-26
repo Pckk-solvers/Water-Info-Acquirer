@@ -8,6 +8,7 @@
 それ以外の引数が渡された場合はCLIモードで動作します。
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -17,6 +18,11 @@ def main() -> int:
     src_dir = Path(__file__).parent / "src"
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
+
+    # river_rainfall 実行時はJMA観測所キャッシュを作成しない
+    os.environ.setdefault("RIVER_RAINFALL_DISABLE_JMA_CACHE", "1")
+    # river_rainfall 実行時はJMAログファイルを自動生成しない
+    os.environ.setdefault("RIVER_RAINFALL_DISABLE_JMA_LOG_OUTPUT", "1")
         
     # --gui フラグがあるか、引数がなければGUIモード
     args = sys.argv[1:]

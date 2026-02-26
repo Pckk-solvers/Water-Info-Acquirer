@@ -83,11 +83,11 @@ class HelpWindow:
 4. データ取得: 「データ取得」ボタンを押すと取得と保存を開始します。
 
 【出力先】
-- CSV: outputs/csv
-- Excel: outputs/excel
-- 設定は config.yml で変更可能
+- CSV: outputs/jma/csv
+- Excel: outputs/jma/excel
+- 設定ファイルは不要（既定設定で動作）
 
 【トラブルシューティング】
 - データが取得できない場合は観測所ID・期間・ネットワークを確認してください。
-- エラー時は logs/app.log を確認してください。
+- エラー時は outputs/jma/jma_app.log を確認してください。
         """

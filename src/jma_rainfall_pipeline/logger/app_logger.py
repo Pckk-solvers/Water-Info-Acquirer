@@ -4,28 +4,25 @@ JMA降雨量パイプラインのログ設定
 
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
 from typing import Literal, Optional
 
-import yaml
-
 from ..utils.path_utils import get_project_root
 
-# 設定ファイルの場所を特定
-config_path = None
-try:
-    # パッケージ内からの相対パス
-    package_root = Path(__file__).resolve().parents[1]
-    CONFIG_FILENAME = 'config.yml'
-    config_path = package_root / CONFIG_FILENAME
-except Exception:
-    # フォールバック
-    pass
+
+DISABLE_LOG_OUTPUT_ENV = "RIVER_RAINFALL_DISABLE_JMA_LOG_OUTPUT"
+
+
+def _is_enabled_env(name: str) -> bool:
+    value = str(os.environ.get(name, "")).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
 
 _initialized = False  # ログ設定が初期化されたかのフラグ
 _runtime_level_override: str | None = None
-_runtime_enable_log_output: bool = True
+_runtime_enable_log_output: bool = not _is_enabled_env(DISABLE_LOG_OUTPUT_ENV)
 _runtime_logger_scope: Literal["root", "jma"] = "jma"
 
 
@@ -46,7 +43,7 @@ def setup_logging(
     ログ設定を初期化
 
     Args:
-        config_path_override: 設定ファイルのパス（オーバーライド用）
+        config_path_override: 互換性のため残置（現在は使用しない）
         log_file_override: ログファイルのパス（実行時オーバーライド）
         level_override: ログレベル（DEBUG/INFO/WARNING/ERROR/CRITICAL）
         enable_log_output: ログ出力の有効/無効
@@ -54,7 +51,7 @@ def setup_logging(
     """
     global _initialized
 
-    # 設定ファイルからログ設定を読み込み
+    # 固定既定値のログ設定を取得
     log_config = _load_log_config(config_path_override)
     if log_file_override is not None:
         log_path = Path(log_file_override)
@@ -155,51 +152,26 @@ def _normalize_level(level: str) -> str:
 
 def _load_log_config(config_path_override: Optional[str] = None) -> dict:
     """
-    ログ設定を読み込み
+    ログ設定（固定既定値）を返す。
 
     Args:
-        config_path_override: 設定ファイルのパス（オーバーライド用）
+        config_path_override: 互換性のため残置（現在は使用しない）
 
     Returns:
         dict: ログ設定
-
-    Raises:
-        ConfigError: 設定読み込みエラー
     """
-    # config_pathはモジュールレベルで定義済み
-    actual_config_path = config_path_override or config_path
-
-    if actual_config_path is None or not Path(actual_config_path).exists():
-        # デフォルト設定（config_loader と合わせて outputs/jma 配下に統一）
-        default_path = get_project_root() / 'outputs' / 'jma' / 'jma_app.log'
-        return {
-            'level': 'INFO',
-            'file': str(default_path),
-            'max_size_mb': 10,
-            'backup_count': 5,
-            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        }
-
-    try:
-        with open(actual_config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f) or {}
-
-        log_config = config.get('logging', {})
-
-        log_file = log_config.get('file', 'outputs/jma/jma_app.log')
-        log_path = Path(log_file)
-        if not log_path.is_absolute():
-            log_path = get_project_root() / log_file
-
-        return {
-            'level': log_config.get('level', 'INFO'),
-            'file': str(log_path),
-            'max_size_mb': log_config.get('max_size_mb', 10),
-            'backup_count': log_config.get('backup_count', 5),
-            'format': log_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        }
-    except Exception as e:
-        raise ConfigError(f"ログ設定の読み込みに失敗しました: {e}")
+    if config_path_override:
+        logging.getLogger(__name__).warning(
+            "config_path_override is ignored; file-based config is disabled."
+        )
+    default_path = get_project_root() / 'outputs' / 'jma' / 'jma_app.log'
+    return {
+        'level': 'INFO',
+        'file': str(default_path),
+        'max_size_mb': 10,
+        'backup_count': 5,
+        'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    }
 
 
 # 初期化は遅延実行（get_logger 内で実施）

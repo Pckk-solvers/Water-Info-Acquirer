@@ -1,53 +1,9 @@
-"""設定ファイル読み込みユーティリティ"""
+"""出力先パスの解決ユーティリティ（設定ファイル非依存）。"""
 
-import logging
 from pathlib import Path
 from typing import Any, Dict
 
-import yaml
-
 from .path_utils import get_project_root
-
-
-logger = logging.getLogger(__name__)
-
-
-def get_default_config_path() -> Path:
-    """Return the canonical config file location."""
-
-    current_dir = Path(__file__).parent.parent
-    return current_dir / "config.yml"
-
-
-def config_file_exists(config_path: str | Path | None = None) -> bool:
-    """Return True if the configuration file exists."""
-
-    path = Path(config_path) if config_path is not None else get_default_config_path()
-    return path.exists()
-
-
-def load_config(config_path: str | Path | None = None) -> Dict[str, Any]:
-    """Load configuration data, tolerating missing files."""
-
-    if config_path is None:
-        config_path = get_default_config_path()
-    else:
-        config_path = Path(config_path)
-
-    try:
-        with config_path.open("r", encoding="utf-8") as file:
-            config = yaml.safe_load(file) or {}
-        logger.info("設定ファイルを読み込みました: %s", config_path)
-        return config
-    except FileNotFoundError:
-        logger.warning("設定ファイルが見つかりません。デフォルト設定を使用します: %s", config_path)
-        return {}
-    except yaml.YAMLError as exc:
-        logger.error("設定ファイルの解析エラー: %s", exc)
-        raise
-    except Exception as exc:  # pragma: no cover - unexpected I/O errors
-        logger.error("設定ファイル読み込みエラー: %s", exc)
-        raise
 
 
 def get_output_directories(
@@ -58,9 +14,7 @@ def get_output_directories(
 ) -> Dict[str, str]:
     """Resolve output-related directories with optional overrides."""
 
-    if config is None:
-        config = load_config()
-    if not isinstance(config, dict):
+    if config is None or not isinstance(config, dict):
         config = {}
 
     output_config = config.get("output", {}) or {}

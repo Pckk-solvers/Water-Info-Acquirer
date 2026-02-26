@@ -1176,7 +1176,6 @@ dependencies = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pyperclip" },
-    { name = "pyyaml" },
     { name = "requests" },
     { name = "xlsxwriter" },
 ]
@@ -1198,7 +1197,6 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pyperclip", specifier = ">=1.11.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "xlsxwriter", specifier = ">=3.2.9" },
 ]

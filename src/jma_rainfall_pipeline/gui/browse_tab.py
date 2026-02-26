@@ -48,7 +48,7 @@ class BrowseWindow(ttk.Frame):
         self.log_level_var = tk.StringVar(value="INFO")  # ログレベル
         self.status_var = tk.StringVar(value="準備完了")
         self.custom_output_dir_var = tk.StringVar(value="")
-        self.output_dir_display_var = tk.StringVar(value="未指定 (設定ファイルの出力先を使用)")
+        self.output_dir_display_var = tk.StringVar(value="未指定 (既定の出力先を使用)")
         self.pref_loading_var = tk.StringVar(value="読み込み中…")
 
         # UI構築
@@ -272,7 +272,7 @@ class BrowseWindow(ttk.Frame):
 
     def _reset_output_directory(self) -> None:
         self.custom_output_dir_var.set("")
-        self.output_dir_display_var.set("未指定 (デフォルトへ出力)")
+        self.output_dir_display_var.set("未指定 (既定の出力先を使用)")
         self._set_status("出力フォルダの指定を解除しました")
 
     def _get_effective_output_paths(self) -> Dict[str, Path]:
