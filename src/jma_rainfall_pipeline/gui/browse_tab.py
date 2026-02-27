@@ -44,12 +44,13 @@ class BrowseWindow(ttk.Frame):
         self.interval_var = tk.StringVar()
         self.csv_output_var = tk.BooleanVar(value=False)  # CSV出力フラグ（初期状態はFalse）
         self.excel_output_var = tk.BooleanVar(value=True)  # Excel出力フラグ（初期状態はTrue）
-        self.log_output_var = tk.BooleanVar(value=True)  # ログ出力フラグ（初期状態はTrue）
+        self.log_output_var = tk.BooleanVar(value=False)  # ログ出力フラグ（初期状態はFalse）
         self.log_level_var = tk.StringVar(value="INFO")  # ログレベル
         self.status_var = tk.StringVar(value="準備完了")
         self.custom_output_dir_var = tk.StringVar(value="")
-        self.output_dir_display_var = tk.StringVar(value="未指定 (既定の出力先を使用)")
+        self.output_dir_display_var = tk.StringVar(value="")
         self.pref_loading_var = tk.StringVar(value="読み込み中…")
+        self.output_dir_display_var.set(self._default_output_display_text())
 
         # UI構築
         self._build_ui()
@@ -219,8 +220,8 @@ class BrowseWindow(ttk.Frame):
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill=tk.X, pady=(0, 5), padx=10)
         style = ttk.Style(self)
-        style.configure("Action.TButton", foreground="black", background="#e57373")
-        style.map("Action.TButton", background=[("active", "#ef5350")], foreground=[("active", "black")])
+        style.configure("Action.TButton", foreground="black", background="#90caf9")
+        style.map("Action.TButton", background=[("active", "#64b5f6")], foreground=[("active", "black")])
 
         self.add_button = ttk.Button(btn_frame, text="リストに追加", command=self._add_to_selected, style="Action.TButton")
         self.add_button.pack(side=tk.LEFT)
@@ -272,7 +273,7 @@ class BrowseWindow(ttk.Frame):
 
     def _reset_output_directory(self) -> None:
         self.custom_output_dir_var.set("")
-        self.output_dir_display_var.set("未指定 (既定の出力先を使用)")
+        self.output_dir_display_var.set(self._default_output_display_text())
         self._set_status("出力フォルダの指定を解除しました")
 
     def _get_effective_output_paths(self) -> Dict[str, Path]:
@@ -295,6 +296,19 @@ class BrowseWindow(ttk.Frame):
             "excel_dir": excel_dir,
             "log_file": log_file,
         }
+
+    def _default_output_display_text(self) -> str:
+        output_dirs = get_output_directories()
+        csv_dir = Path(output_dirs["csv_dir"]).resolve()
+        excel_dir = Path(output_dirs["excel_dir"]).resolve()
+        log_file = Path(output_dirs["log_file"]).resolve()
+
+        base_csv = csv_dir.parent
+        base_excel = excel_dir.parent
+        base_log = log_file.parent
+        if base_csv == base_excel == base_log:
+            return f"未指定 (既定: {base_csv})"
+        return f"未指定 (既定: CSV={csv_dir} / Excel={excel_dir} / ログ={log_file})"
 
     def _load_prefectures_async(self) -> None:
         """都道府県一覧の取得をバックグラウンドで行い、起動をブロックしない。"""
@@ -485,7 +499,8 @@ class BrowseWindow(ttk.Frame):
         excel_dir: Path = output_paths["excel_dir"]
         log_file_path: Path = output_paths["log_file"]
 
-        csv_dir.mkdir(parents=True, exist_ok=True)
+        if self.csv_output_var.get():
+            csv_dir.mkdir(parents=True, exist_ok=True)
         if self.excel_output_var.get():
             excel_dir.mkdir(parents=True, exist_ok=True)
         if self.log_output_var.get():

@@ -14,6 +14,12 @@ DISABLE_CACHE_ENV = "RIVER_RAINFALL_DISABLE_JMA_CACHE"
 DEFAULT_CACHE_ENABLED = True
 DEFAULT_STATIONS_CACHE_TTL_HOURS = 168
 DEFAULT_STATIONS_REFRESH_ON_START = False
+DEFAULT_CACHE_DIR_NAME = "cache"
+CACHE_README_FILENAME = "README.txt"
+CACHE_README_TEXT = (
+    "このディレクトリは、気象庁の都道府県/観測所JSONを一時保存するキャッシュです。\n"
+    "削除しても実行時に再生成されます。\n"
+)
 
 
 @dataclass
@@ -27,7 +33,7 @@ class CacheManager:
 
     def __init__(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
-        self._cache_dir = project_root / 'outputs' / 'jma' / 'cache'
+        self._cache_dir = project_root / 'outputs' / 'jma' / DEFAULT_CACHE_DIR_NAME
         self._station_dir = self._cache_dir / 'stations'
 
         disabled_by_env = _is_enabled_env(DISABLE_CACHE_ENV)
@@ -39,6 +45,7 @@ class CacheManager:
         if self._cache_enabled:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._station_dir.mkdir(parents=True, exist_ok=True)
+            self._ensure_cache_readme()
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -137,6 +144,15 @@ class CacheManager:
     def _key_to_path(self, key: str) -> Path:
         safe_key = re.sub(r'[^0-9A-Za-z_.-]', '_', key)
         return self._cache_dir / f'{safe_key}.json'
+
+    def _ensure_cache_readme(self) -> None:
+        readme_path = self._cache_dir / CACHE_README_FILENAME
+        if readme_path.exists():
+            return
+        try:
+            readme_path.write_text(CACHE_README_TEXT, encoding='utf-8')
+        except Exception as exc:  # pragma: no cover - readme write failure should not break runtime
+            logger.warning("Failed to write cache README %s: %s", readme_path, exc)
 
 
 def _is_enabled_env(name: str) -> bool:

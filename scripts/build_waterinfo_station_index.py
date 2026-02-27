@@ -106,24 +106,49 @@ def parse_metadata(station_id: str, raw_data: dict[str, str], pref_code_map: dic
     }
 
 
-def main():
+def _load_existing_data(index_path: Path) -> dict[str, dict]:
+    if not index_path.exists():
+        return {}
+    logger.info(f"Loading existing index: {index_path}")
+    with open(index_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    by_station_id = data.get("by_station_id")
+    if isinstance(by_station_id, dict):
+        return by_station_id
+    return {}
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="build waterinfo station index for rainfall")
+    parser.add_argument(
+        "--mode",
+        choices=["resume", "rebuild"],
+        default="resume",
+        help="resume: 既存JSONを引き継いで不足分のみ取得 / rebuild: 既存JSONを使わず全件再構築",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=str(INDEX_FILE_PATH),
+        help=f"出力JSONパス (既定: {INDEX_FILE_PATH})",
+    )
     parser.add_argument("--timeout", type=float, default=20.0, help="HTTP Timeout")
     parser.add_argument("--sleep", type=float, default=0.3, help="Sleep between requests")
     parser.add_argument("--max-count", type=int, default=0, help="Max stations to process for testing")
     parser.add_argument("--test-pref", type=str, default="", help="Only fetch IDs for this prefecture code (for testing)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    output_path = Path(args.output)
 
     session = build_session(user_agent=DEFAULT_UA)
 
-    # 1. 既存または新規JSONの読み込み（再開用）
-    current_data = {}
-    if INDEX_FILE_PATH.exists():
-        logger.info(f"Loading existing index: {INDEX_FILE_PATH}")
-        with open(INDEX_FILE_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if "by_station_id" in data:
-                current_data = data["by_station_id"]
+    # 1. 既存または新規JSONの読み込み
+    if args.mode == "resume":
+        current_data = _load_existing_data(output_path)
+        logger.info("Mode=resume, existing stations: %s", len(current_data))
+    else:
+        current_data = {}
+        logger.info("Mode=rebuild, existing index is ignored")
     
     # 2. マスターから都道府県一覧を取得
     logger.info("Fetching prefecture master data...")
@@ -204,12 +229,12 @@ def main():
             
             # 定期保存
             if count % 100 == 0:
-                _save_json(current_data, INDEX_FILE_PATH, logger)
+                _save_json(current_data, output_path, logger)
                 
     except KeyboardInterrupt:
         logger.warning("Interrupted by user. Saving current progress...")
     finally:
-        _save_json(current_data, INDEX_FILE_PATH, logger)
+        _save_json(current_data, output_path, logger)
         
     return 0
 
@@ -226,10 +251,12 @@ def _save_json(data_map: dict, filepath: Path, logger: logging.Logger):
         "station_count": len(data_map),
         "by_station_id": dict(sorted(data_map.items()))
     }
-    INDEX_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(INDEX_FILE_PATH, "w", encoding="utf-8") as f:
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(out_obj, f, ensure_ascii=False, indent=2)
-    logger.info(f"Saved {len(data_map)} stations to {INDEX_FILE_PATH}")
+    tmp_path.replace(filepath)
+    logger.info(f"Saved {len(data_map)} stations to {filepath}")
 
 
 if __name__ == "__main__":
