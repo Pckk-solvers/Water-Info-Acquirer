@@ -25,7 +25,8 @@
 
 ## 出力先
 
-- 既定の出力先は設定ファイル（`src/jma_rainfall_pipeline/config.yml`）の値に従います。
-  - 例: `jma/csv`, `jma/excel`, `jma/logs/app.log`
+- 既定の出力先は以下です。
+  - `outputs/jma/csv`
+  - `outputs/jma/excel`
+  - `outputs/jma/jma_app.log`
 - 画面で **出力フォルダを選択** した場合は、選択したフォルダ配下に `csv/`, `excel/`, `logs/` を作成して出力します。
-

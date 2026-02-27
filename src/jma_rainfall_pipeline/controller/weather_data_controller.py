@@ -129,7 +129,8 @@ class WeatherDataController:
         if not dfs:
             raise ValueError("解析可能なデータが得られませんでした")
 
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if export_csv:
+            output_dir.mkdir(parents=True, exist_ok=True)
 
         station_dfs: Dict[Tuple[str, str], List[pd.DataFrame]] = defaultdict(list)
         for prec_value, block_value, df in dfs:

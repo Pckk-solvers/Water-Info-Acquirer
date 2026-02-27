@@ -78,9 +78,8 @@ def fetch_hourly_dataframe_for_code(
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
-    out_dir = Path("outputs") / "water_info"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    file_name = out_dir / f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}"
+    # 呼び出し側はファイル名のstemのみを参照するため、実ファイル用ディレクトリは作成しない
+    file_name = Path(f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}")
 
     url_list = [build_hourly_url(code, num, mode_str, um, f"{year_end}1231") for um in url_month]
     log_urls(
@@ -124,9 +123,8 @@ def fetch_daily_dataframe_for_code(
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
-    out_dir = Path("outputs") / "water_info"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    file_name = out_dir / f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}"
+    # 呼び出し側はファイル名のstemのみを参照するため、実ファイル用ディレクトリは作成しない
+    file_name = Path(f"{code}_{station_name}_{year_start}年{month_start}-{year_end}年{month_end}{file_suffix}")
 
     years = list(range(int(year_start), int(year_end) + 1))
     all_values, all_dates = [], []

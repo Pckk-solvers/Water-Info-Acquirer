@@ -321,7 +321,8 @@ def export_weather_data(
         output_dirs = get_output_directories()
         output_dir = Path(output_dirs['csv_dir'])
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if export_csv:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     pref_map = _get_pref_map()
     prec_key = str(prec_no).zfill(2)

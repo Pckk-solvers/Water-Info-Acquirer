@@ -1,14 +1,13 @@
-# 気象庁側の設定（config.yml）
+# 気象庁側の設定
 
-気象庁 雨量データ取得の出力先・ログなどは `src/jma_rainfall_pipeline/config.yml` で調整できます。
+現在、気象庁 雨量データ取得は `config.yml` などの設定ファイルを使用しません。
 
-## 主な項目
+## 既定値
 
-- `output.csv_dir`: CSV出力先（相対パスの場合はプロジェクトルート基準）
-- `output.excel_dir`: Excel出力先（相対パスの場合はプロジェクトルート基準）
-- `logging.file`: ログファイル出力先
-- `enable_station_cache`: 観測所一覧キャッシュの有効/無効
+- CSV出力先: `outputs/jma/csv`
+- Excel出力先: `outputs/jma/excel`
+- ログ出力先: `outputs/jma/jma_app.log`
+- 観測所一覧キャッシュ: 既定で有効（`river_rainfall.py` 経由実行時は無効）
 
 !!! note "画面で出力フォルダを選択した場合"
-    GUIで「出力フォルダを選択」した場合は、設定ファイルより優先して、そのフォルダ配下に `csv/`, `excel/`, `logs/` を作成して出力します。
-
+    GUIで「出力フォルダを選択」した場合は、選択フォルダ配下に `csv/`, `excel/`, `logs/` を作成して出力します。
