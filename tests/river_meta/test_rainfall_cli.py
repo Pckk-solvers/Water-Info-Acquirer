@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -88,3 +89,70 @@ def test_rainfall_cli_parse_date_end_of_day():
 def test_rainfall_cli_requires_output_dir():
     with pytest.raises(SystemExit):
         cli.main(["--source", "water_info", "--year", "2025"])
+
+
+def test_rainfall_cli_generate_default_diff_mode_enabled(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeGenerateInput:
+        def __init__(self, **kwargs):
+            captured["kwargs"] = kwargs
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    def _fake_generate(config, *, log, should_stop):
+        captured["config"] = config
+        return SimpleNamespace(entries=[], incomplete_entries=[], excel_paths=[], chart_paths=[], errors=[])
+
+    monkeypatch.setattr("river_meta.rainfall.cli.RainfallGenerateInput", _FakeGenerateInput)
+    monkeypatch.setattr("river_meta.rainfall.cli.run_rainfall_generate", _fake_generate)
+
+    code = cli.main(
+        [
+            "--mode",
+            "generate",
+            "--year",
+            "2025",
+            "--output-dir",
+            "outputs/river_meta/rainfall",
+        ]
+    )
+
+    assert code == 0
+    kwargs = captured["kwargs"]
+    assert kwargs["use_diff_mode"] is True
+    assert kwargs["force_full_regenerate"] is False
+
+
+def test_rainfall_cli_generate_force_full_regenerate_has_priority(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeGenerateInput:
+        def __init__(self, **kwargs):
+            captured["kwargs"] = kwargs
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    def _fake_generate(config, *, log, should_stop):
+        return SimpleNamespace(entries=[], incomplete_entries=[], excel_paths=[], chart_paths=[], errors=[])
+
+    monkeypatch.setattr("river_meta.rainfall.cli.RainfallGenerateInput", _FakeGenerateInput)
+    monkeypatch.setattr("river_meta.rainfall.cli.run_rainfall_generate", _fake_generate)
+
+    code = cli.main(
+        [
+            "--mode",
+            "generate",
+            "--year",
+            "2025",
+            "--output-dir",
+            "outputs/river_meta/rainfall",
+            "--use-diff-mode",
+            "--force-full-regenerate",
+        ]
+    )
+
+    assert code == 0
+    kwargs = captured["kwargs"]
+    assert kwargs["force_full_regenerate"] is True
+    assert kwargs["use_diff_mode"] is False

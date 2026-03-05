@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import inspect
 import queue
 import threading
 import tkinter as tk
@@ -27,6 +28,18 @@ from .tooltip import ToolTip
 Event = tuple[str, object]
 
 
+def _supports_generate_input_arg(arg_name: str) -> bool:
+    """RainfallGenerateInput が指定引数を受け取れるかを判定する。"""
+    try:
+        parameters = inspect.signature(RainfallGenerateInput).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    names = {parameter.name for parameter in parameters}
+    if arg_name in names:
+        return True
+    return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
+
+
 # =========================================================================
 # メインウィンドウ
 # =========================================================================
@@ -35,7 +48,7 @@ Event = tuple[str, object]
 class RainfallGuiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Rainfall 雨量データツール")
+        self.title("RainfallCollector")
         self.geometry("1180x780")
         self.minsize(1020, 680)
         self._event_queue: queue.Queue[Event] = queue.Queue()
@@ -61,7 +74,7 @@ class RainfallGuiApp(tk.Tk):
         root.rowconfigure(3, weight=1)   # ログも伸縮
 
         # --- タイトル ---
-        ttk.Label(root, text="Rainfall 雨量データツール", font=("", 13, "bold")).grid(
+        ttk.Label(root, text="RainfallCollector", font=("", 13, "bold")).grid(
             row=0, column=0, sticky="w", pady=(0, 6),
         )
 
@@ -230,13 +243,23 @@ class RainfallGuiApp(tk.Tk):
         target_stations = self.generate_tab.get_target_stations()
         if target_stations:
             self._append_log(f"[整理・出力] 観測所フィルタ: {len(target_stations)}件")
+        force_full_regenerate = self.generate_tab.get_force_full_regenerate()
+        use_diff_mode = self.generate_tab.get_effective_use_diff_mode()
+        if force_full_regenerate:
+            self._append_log("[整理・出力] 全再生成を優先: 差分更新設定は無効化します。")
 
-        gen_config = RainfallGenerateInput(
-            parquet_dir=output_dir,
-            export_excel=self.generate_tab.export_excel.get(),
-            export_chart=self.generate_tab.export_chart.get(),
-            target_stations=target_stations,
-        )
+        generate_kwargs: dict[str, object] = {
+            "parquet_dir": output_dir,
+            "export_excel": self.generate_tab.export_excel.get(),
+            "export_chart": self.generate_tab.export_chart.get(),
+            "target_stations": target_stations,
+        }
+        if _supports_generate_input_arg("use_diff_mode"):
+            generate_kwargs["use_diff_mode"] = use_diff_mode
+        if _supports_generate_input_arg("force_full_regenerate"):
+            generate_kwargs["force_full_regenerate"] = force_full_regenerate
+
+        gen_config = RainfallGenerateInput(**generate_kwargs)
 
         def worker() -> None:
             try:
@@ -679,12 +702,42 @@ class GenerateTab(ttk.Frame):
         # --- 出力オプション ---
         opt_frame = ttk.LabelFrame(self, text="出力オプション", padding=8)
         opt_frame.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        opt_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(opt_frame, text="出力対象").grid(row=0, column=0, sticky="w", padx=(0, 12))
+        target_frame = ttk.Frame(opt_frame)
+        target_frame.grid(row=0, column=1, sticky="w")
         self.export_excel = tk.BooleanVar(value=True)
         self.export_chart = tk.BooleanVar(value=True)
-        self.export_excel_check = ttk.Checkbutton(opt_frame, text="Excel出力", variable=self.export_excel)
+        self.export_excel_check = ttk.Checkbutton(target_frame, text="Excel出力", variable=self.export_excel)
         self.export_excel_check.pack(side="left", padx=(0, 16))
-        self.export_chart_check = ttk.Checkbutton(opt_frame, text="降雨グラフPNG出力", variable=self.export_chart)
+        self.export_chart_check = ttk.Checkbutton(target_frame, text="降雨グラフPNG出力", variable=self.export_chart)
         self.export_chart_check.pack(side="left", padx=(0, 16))
+
+        ttk.Label(opt_frame, text="更新方式").grid(row=1, column=0, sticky="w", padx=(0, 12), pady=(6, 0))
+        mode_frame = ttk.Frame(opt_frame)
+        mode_frame.grid(row=1, column=1, sticky="w", pady=(6, 0))
+        self.regenerate_mode = tk.StringVar(value="diff")
+        self.regenerate_mode_diff_radio = ttk.Radiobutton(
+            mode_frame,
+            text="差分更新（既定）",
+            variable=self.regenerate_mode,
+            value="diff",
+        )
+        self.regenerate_mode_diff_radio.pack(side="left", padx=(0, 16))
+        self.regenerate_mode_full_radio = ttk.Radiobutton(
+            mode_frame,
+            text="全再生成",
+            variable=self.regenerate_mode,
+            value="full",
+        )
+        self.regenerate_mode_full_radio.pack(side="left")
+        ttk.Label(
+            opt_frame,
+            text="※ 全再生成は差分判定を行わず、対象を再作成します。",
+            foreground="#666",
+        ).grid(row=2, column=1, sticky="w", pady=(4, 0))
+        self._sync_regenerate_option_state()
 
         # --- Parquetテーブル ---
         table_frame = ttk.LabelFrame(self, text="Parquetデータ状況", padding=4)
@@ -748,6 +801,10 @@ class GenerateTab(ttk.Frame):
                 ToolTip(
                     self.selection_filter_check,
                     "有効時は選択行の観測所だけを対象にします（どちらの場合も不完全年は自動スキップ）。",
+                ),
+                ToolTip(
+                    self.regenerate_mode_full_radio,
+                    "更新方式を全再生成に切り替えます。",
                 ),
             ]
         )
@@ -911,17 +968,35 @@ class GenerateTab(ttk.Frame):
     def use_selected_station_filter(self) -> bool:
         return bool(self.use_selection_filter.get())
 
+    def get_use_diff_mode(self) -> bool:
+        return self.regenerate_mode.get() == "diff"
+
+    def get_force_full_regenerate(self) -> bool:
+        return self.regenerate_mode.get() == "full"
+
+    def get_effective_use_diff_mode(self) -> bool:
+        return self.get_use_diff_mode() and not self.get_force_full_regenerate()
+
     def get_target_stations(self) -> list[tuple[str, str]]:
         if not self.use_selected_station_filter():
             return []
         pairs = self._get_selected_station_pairs()
         return sorted(pairs, key=lambda x: (x[0], x[1]))
 
+    def _sync_regenerate_option_state(self) -> None:
+        if not self._enabled:
+            self.regenerate_mode_diff_radio.configure(state="disabled")
+            self.regenerate_mode_full_radio.configure(state="disabled")
+            return
+        self.regenerate_mode_diff_radio.configure(state="normal")
+        self.regenerate_mode_full_radio.configure(state="normal")
+
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
         state = "normal" if enabled else "disabled"
         self.export_excel_check.configure(state=state)
         self.export_chart_check.configure(state=state)
+        self._sync_regenerate_option_state()
         self.selection_filter_check.configure(state=state)
         self.clear_selection_btn.configure(state=state)
         self._apply_scan_button_state()

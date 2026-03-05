@@ -43,6 +43,7 @@ def fetch_hourly_dataframe_for_code(
     throttled_get,
     headers: dict,
     progress_callback=None,
+    should_stop=None,
 ):
     if mode_type == "S":
         value_col = "水位"
@@ -74,7 +75,7 @@ def fetch_hourly_dataframe_for_code(
 
     first_date = url_month[0]
     first_url = build_hourly_url(code, num, mode_str, first_date, f"{year_end}1231")
-    station_name = fetch_station_name(throttled_get, headers, first_url)
+    station_name = fetch_station_name(throttled_get, headers, first_url, should_stop=should_stop)
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
@@ -92,6 +93,7 @@ def fetch_hourly_dataframe_for_code(
         url_list,
         drop_last_each=mode_type in ["S", "U"],
         on_chunk=lambda: progress_callback(increment=True) if progress_callback else None,
+        should_stop=should_stop,
     )
 
     year_start_i = int(year_start)
@@ -111,6 +113,7 @@ def fetch_daily_dataframe_for_code(
     throttled_get,
     headers: dict,
     progress_callback=None,
+    should_stop=None,
 ):
     try:
         num, data_label, chart_title, file_suffix = build_daily_base(mode_type)
@@ -119,7 +122,7 @@ def fetch_daily_dataframe_for_code(
         return None, None, None, None
 
     first_url = build_daily_url(base_url, code, num, f"{year_start}0101", f"{year_start}1231")
-    station_name = fetch_station_name(throttled_get, headers, first_url)
+    station_name = fetch_station_name(throttled_get, headers, first_url, should_stop=should_stop)
     if progress_callback:
         progress_callback(increment=False, station_name=station_name)
 
@@ -132,7 +135,7 @@ def fetch_daily_dataframe_for_code(
     for year in years:
         url = build_daily_url(base_url, code, num, f"{year}0101", f"{year}1231")
         daily_urls.append(url)
-        vals = fetch_daily_values(throttled_get, headers, url)
+        vals = fetch_daily_values(throttled_get, headers, url, should_stop=should_stop)
         last = calendar.monthrange(year, 12)[1]
         dates = pd.date_range(start=f"{year}-01-01", end=f"{year}-12-{last}", freq="D")
         n = min(len(dates), len(vals))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -195,3 +196,69 @@ def test_generate_with_chart(tmp_path):
     for path in result.chart_paths:
         assert Path(path).exists()
         assert path.endswith(".png")
+
+
+def test_generate_diff_mode_skips_on_second_run(tmp_path):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+    )
+    first = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(first.excel_paths) == 1
+    excel_path = Path(first.excel_paths[0])
+    assert excel_path.exists()
+    first_mtime_ns = excel_path.stat().st_mtime_ns
+
+    second = run_rainfall_generate(config, log=lambda msg: None)
+    assert second.excel_paths == []
+    assert excel_path.stat().st_mtime_ns == first_mtime_ns
+
+
+def test_generate_diff_mode_regenerates_when_parquet_updated(tmp_path):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+    )
+    first = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(first.excel_paths) == 1
+    excel_path = Path(first.excel_paths[0])
+    first_mtime_ns = excel_path.stat().st_mtime_ns
+
+    time.sleep(0.02)
+    updated_records = _make_dummy_records("jma", "47401", 2024, 1)
+    updated_records[0].rainfall_mm = 999.9
+    jan_path = build_parquet_path(tmp_path, "jma", "47401", 2024, month=1)
+    save_records_parquet(updated_records, jan_path)
+
+    time.sleep(0.02)
+    second = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(second.excel_paths) == 1
+    assert excel_path.stat().st_mtime_ns > first_mtime_ns
+
+
+def test_generate_force_full_regenerate_ignores_diff(tmp_path):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    base_config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+    )
+    first = run_rainfall_generate(base_config, log=lambda msg: None)
+    assert len(first.excel_paths) == 1
+    excel_path = Path(first.excel_paths[0])
+    first_mtime_ns = excel_path.stat().st_mtime_ns
+
+    time.sleep(0.02)
+    force_config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+        force_full_regenerate=True,
+    )
+    second = run_rainfall_generate(force_config, log=lambda msg: None)
+    assert len(second.excel_paths) == 1
+    assert excel_path.stat().st_mtime_ns > first_mtime_ns

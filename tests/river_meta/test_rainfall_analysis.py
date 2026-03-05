@@ -117,6 +117,7 @@ def test_export_consolidated_rainfall_excel_creates_single_file(tmp_path):
     assert "集計終了" not in summary.columns
     assert "年間完全性" not in summary.columns
     assert "備考" not in summary.columns
+    assert "/" not in str(summary.loc[0, "1時間欠測数"])
 
 
 def test_run_rainfall_analyze_rejects_non_hourly_interval():

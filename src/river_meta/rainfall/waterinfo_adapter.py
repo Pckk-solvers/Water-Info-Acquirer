@@ -84,6 +84,7 @@ def fetch_waterinfo_rainfall(
                 mode_type="U",
                 throttled_get=throttled_get,
                 headers=HEADERS,
+                should_stop=should_stop,
             )
             if not station_name:
                 station_name = _parse_station_name_from_file(file_name, station.station_code)
@@ -124,6 +125,7 @@ def fetch_waterinfo_rainfall(
             mode_type="U",
             throttled_get=throttled_get,
             headers=HEADERS,
+            should_stop=should_stop,
         )
         if not station_name:
             station_name = _parse_station_name_from_file(file_name, station.station_code)

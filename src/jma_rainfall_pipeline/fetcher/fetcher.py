@@ -1,5 +1,6 @@
 # jma_rainfall_pipeline/fetcher/fetcher.py
 from datetime import date, datetime, timedelta, time
+from typing import Callable
 from requests.exceptions import RequestException
 
 from jma_rainfall_pipeline.logger.app_logger import get_logger
@@ -17,6 +18,7 @@ class Fetcher:
         interval: timedelta,
         default_station_type: str = "s1",
         timeout: int = 10,
+        should_stop: Callable[[], bool] | None = None,
     ):
         """
         :param base_url: 気象庁データサイトのベースURL
@@ -28,6 +30,7 @@ class Fetcher:
         self.interval = interval
         self.default_station_type = default_station_type
         self.timeout = timeout
+        self.should_stop = should_stop
         self.logger = get_logger(__name__)
 
     def _determine_freq(self) -> str:
@@ -75,7 +78,12 @@ class Fetcher:
         """HTTPリクエストを投げてHTML文字列を返す。"""
         headers = self._build_request_headers(freq, station_type)
         try:
-            resp = throttled_get(url, headers=headers, timeout=self.timeout)
+            resp = throttled_get(
+                url,
+                headers=headers,
+                timeout=self.timeout,
+                should_stop=self.should_stop,
+            )
         except RequestException as exc:
             raise RequestException(f"{url} からデータ取得に失敗しました") from exc
         return resp.text
@@ -158,9 +166,13 @@ class Fetcher:
             # 日別データは月単位でまとめて取得
             month_ranges = self._get_month_range(start.date(), end.date())
             for month_start, month_end in month_ranges:
+                if self.should_stop and self.should_stop():
+                    return
                 # 月初日でまとめて取得（レスポンスは月全体分）
                 fetch_date = month_start.replace(day=1)
                 for prec_no, block_no, st_type in stations:
+                    if self.should_stop and self.should_stop():
+                        return
                     normalized_type = self._normalize_station_type(st_type or self.default_station_type)
                     url = self._build_url(prec_no, block_no, fetch_date, normalized_type, freq=freq)
                     html = self._request_html(url, freq, normalized_type)
@@ -171,7 +183,11 @@ class Fetcher:
             current_date = start.date()
             end_date = end.date()
             while current_date <= end_date:
+                if self.should_stop and self.should_stop():
+                    return
                 for prec_no, block_no, st_type in stations:
+                    if self.should_stop and self.should_stop():
+                        return
                     normalized_type = self._normalize_station_type(st_type or self.default_station_type)
                     url = self._build_url(prec_no, block_no, current_date, normalized_type, freq=freq)
                     html = self._request_html(url, freq, normalized_type)

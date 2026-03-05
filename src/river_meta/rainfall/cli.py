@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import signal
 import sys
 import threading
@@ -59,6 +60,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--export-excel", action="store_true", help="analyze 時にExcelを出力")
     parser.add_argument("--export-chart", action="store_true", help="analyze 時に降雨グラフPNGを出力")
+    parser.add_argument(
+        "--use-diff-mode",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="generate 時に差分更新を使う（--use-diff-mode / --no-use-diff-mode）。既定ON",
+    )
+    parser.add_argument(
+        "--force-full-regenerate",
+        action="store_true",
+        help="generate 時に全再生成を強制する（差分更新設定より優先）。既定OFF",
+    )
     parser.add_argument("--output-dir", required=True, help="出力ディレクトリ（必須）")
     parser.add_argument("--decimal-places", type=int, default=2, help="Excel の小数桁数")
     return parser
@@ -85,12 +97,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
     try:
         if args.mode == "generate":
-            gen_config = RainfallGenerateInput(
-                parquet_dir=args.output_dir,
-                export_excel=args.export_excel,
-                export_chart=args.export_chart,
-                decimal_places=args.decimal_places,
-            )
+            if args.force_full_regenerate:
+                print(
+                    "[INFO] --force-full-regenerate が有効のため、差分更新設定より全再生成を優先します。",
+                    file=sys.stderr,
+                )
+            gen_config = _build_generate_input(args)
             gen_result = run_rainfall_generate(
                 gen_config,
                 log=lambda msg: print(msg, file=sys.stderr),
@@ -156,6 +168,36 @@ def _build_run_input(args: argparse.Namespace) -> RainfallRunInput:
         jma_enable_log_output=args.jma_log_output,
         include_raw=bool(args.include_raw),
     )
+
+
+def _build_generate_input(args: argparse.Namespace) -> RainfallGenerateInput:
+    use_diff_mode = bool(args.use_diff_mode)
+    force_full_regenerate = bool(args.force_full_regenerate)
+    if force_full_regenerate:
+        use_diff_mode = False
+
+    kwargs: dict[str, object] = {
+        "parquet_dir": args.output_dir,
+        "export_excel": args.export_excel,
+        "export_chart": args.export_chart,
+        "decimal_places": args.decimal_places,
+    }
+    if _supports_generate_input_arg("use_diff_mode"):
+        kwargs["use_diff_mode"] = use_diff_mode
+    if _supports_generate_input_arg("force_full_regenerate"):
+        kwargs["force_full_regenerate"] = force_full_regenerate
+    return RainfallGenerateInput(**kwargs)
+
+
+def _supports_generate_input_arg(arg_name: str) -> bool:
+    try:
+        parameters = inspect.signature(RainfallGenerateInput).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    names = {parameter.name for parameter in parameters}
+    if arg_name in names:
+        return True
+    return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
 
 
 def _merge_csv_values(values: list[str], csv_values: str) -> list[str]:

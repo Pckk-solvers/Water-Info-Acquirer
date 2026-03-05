@@ -99,7 +99,11 @@ def fetch_jma_rainfall(
             logger_scope="jma",
         )
 
-    fetcher = Fetcher(base_url=base_url, interval=_to_timedelta(query.interval))
+    fetcher = Fetcher(
+        base_url=base_url,
+        interval=_to_timedelta(query.interval),
+        should_stop=should_stop,
+    )
     frequency = _to_frequency(query.interval)
     station_tuples = [(s.prefecture_code, s.block_number, s.obs_type) for s in stations]
     station_map = {(s.prefecture_code, s.block_number): s for s in stations}
