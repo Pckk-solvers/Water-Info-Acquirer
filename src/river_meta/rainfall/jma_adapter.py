@@ -17,6 +17,10 @@ _NO_DATA_MARKERS = (
     "データはありません",
     "データが見つかりません",
 )
+_ERROR_PAGE_MARKERS = (
+    "ページを表示することが出来ませんでした。",
+    "ページを表示することが出来ませんでした",
+)
 
 LogFn = Callable[[str], None]
 CancelFn = Callable[[], bool]
@@ -110,6 +114,11 @@ def fetch_jma_rainfall(
             warn("jma adapter cancelled")
             break
         if any(marker in html for marker in _NO_DATA_MARKERS):
+            continue
+        if any(marker in html for marker in _ERROR_PAGE_MARKERS):
+            warn(
+                f"JMA unavailable page ({prec_no}-{block_no} {sample_dt:%Y-%m-%d})"
+            )
             continue
 
         station = station_map.get((str(prec_no), str(block_no)))

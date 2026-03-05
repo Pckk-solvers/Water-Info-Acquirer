@@ -85,6 +85,7 @@ def resolve_jma_stations_from_codes(
                 block_number=key[1],
                 obs_type=key[2],
                 station_name=str(rec.get("station_name", "")),
+                start_date=str(rec.get("start_date", "")).strip(),
             )
         )
 
@@ -135,6 +136,7 @@ def resolve_jma_stations_from_prefectures(
                     block_number=block_no,
                     obs_type=obs_type,
                     station_name=station_name,
+                    start_date=str(rec.get("start_date", "")).strip(),
                 )
             )
 

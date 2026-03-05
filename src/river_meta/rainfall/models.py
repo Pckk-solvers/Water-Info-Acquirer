@@ -18,6 +18,7 @@ class JMAStationInput:
     block_number: str
     obs_type: str = "a1"
     station_name: str = ""
+    start_date: str = ""
 
     @property
     def station_key(self) -> str:

@@ -21,6 +21,7 @@ from river_meta.rainfall.parquet_store import (
     scan_parquet_dir,
 )
 from river_meta.rainfall.jma_adapter import fetch_jma_rainfall
+from river_meta.rainfall.jma_availability import fetch_available_years_hourly
 from river_meta.rainfall.models import (
     JMAStationInput,
     RainfallDataset,
@@ -310,7 +311,6 @@ def run_rainfall_analyze(
     should_stop: CancelFn | None = None,
 ) -> RainfallAnalyzeResult:
     import pandas as pd
-    from dataclasses import replace
 
     logger = log or _noop_log
 
@@ -324,7 +324,10 @@ def run_rainfall_analyze(
     excel_paths: set[str] = set()
     chart_paths: list[str] = []
     years = config.years if config.years else ([config.year] if config.year else [])
+    years = list(dict.fromkeys(years))
     created_parquet_paths: list[Path] = []
+    jma_requested_year_total = 0
+    jma_filtered_year_total = 0
 
     # We first collect the fully resolved stations to iterate over them safely without querying API twice
     resolved_sources = _resolve_sources(config.source)
@@ -355,7 +358,38 @@ def run_rainfall_analyze(
             _append_cancelled_once(all_errors)
             break
 
-        for year in years:
+        years_for_station = years
+        if source_type == "jma" and years:
+            station = station_obj_list[0]
+            requested_count = len(years)
+            filtered_years = years
+            availability = fetch_available_years_hourly(
+                prec_no=station.prefecture_code,
+                block_no=station.block_number,
+            )
+            if availability.status == "indeterminate":
+                logger(
+                    f"[JMA][availability] 観測所={station_key} 指定年数={requested_count}"
+                    f" -> 判定後年数={requested_count} status={availability.status}"
+                )
+                logger(
+                    f"[JMA][availability] 観測所={station_key} "
+                    f"status=indeterminate ({availability.reason}) 従来モードで継続"
+                )
+            else:
+                filtered_years = [year for year in years if year in availability.years]
+                logger(
+                    f"[JMA][availability] 観測所={station_key} 指定年数={requested_count}"
+                    f" -> 判定後年数={len(filtered_years)} status={availability.status}"
+                )
+                if not filtered_years:
+                    logger(f"[JMA][availability] 観測所={station_key} 判定後の対象年なしのためスキップ")
+
+            jma_requested_year_total += requested_count
+            jma_filtered_year_total += len(filtered_years)
+            years_for_station = filtered_years
+
+        for year in years_for_station:
             if _is_cancelled(should_stop):
                 _append_cancelled_once(all_errors)
                 break
@@ -436,6 +470,13 @@ def run_rainfall_analyze(
                 chart_paths.extend(str(p) for p in generated)
 
             del timeseries_df, annual_max_df  # メモリ解放
+
+    if jma_requested_year_total > 0:
+        reduced = jma_requested_year_total - jma_filtered_year_total
+        logger(
+            "[JMA][availability] 全体年判定: "
+            f"{jma_requested_year_total} -> {jma_filtered_year_total} ({reduced} 年削減)"
+        )
 
     if "cancelled" in all_errors:
         _rollback_created_parquets(created_parquet_paths, logger)
@@ -561,6 +602,11 @@ def _fetch_waterinfo_year(
 
     if not part.records:
         logger(f"[水文水質DB] 観測所={station_key} 年={year} データなし")
+        return None
+
+    valid_rainfall_count = sum(1 for record in part.records if record.rainfall_mm is not None)
+    if valid_rainfall_count == 0:
+        logger(f"[水文水質DB] 観測所={station_key} 年={year} 有効値なしのため保存スキップ")
         return None
 
     logger(f"[水文水質DB] 観測所={station_key} 年={year} 取得完了 ({len(part.records)}件)")

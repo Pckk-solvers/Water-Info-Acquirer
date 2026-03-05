@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from river_meta.rainfall.analysis import build_annual_max_dataframe, build_hourly_timeseries_dataframe
 from river_meta.rainfall.excel_exporter import export_station_rainfall_excel
+from river_meta.rainfall.jma_availability import JmaAvailabilityResult
 from river_meta.rainfall.models import JMAStationInput, RainfallRecord
 from river_meta.services.rainfall import RainfallRunInput, run_rainfall_analyze, run_rainfall_collect
 
@@ -374,3 +375,67 @@ def test_run_rainfall_collect_passes_jma_log_controls(monkeypatch):
     assert result.errors == []
     assert captured["jma_log_level"] == "DEBUG"
     assert captured["jma_enable_log_output"] is False
+
+
+def test_run_rainfall_analyze_applies_jma_year_filter_and_fallback(monkeypatch, tmp_path):
+    called_years: list[tuple[str, int]] = []
+    logs: list[str] = []
+
+    def _fake_fetch_available_years_hourly(*, prec_no, block_no, timeout_sec=10.0, user_agent="river-meta/0.1"):  # noqa: ARG001
+        if block_no == "62001":
+            return JmaAvailabilityResult(
+                status="success_with_years",
+                years={2025},
+                reason="matched_index_links",
+            )
+        return JmaAvailabilityResult(
+            status="indeterminate",
+            years=set(),
+            reason="context_mismatch",
+        )
+
+    def _fake_fetch_jma_year_monthly(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        records_counter,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_years.append((station_key, year))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        "river_meta.services.rainfall.fetch_available_years_hourly",
+        _fake_fetch_available_years_hourly,
+    )
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_jma_year_monthly",
+        _fake_fetch_jma_year_monthly,
+    )
+
+    config = RainfallRunInput(
+        source="jma",
+        years=[2024, 2025],
+        interval="1hour",
+        jma_stations=[("11", "62001", "s1"), ("12", "62002", "s1")],
+    )
+    run_rainfall_analyze(
+        config,
+        output_dir=str(tmp_path),
+        log=logs.append,
+    )
+
+    assert called_years == [
+        ("11_62001", 2025),
+        ("12_62002", 2024),
+        ("12_62002", 2025),
+    ]
+    assert any("観測所=11_62001 指定年数=2 -> 判定後年数=1 status=success_with_years" in line for line in logs)
+    assert any("status=indeterminate" in line and "従来モードで継続" in line for line in logs)
+    assert any("全体年判定: 4 -> 3 (1 年削減)" in line for line in logs)

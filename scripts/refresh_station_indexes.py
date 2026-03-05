@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 
+DEFAULT_JMA_PDF_URL = "https://www.jma.go.jp/jma/kishou/know/amedas/ame_master.pdf"
 DEFAULT_JMA_PDF = Path("data/source/amedas/ame_master.pdf")
 DEFAULT_JMA_INDEX = Path("src/river_meta/resources/jma_station_index.json")
 DEFAULT_WATERINFO_INDEX = Path("src/river_meta/resources/waterinfo_station_index.json")
@@ -42,6 +43,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="resume",
         help="WaterInfo更新モード",
     )
+    parser.add_argument(
+        "--download-jma-pdf",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="JMA更新前に公式PDFを取得する",
+    )
+    parser.add_argument("--jma-pdf-url", default=DEFAULT_JMA_PDF_URL, help="JMA公式PDF URL")
     parser.add_argument("--jma-pdf", default=str(DEFAULT_JMA_PDF), help="JMA補完PDFパス")
     parser.add_argument("--jma-index", default=str(DEFAULT_JMA_INDEX), help="JMA JSON出力パス")
     parser.add_argument("--waterinfo-index", default=str(DEFAULT_WATERINFO_INDEX), help="WaterInfo JSON出力パス")
@@ -81,6 +89,17 @@ def _build_jma_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
     return cmd
 
 
+def _build_jma_pdf_download_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(script_path),
+        "--url",
+        args.jma_pdf_url,
+        "--output",
+        args.jma_pdf,
+    ]
+
+
 def _build_waterinfo_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
     cmd = [
         sys.executable,
@@ -106,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     root_dir = Path(__file__).resolve().parents[1]
     scripts_dir = root_dir / "scripts"
 
+    download_jma_pdf_script = scripts_dir / "download_amedas_pdf.py"
     jma_script = scripts_dir / "update_jma_station_index.py"
     waterinfo_script = scripts_dir / "build_waterinfo_station_index.py"
 
@@ -119,6 +139,17 @@ def main(argv: list[str] | None = None) -> int:
     for target in targets:
         if target == "jma":
             print("\n=== JMA station index refresh ===")
+            if args.download_jma_pdf:
+                rc = _run_subprocess(
+                    _build_jma_pdf_download_cmd(args, download_jma_pdf_script),
+                    dry_run=args.dry_run,
+                )
+                if rc != 0:
+                    failed = True
+                    print(f"[ERROR] jma pdf download failed (exit={rc})")
+                    if not args.keep_going:
+                        return rc
+                    continue
             rc = _run_subprocess(_build_jma_cmd(args, jma_script), dry_run=args.dry_run)
         else:
             print("\n=== WaterInfo station index refresh ===")
