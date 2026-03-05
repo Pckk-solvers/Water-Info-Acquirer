@@ -1,4 +1,5 @@
 import json
+import re
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
@@ -44,6 +45,7 @@ class StationSelector(ttk.Frame):
             "jma": {},
             "water_info": {},
         }
+        self._jma_station_id_to_block: dict[str, str] = {}
         self._selected_codes_by_source: dict[str, set[str]] = {
             "jma": set(),
             "water_info": set(),
@@ -92,6 +94,7 @@ class StationSelector(ttk.Frame):
     def _build_station_index(self) -> None:
         self._stations_by_source_pref = {"jma": {}, "water_info": {}}
         self._station_meta_by_source = {"jma": {}, "water_info": {}}
+        self._jma_station_id_to_block = {}
 
         for block_no, block_list in self._jma_data.items():
             for st in block_list:
@@ -107,6 +110,9 @@ class StationSelector(ttk.Frame):
                 }
                 self._stations_by_source_pref["jma"].setdefault(pref, []).append(entry)
                 self._station_meta_by_source["jma"].setdefault(str(block_no), entry)
+                sid_text = str(sid).strip() if sid is not None else ""
+                if sid_text:
+                    self._jma_station_id_to_block.setdefault(sid_text, str(block_no))
 
         for sid, st in self._waterinfo_data.items():
             pref = str(st.get("pref_name") or "不明")
@@ -280,7 +286,7 @@ class StationSelector(ttk.Frame):
             [
                 ToolTip(self._tree, "候補の行をクリックすると選択/解除を切り替えます。"),
                 ToolTip(self._remove_selected_btn, "「選択中」一覧で選択した観測所だけを解除します（複数選択可）。"),
-                ToolTip(self._manual_entry, "観測所コードをカンマ区切りで入力できます（例: 47401,62078）。"),
+                ToolTip(self._manual_entry, "観測所コードをカンマ区切りで入力できます（例: 47401, 47401(62078)）。"),
                 ToolTip(self._manual_add_btn, "入力したコードを選択一覧へ追加します。"),
             ]
         )
@@ -578,15 +584,59 @@ class StationSelector(ttk.Frame):
             code = token.strip()
             if not code:
                 continue
-            if code not in selected_set:
-                selected_set.add(code)
-                changed = True
+            for resolved_code in self._resolve_manual_codes(code):
+                if resolved_code not in selected_set:
+                    selected_set.add(resolved_code)
+                    changed = True
         self._manual_var.set("")
         if not changed:
             return
         self._update_station_list()
         self._update_selected_list()
         self._notify_change()
+
+    def _resolve_manual_codes(self, raw_code: str) -> list[str]:
+        code = str(raw_code).strip()
+        if not code:
+            return []
+        if self._current_source != "jma":
+            return [code]
+
+        candidates = self._expand_jma_code_candidates(code)
+        jma_meta = self._station_meta_by_source.get("jma", {})
+        for candidate in candidates:
+            if candidate in jma_meta:
+                return [candidate]
+            mapped = self._jma_station_id_to_block.get(candidate)
+            if mapped:
+                return [mapped]
+        return [code]
+
+    @staticmethod
+    def _expand_jma_code_candidates(raw_code: str) -> list[str]:
+        token = str(raw_code).strip().replace("\u3000", " ")
+        token = token.replace("（", "(").replace("）", ")")
+        if not token:
+            return []
+
+        candidates: list[str] = []
+
+        def add(value: str) -> None:
+            v = str(value).strip()
+            if v and v not in candidates:
+                candidates.append(v)
+
+        add(token)
+
+        if re.fullmatch(r"\d{1,3}[-_]\d+", token):
+            sep = "-" if "-" in token else "_"
+            add(token.split(sep, 1)[1])
+
+        if any(ch in token for ch in "()"):
+            for number in re.findall(r"\d+", token):
+                add(number)
+
+        return candidates
 
     def _notify_change(self) -> None:
         if self.on_selection_changed:

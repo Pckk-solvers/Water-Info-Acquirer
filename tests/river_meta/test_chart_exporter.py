@@ -156,3 +156,19 @@ def test_export_rainfall_charts_empty_annual_max(tmp_path):
         station_key="47401",
     )
     assert paths == []
+
+
+def test_export_rainfall_charts_respects_should_stop(tmp_path):
+    timeseries_df, annual_max_df = _make_72h_data()
+    output_dir = tmp_path / "charts_cancel"
+
+    paths = export_rainfall_charts(
+        timeseries_df,
+        annual_max_df,
+        output_dir=str(output_dir),
+        station_key="47401",
+        station_name="テスト観測所",
+        should_stop=lambda: True,
+    )
+
+    assert paths == []

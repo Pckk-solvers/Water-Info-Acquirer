@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 from requests import exceptions as req_exc
@@ -35,6 +35,7 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 _REQUEST_LOCK = threading.Lock()
 _REQUEST_COUNTER = 0
+CancelFn = Callable[[], bool]
 
 
 def _calc_delay(request_index: int) -> float:
@@ -44,19 +45,44 @@ def _calc_delay(request_index: int) -> float:
     return min(delay, REQUEST_MAX_DELAY)
 
 
-def throttled_get(url: str, headers: dict, timeout: int = 30):
+def _is_cancelled(should_stop: CancelFn | None) -> bool:
+    if should_stop is None:
+        return False
+    try:
+        return bool(should_stop())
+    except Exception:
+        return False
+
+
+def _sleep_interruptible(seconds: float, should_stop: CancelFn | None) -> bool:
+    if seconds <= 0:
+        return _is_cancelled(should_stop)
+    deadline = time.monotonic() + seconds
+    while True:
+        if _is_cancelled(should_stop):
+            return True
+        remain = deadline - time.monotonic()
+        if remain <= 0:
+            return False
+        time.sleep(min(0.2, remain))
+
+
+def throttled_get(url: str, headers: dict, timeout: int = 30, should_stop: CancelFn | None = None):
     """
     リクエスト間隔を最低限確保しつつ、一時的な失敗時には再試行を行うGETラッパー。
     """
     global _REQUEST_COUNTER
     last_error: Optional[Exception] = None
     for attempt in range(1, REQUEST_MAX_RETRIES + 1):
+        if _is_cancelled(should_stop):
+            raise req_exc.RequestException("cancelled")
         with _REQUEST_LOCK:
             current_index = _REQUEST_COUNTER
             _REQUEST_COUNTER += 1
         delay = _calc_delay(current_index)
         if delay:
-            time.sleep(delay)
+            if _sleep_interruptible(delay, should_stop):
+                raise req_exc.RequestException("cancelled")
 
         try:
             response = requests.get(url, headers=headers, timeout=timeout)
@@ -65,7 +91,8 @@ def throttled_get(url: str, headers: dict, timeout: int = 30):
             if attempt == REQUEST_MAX_RETRIES:
                 break
             backoff = min(REQUEST_MIN_DELAY * (2 ** (attempt - 1)), REQUEST_BACKOFF_CAP)
-            time.sleep(backoff)
+            if _sleep_interruptible(backoff, should_stop):
+                raise req_exc.RequestException("cancelled")
             continue
 
         if response.status_code in RETRYABLE_STATUS and attempt < REQUEST_MAX_RETRIES:
@@ -73,7 +100,8 @@ def throttled_get(url: str, headers: dict, timeout: int = 30):
                 f"HTTP {response.status_code} while requesting {url}"
             )
             backoff = min(REQUEST_MIN_DELAY * (2 ** (attempt - 1)), REQUEST_BACKOFF_CAP)
-            time.sleep(backoff)
+            if _sleep_interruptible(backoff, should_stop):
+                raise req_exc.RequestException("cancelled")
             continue
 
         response.raise_for_status()

@@ -59,7 +59,7 @@ def export_station_rainfall_excel(
     _apply_display_transforms(annual_df)
     _apply_display_transforms(timeseries)
 
-    # 年別サマリ: 欠測数を分母付きに (例: "123/8760")
+    # 年別サマリ: 1時間欠測数は欠測数のみを表示
     _format_missing_count_with_total(summary_df)
 
     # 年最大雨量一覧・時系列データ: 冗長カラムを除去
@@ -164,11 +164,11 @@ def _apply_display_transforms(df: pd.DataFrame) -> None:
 
 
 def _format_missing_count_with_total(df: pd.DataFrame) -> None:
-    """1時間欠測数を分母付きフォーマットに変換する (例: '123/8760')。"""
-    if "1時間データ数" in df.columns and "1時間欠測数" in df.columns:
-        total = pd.to_numeric(df["1時間データ数"], errors="coerce").fillna(0) + pd.to_numeric(df["1時間欠測数"], errors="coerce").fillna(0)
-        missing = pd.to_numeric(df["1時間欠測数"], errors="coerce").fillna(0)
-        df["1時間欠測数"] = missing.astype(int).astype(str) + "/" + total.astype(int).astype(str)
+    """1時間欠測数を欠測数のみ（整数）に整形する。"""
+    if "1時間欠測数" not in df.columns:
+        return
+    missing = pd.to_numeric(df["1時間欠測数"], errors="coerce").fillna(0)
+    df["1時間欠測数"] = missing.astype(int)
 
 
 def _drop_station_columns(df: pd.DataFrame) -> pd.DataFrame:

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +30,7 @@ class MergeSummary:
     updated_exact: int = 0
     updated_fuzzy_pref: int = 0
     updated_name_only: int = 0
+    preserved_existing: int = 0
     not_found_count: int = 0
 
     @property
@@ -41,6 +44,105 @@ def _normalize_pref_name(value: str) -> str:
     if text.endswith(("都", "府", "県")):
         text = text[:-1]
     return text
+
+
+_PDF_FIELDS = (
+    "station_id",
+    "latitude",
+    "longitude",
+    "elevation_m",
+    "start_date_raw",
+    "start_date",
+)
+
+_START_DATE_RE = re.compile(
+    r"^(?:(?P<era>[明大昭平令])(?P<era_year>元|\d{1,3})|(?P<western>\d{4}))"
+    r"[./-](?P<month>\d{1,2})[./-](?P<day>\d{1,2})$"
+)
+
+_ERA_BASE_YEAR = {
+    "明": 1867,
+    "大": 1911,
+    "昭": 1925,
+    "平": 1988,
+    "令": 2018,
+}
+
+
+def _normalize_start_date(value: str) -> str:
+    raw = str(value or "").strip().lstrip("#")
+    if not raw:
+        return ""
+    translated = raw.translate(
+        str.maketrans(
+            "０１２３４５６７８９．／－",
+            "0123456789./-",
+        )
+    )
+    matched = _START_DATE_RE.fullmatch(translated)
+    if not matched:
+        return ""
+
+    year: int
+    if matched.group("western"):
+        year = int(matched.group("western"))
+    else:
+        era = matched.group("era") or ""
+        era_year_token = matched.group("era_year") or ""
+        era_year = 1 if era_year_token == "元" else int(era_year_token)
+        base = _ERA_BASE_YEAR.get(era)
+        if base is None:
+            return ""
+        year = base + era_year
+
+    month = int(matched.group("month"))
+    day = int(matched.group("day"))
+    try:
+        return datetime(year, month, day).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _station_lookup_key(station: dict) -> tuple[str, str, str]:
+    return (
+        str(station.get("prec_no", "")).zfill(2),
+        str(station.get("block_no", "")).strip(),
+        str(station.get("obs_type", "a1")).strip().lower() or "a1",
+    )
+
+
+def _build_station_lookup(index_data: dict) -> dict[tuple[str, str, str], dict]:
+    lookup: dict[tuple[str, str, str], dict] = {}
+    for stations in index_data.get("by_block_no", {}).values():
+        for station in stations:
+            lookup[_station_lookup_key(station)] = station
+    return lookup
+
+
+def _apply_pdf_fields(station: dict, matched_row: dict[str, str]) -> None:
+    raw_start_date = str(matched_row.get("start_date", "") or "").strip()
+    station["station_id"] = str(matched_row.get("station_id", "") or "").strip()
+    station["latitude"] = str(matched_row.get("latitude", "") or "").strip()
+    station["longitude"] = str(matched_row.get("longitude", "") or "").strip()
+    station["elevation_m"] = str(matched_row.get("elevation_m", "") or "").strip()
+    station["start_date_raw"] = raw_start_date
+    station["start_date"] = _normalize_start_date(raw_start_date)
+
+
+def _copy_existing_pdf_fields(station: dict, existing_station: dict | None) -> bool:
+    if not existing_station:
+        return False
+    copied = False
+    for field_name in _PDF_FIELDS:
+        value = str(existing_station.get(field_name, "") or "").strip()
+        station[field_name] = value
+        copied = copied or bool(value)
+    return copied
+
+
+def _clear_pdf_fields(station: dict) -> None:
+    for field_name in _PDF_FIELDS:
+        station[field_name] = ""
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -88,13 +190,20 @@ def _build_lookup(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]
     return lookup_name
 
 
-def _merge_pdf_data(index_data: dict, lookup_name: dict[str, list[dict[str, str]]]) -> MergeSummary:
+def _merge_pdf_data(
+    index_data: dict,
+    lookup_name: dict[str, list[dict[str, str]]],
+    *,
+    existing_lookup: dict[tuple[str, str, str], dict] | None = None,
+) -> MergeSummary:
     summary = MergeSummary()
+    existing_lookup = existing_lookup or {}
 
     for _block_no, stations in index_data.get("by_block_no", {}).items():
         for station in stations:
             api_pref = _normalize_pref_name(station.get("pref_name", "")).replace("地方", "")
             name = station.get("station_name", "")
+            station_key = _station_lookup_key(station)
 
             match: dict[str, str] | None = None
             match_type = ""
@@ -128,10 +237,7 @@ def _merge_pdf_data(index_data: dict, lookup_name: dict[str, list[dict[str, str]
                     )
 
             if match:
-                station["station_id"] = match["station_id"]
-                station["latitude"] = match.get("latitude", "")
-                station["longitude"] = match.get("longitude", "")
-                station["elevation_m"] = match.get("elevation_m", "")
+                _apply_pdf_fields(station, match)
                 if match_type == "exact":
                     summary.updated_exact += 1
                 elif match_type == "fuzzy_pref":
@@ -139,13 +245,14 @@ def _merge_pdf_data(index_data: dict, lookup_name: dict[str, list[dict[str, str]
                 else:
                     summary.updated_name_only += 1
             else:
-                station["station_id"] = ""
-                station["latitude"] = ""
-                station["longitude"] = ""
-                station["elevation_m"] = ""
-                summary.not_found_count += 1
-                if not candidates:
-                    print(f"[WARN] 見つかりません: {api_pref} - {name}")
+                existing_station = existing_lookup.get(station_key)
+                if _copy_existing_pdf_fields(station, existing_station):
+                    summary.preserved_existing += 1
+                else:
+                    _clear_pdf_fields(station)
+                    summary.not_found_count += 1
+                    if not candidates:
+                        print(f"[WARN] 見つかりません: {api_pref} - {name}")
 
     return summary
 
@@ -202,6 +309,9 @@ def run_update_jma_index(
 
     print("\n--- 2. ベースJSONの読み込み ---")
     base_tmp_path: Path | None = None
+    existing_lookup: dict[tuple[str, str, str], dict] = {}
+    if index_path.exists():
+        existing_lookup = _build_station_lookup(_load_json(index_path))
     if mode == "rebuild":
         base_tmp_path = output_path.with_suffix(output_path.suffix + ".base.tmp")
         print(f"モード: rebuild -> JMAベースJSONを再生成: {base_tmp_path}")
@@ -215,16 +325,18 @@ def run_update_jma_index(
         data = _load_json(index_path)
 
     print("\n--- 3. JSONとPDFデータのマージ ---")
-    summary = _merge_pdf_data(data, lookup_name)
+    summary = _merge_pdf_data(data, lookup_name, existing_lookup=existing_lookup)
     print("マージ結果:")
     print(f"  - 完全一致(都道府県+観測所名): {summary.updated_exact}件")
     print(f"  - 部分一致(都道府県揺れ許容) : {summary.updated_fuzzy_pref}件")
     print(f"  - 観測所名のみ一致           : {summary.updated_name_only}件")
     print(f"  - 合計更新件数               : {summary.updated_total}件")
+    if summary.preserved_existing > 0:
+        print(f"  - 既存値フォールバック維持   : {summary.preserved_existing}件")
     if summary.not_found_count > 0:
         print(
-            f"  - PDFに見つからず未補完      : {summary.not_found_count}件 "
-            "(station_id/座標/標高は空文字)"
+            f"  - PDFにも既存値にも見つからず未補完: {summary.not_found_count}件 "
+            "(station_id/座標/標高/開始日は空文字)"
         )
 
     print("\n--- 4. 保存 ---")
@@ -254,4 +366,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

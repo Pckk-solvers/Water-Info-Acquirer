@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,29 +47,38 @@ def resolve_jma_stations_from_codes(
     seen: set[tuple[str, str, str]] = set()
 
     for raw_code in station_codes:
-        code = str(raw_code).strip()
-        if not code:
-            issues.append(StationResolveIssue(code=code, reason="empty_code"))
+        raw = str(raw_code).strip()
+        code_candidates = _expand_station_code_candidates(raw)
+        if not code_candidates:
+            issues.append(StationResolveIssue(code=raw, reason="empty_code"))
             continue
 
-        candidates = by_block.get(code)
-        
-        # block_no で見つからない場合、新設した AMeDAS station_id (5桁など) で検索を試みる
-        if not candidates:
-            found_by_id = []
-            for block_candidates in by_block.values():
-                for c in block_candidates:
-                    if str(c.get("station_id", "")).strip() == code:
-                        found_by_id.append(c)
-            if found_by_id:
-                candidates = found_by_id
+        code = ""
+        candidates: list[dict[str, Any]] | None = None
+        for candidate_code in code_candidates:
+            current = by_block.get(candidate_code)
+
+            # block_no で見つからない場合、新設した AMeDAS station_id (5桁など) で検索を試みる
+            if not current:
+                found_by_id: list[dict[str, Any]] = []
+                for block_candidates in by_block.values():
+                    for c in block_candidates:
+                        if str(c.get("station_id", "")).strip() == candidate_code:
+                            found_by_id.append(c)
+                if found_by_id:
+                    current = found_by_id
+
+            if current:
+                code = candidate_code
+                candidates = current
+                break
 
         if not candidates:
-            issues.append(StationResolveIssue(code=code, reason="not_found"))
+            issues.append(StationResolveIssue(code=raw, reason="not_found"))
             continue
         rec = _resolve_candidate(code, candidates)
         if rec is None:
-            issues.append(StationResolveIssue(code=code, reason="ambiguous"))
+            issues.append(StationResolveIssue(code=raw, reason="ambiguous"))
             continue
 
         key = (
@@ -85,6 +95,7 @@ def resolve_jma_stations_from_codes(
                 block_number=key[1],
                 obs_type=key[2],
                 station_name=str(rec.get("station_name", "")),
+                start_date=str(rec.get("start_date", "")).strip(),
             )
         )
 
@@ -135,6 +146,7 @@ def resolve_jma_stations_from_prefectures(
                     block_number=block_no,
                     obs_type=obs_type,
                     station_name=station_name,
+                    start_date=str(rec.get("start_date", "")).strip(),
                 )
             )
 
@@ -218,3 +230,30 @@ def _normalize_pref_input(value: str) -> str:
     if token.isdigit():
         return token.zfill(2)
     return token
+
+
+def _expand_station_code_candidates(raw_code: str) -> list[str]:
+    token = str(raw_code).strip().replace("\u3000", " ")
+    token = token.replace("（", "(").replace("）", ")")
+    if not token:
+        return []
+
+    candidates: list[str] = []
+
+    def add(value: str) -> None:
+        v = str(value).strip()
+        if v and v not in candidates:
+            candidates.append(v)
+
+    add(token)
+
+    # 例: "11-62001" / "11_62001" から block_no 部分を候補に追加
+    if re.fullmatch(r"\d{1,3}[-_]\d+", token):
+        add(token.split("-" if "-" in token else "_", 1)[1])
+
+    # 例: "47401 (62078)" や "（62078）" のような括弧付き入力にも対応
+    if any(ch in token for ch in "()"):
+        for num in re.findall(r"\d+", token):
+            add(num)
+
+    return candidates

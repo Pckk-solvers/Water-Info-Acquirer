@@ -9,14 +9,14 @@ from .scrape_station import extract_station_name
 from .scrape_values import extract_font_values, coerce_numeric_series
 
 
-def fetch_station_name(throttled_get, headers: dict, url: str) -> str:
-    html = fetch_html(throttled_get, headers, url)
+def fetch_station_name(throttled_get, headers: dict, url: str, should_stop=None) -> str:
+    html = fetch_html(throttled_get, headers, url, should_stop=should_stop)
     soup = parse_html(html)
     return extract_station_name(soup)
 
 
-def fetch_font_values(throttled_get, headers: dict, url: str) -> list[str]:
-    html = fetch_html(throttled_get, headers, url)
+def fetch_font_values(throttled_get, headers: dict, url: str, should_stop=None) -> list[str]:
+    html = fetch_html(throttled_get, headers, url, should_stop=should_stop)
     soup = parse_html(html)
     return extract_font_values(soup)
 
@@ -38,11 +38,19 @@ def fetch_hourly_values(
     drop_last: bool = False,
     drop_last_each: bool = False,
     on_chunk: Callable[[], None] | None = None,
+    should_stop=None,
 ) -> list[float | str]:
     raw_values: list[str] = []
     values: list[float | str] = []
     for url in urls:
-        raw_values = fetch_font_values(throttled_get, headers, url)
+        if should_stop is None:
+            raw_values = fetch_font_values(throttled_get, headers, url)
+        else:
+            try:
+                raw_values = fetch_font_values(throttled_get, headers, url, should_stop=should_stop)
+            except TypeError:
+                # 既存テスト/モック互換: should_stop 非対応シグネチャを許容
+                raw_values = fetch_font_values(throttled_get, headers, url)
         chunk = coerce_hourly_values(raw_values)
         if drop_last_each and chunk:
             chunk.pop()
@@ -54,6 +62,12 @@ def fetch_hourly_values(
     return values
 
 
-def fetch_daily_values(throttled_get, headers: dict, url: str):
-    raw = fetch_font_values(throttled_get, headers, url)
+def fetch_daily_values(throttled_get, headers: dict, url: str, should_stop=None):
+    if should_stop is None:
+        raw = fetch_font_values(throttled_get, headers, url)
+    else:
+        try:
+            raw = fetch_font_values(throttled_get, headers, url, should_stop=should_stop)
+        except TypeError:
+            raw = fetch_font_values(throttled_get, headers, url)
     return coerce_numeric_series(raw)

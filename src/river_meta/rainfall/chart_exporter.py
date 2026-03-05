@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import matplotlib
 import matplotlib.dates as mdates
@@ -121,6 +121,7 @@ def export_rainfall_charts(
     output_dir: str,
     station_key: str,
     station_name: str = "",
+    should_stop: Callable[[], bool] | None = None,
 ) -> list[Path]:
     """年最大雨量イベントごとにPNGチャートを生成する。
 
@@ -162,6 +163,12 @@ def export_rainfall_charts(
     paths: list[Path] = []
 
     for _, row in annual_max_df.iterrows():
+        if should_stop is not None:
+            try:
+                if should_stop():
+                    break
+            except Exception:
+                pass
         metric_raw = str(row.get("指標", ""))
         if metric_raw not in _METRIC_HOURS:
             continue
@@ -202,6 +209,13 @@ def export_rainfall_charts(
 
         title_metric = metric_raw.replace("雨量", "最大雨量")
         title = f"{station_name} {year}年 {title_metric}" if station_name else f"{station_key} {year}年 {title_metric}"
+
+        if should_stop is not None:
+            try:
+                if should_stop():
+                    break
+            except Exception:
+                pass
 
         _render_chart(
             window=window,

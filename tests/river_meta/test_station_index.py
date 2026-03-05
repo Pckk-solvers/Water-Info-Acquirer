@@ -79,3 +79,23 @@ def test_resolve_jma_stations_from_codes_not_found():
     assert len(issues) == 1
     assert issues[0].code == "99999"
     assert issues[0].reason == "not_found"
+
+
+def test_resolve_jma_stations_from_codes_parenthesized_display_format():
+    stations, issues = resolve_jma_stations_from_codes(
+        ["47401 (62078)", "0364（61286）"],
+        index_data=_mock_index(),
+    )
+    assert not issues
+    assert len(stations) == 2
+    assert {s.block_number for s in stations} == {"47401", "0364"}
+
+
+def test_resolve_jma_stations_from_codes_parenthesized_station_id_only():
+    stations, issues = resolve_jma_stations_from_codes(
+        ["(62078)"],
+        index_data=_mock_index(),
+    )
+    assert not issues
+    assert len(stations) == 1
+    assert stations[0].block_number == "47401"
