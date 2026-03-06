@@ -11,6 +11,7 @@
 - JMA 年存在判定（hourly最適化）タスク: `docs/dev/jma-hourly-availability-optimization/task.md`
 - 雨量整理取得 高速化 Overview: `docs/dev/rainfall-collection-performance/overview.md`
 - 雨量整理取得 高速化 要件: `docs/dev/rainfall-collection-performance/requirements.md`
+- 雨量取得順序/停止時ロールバック 要件: `docs/dev/rainfall-collection-performance/requirements-order-and-cancel-policy.md`
 - 整理・出力タブ 高速化 Overview: `docs/dev/rainfall-generate-performance/overview.md`
 - 整理・出力タブ 高速化 要件: `docs/dev/rainfall-generate-performance/requirements.md`
 - 整理・出力タブ 高速化 詳細設計: `docs/dev/rainfall-generate-performance/design.md`

@@ -437,6 +437,9 @@ def test_run_rainfall_analyze_applies_jma_year_filter_and_fallback(monkeypatch, 
         ("12_62002", 2024),
         ("12_62002", 2025),
     ]
+    assert any("[collect][period][global]" in line for line in logs)
+    assert any("[collect][period][station] source=jma 観測所=11_62001" in line for line in logs)
+    assert any("観測所=11_62001" in line and "対象年=2025" in line for line in logs)
     assert any("観測所=11_62001 指定年数=2 -> 判定後年数=1 status=success_with_years" in line for line in logs)
     assert any("status=indeterminate" in line and "従来モードで継続" in line for line in logs)
     assert any("全体年判定: 4 -> 3 (1 年削減)" in line for line in logs)
@@ -620,6 +623,7 @@ def test_run_rainfall_analyze_collection_order_source_both_is_stable(monkeypatch
 
 def test_run_rainfall_analyze_resolves_years_from_datetime_range(monkeypatch, tmp_path):
     called_jobs: list[tuple[str, int]] = []
+    logs: list[str] = []
 
     def _fake_fetch_waterinfo_year(
         *,
@@ -648,10 +652,13 @@ def test_run_rainfall_analyze_resolves_years_from_datetime_range(monkeypatch, tm
         interval="1hour",
         waterinfo_station_codes=["2700000001"],
     )
-    run_rainfall_analyze(config, output_dir=str(tmp_path))
+    run_rainfall_analyze(config, output_dir=str(tmp_path), log=logs.append)
 
     assert called_jobs == [
         ("2700000001", 2024),
         ("2700000001", 2025),
         ("2700000001", 2026),
     ]
+    assert any("[collect][period][global]" in line and "正規化後対象年=2024, 2025, 2026" in line for line in logs)
+    assert any("[collect][period][station] source=water_info 観測所=2700000001" in line for line in logs)
+    assert any("取得期間=2024-01-01 00:00:00 ～ 2026-12-31 23:59:59" in line for line in logs)

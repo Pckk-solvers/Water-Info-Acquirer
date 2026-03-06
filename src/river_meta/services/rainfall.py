@@ -519,6 +519,8 @@ def run_rainfall_analyze(
     jma_requested_year_total = 0
     jma_filtered_year_total = 0
     target_years = _resolve_target_years_for_analyze(config)
+    logger(f"[collect] 取得順序: {config.collection_order}")
+    logger(_format_target_years_normalization_log(config, target_years))
 
     # We first collect the fully resolved stations to iterate over them safely without querying API twice
     resolved_sources = _resolve_sources(config.source)
@@ -550,6 +552,7 @@ def run_rainfall_analyze(
         jma_station_inputs[station_key] = [station]
 
         years_for_station = target_years
+        station_period_reason = "JMA観測所別の年判定前（全体対象年を仮適用）"
         if target_years:
             requested_count = len(target_years)
             filtered_years = target_years
@@ -566,6 +569,10 @@ def run_rainfall_analyze(
                     f"[JMA][availability] 観測所={station_key} "
                     f"status=indeterminate ({availability.reason}) 従来モードで継続"
                 )
+                station_period_reason = (
+                    f"可用性判定が不確定のため全体対象年を使用 "
+                    f"(status={availability.status}, reason={availability.reason})"
+                )
             else:
                 filtered_years = [year for year in target_years if year in availability.years]
                 logger(
@@ -574,10 +581,14 @@ def run_rainfall_analyze(
                 )
                 if not filtered_years:
                     logger(f"[JMA][availability] 観測所={station_key} 判定後の対象年なしのためスキップ")
+                    station_period_reason = "可用性判定の結果、対象年なし"
+                else:
+                    station_period_reason = "可用性判定で存在年のみへ絞り込み"
 
             jma_requested_year_total += requested_count
             jma_filtered_year_total += len(filtered_years)
             years_for_station = filtered_years
+        logger(_format_station_target_period_log("jma", station_key, years_for_station, station_period_reason))
 
         for year in years_for_station:
             if _is_cancelled(should_stop):
@@ -591,6 +602,14 @@ def run_rainfall_analyze(
             break
         station_name_by_key[("water_info", code)] = ""
         waterinfo_station_inputs[code] = [WaterInfoStationInput(station_code=code)]
+        logger(
+            _format_station_target_period_log(
+                "water_info",
+                code,
+                target_years,
+                "WaterInfoは観測所別の年可用性判定を行わないため、全体対象年をそのまま使用",
+            )
+        )
         for year in target_years:
             if _is_cancelled(should_stop):
                 _append_cancelled_once(all_errors)
@@ -1043,6 +1062,49 @@ def _resolve_target_years_for_analyze(config: RainfallRunInput) -> list[int]:
     if config.start_at is None and config.end_at is None:
         raise ValueError("start_at/end_at or year(s) is required")
     raise ValueError("Both start_at and end_at are required when year is not specified")
+
+
+def _format_target_years_normalization_log(config: RainfallRunInput, target_years: list[int]) -> str:
+    normalized_text = _format_years_list_text(target_years)
+    normalized_period_text = _format_years_period_text(target_years)
+
+    if config.years or config.year is not None:
+        raw_years = config.years if config.years else ([config.year] if config.year is not None else [])
+        raw_text = _format_years_list_text([int(year) for year in raw_years])
+        return (
+            "[collect][period][global] 入力=年指定。"
+            f"指定年={raw_text} -> 正規化後対象年={normalized_text} / 取得期間={normalized_period_text} "
+            "理由=取得処理は年単位ジョブで実行するため（重複年は除外）"
+        )
+
+    start_text = config.start_at.strftime("%Y-%m-%d %H:%M:%S") if config.start_at else "(未指定)"
+    end_text = config.end_at.strftime("%Y-%m-%d %H:%M:%S") if config.end_at else "(未指定)"
+    return (
+        "[collect][period][global] 入力=日時範囲。"
+        f"指定期間={start_text} ～ {end_text} -> 正規化後対象年={normalized_text} / 取得期間={normalized_period_text} "
+        "理由=取得処理は年単位ジョブのため、開始年〜終了年へ展開"
+    )
+
+
+def _format_station_target_period_log(source: str, station_key: str, years: list[int], reason: str) -> str:
+    years_text = _format_years_list_text(years)
+    period_text = _format_years_period_text(years)
+    return (
+        f"[collect][period][station] source={source} 観測所={station_key} "
+        f"対象年={years_text} / 取得期間={period_text} 理由={reason}"
+    )
+
+
+def _format_years_list_text(years: list[int]) -> str:
+    return ", ".join(str(year) for year in years) if years else "(なし)"
+
+
+def _format_years_period_text(years: list[int]) -> str:
+    if not years:
+        return "(なし)"
+    start_year = min(years)
+    end_year = max(years)
+    return f"{start_year}-01-01 00:00:00 ～ {end_year}-12-31 23:59:59"
 
 
 def _resolve_query_period(config: RainfallRunInput) -> tuple[datetime, datetime]:

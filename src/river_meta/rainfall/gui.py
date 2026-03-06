@@ -61,18 +61,25 @@ class RainfallGuiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("RainfallCollector")
-        self.geometry("1180x780")
-        self.minsize(1020, 680)
+        self.geometry("1560x860")
+        self.minsize(1360, 740)
         self._event_queue: queue.Queue[Event] = queue.Queue()
         self._running = False
         self._stop_event: threading.Event | None = None
         self._close_requested = False
         self._tooltips: list[ToolTip] = []
+        self._setup_visual_styles()
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._sync_run_button_label()
         self.after(120, self._drain_events)
         self.after_idle(self._stabilize_initial_layout)
+
+    def _setup_visual_styles(self) -> None:
+        """枠線を減らし、見出し主体の軽量なセクションスタイルを定義する。"""
+        style = ttk.Style(self)
+        style.configure("Soft.TLabelframe", borderwidth=0, relief="flat", padding=6)
+        style.configure("Soft.TLabelframe.Label", foreground="#334155", font=("", 9, "bold"))
 
     # -----------------------------------------------------------------
     # UI 構築
@@ -81,9 +88,10 @@ class RainfallGuiApp(tk.Tk):
     def _build_ui(self) -> None:
         root = ttk.Frame(self, padding=10)
         root.pack(fill="both", expand=True)
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(1, weight=4)   # Notebook が主に伸縮
-        root.rowconfigure(3, weight=1)   # ログも伸縮
+        # 左: メイン操作 / 右: ログ（ほぼ 1:1）
+        root.columnconfigure(0, weight=1, minsize=620)
+        root.columnconfigure(1, weight=1, minsize=620)
+        root.rowconfigure(1, weight=1)   # Notebook が主に伸縮
 
         # --- タイトル ---
         ttk.Label(root, text="RainfallCollector", font=("", 13, "bold")).grid(
@@ -101,7 +109,7 @@ class RainfallGuiApp(tk.Tk):
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         # --- 共通フッター: 出力先 + 実行ボタン ---
-        footer = ttk.LabelFrame(root, text="共通設定", padding=8)
+        footer = ttk.LabelFrame(root, text="共通設定", padding=6, style="Soft.TLabelframe")
         footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         footer.columnconfigure(1, weight=1)
 
@@ -127,11 +135,11 @@ class RainfallGuiApp(tk.Tk):
         ttk.Label(btn_frame, textvariable=self.status).pack(side="left")
 
         # --- ログ ---
-        log_frame = ttk.LabelFrame(root, text="ログ", padding=4)
-        log_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        log_frame = ttk.LabelFrame(root, text="ログ", padding=3, style="Soft.TLabelframe")
+        log_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=(8, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, wrap="none", height=6, font=("Consolas", 9))
+        self.log_text = tk.Text(log_frame, wrap="none", height=18, font=("Consolas", 9))
         self.log_text.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         scroll.grid(row=0, column=1, sticky="ns")
@@ -541,8 +549,8 @@ class CollectTab(ttk.Frame):
         last_year = datetime.now().year - 1
 
         # --- 取得元 ---
-        src_frame = ttk.LabelFrame(self, text="取得元", padding=8)
-        src_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        src_frame = ttk.LabelFrame(self, text="取得元", padding=6, style="Soft.TLabelframe")
+        src_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         self.source = tk.StringVar(value="jma")
         for i, (label, token) in enumerate([
             ("気象庁（JMA）", "jma"),
@@ -554,8 +562,8 @@ class CollectTab(ttk.Frame):
         self.source.trace_add("write", lambda *_: self._on_source_changed())
 
         # --- 対象年 ---
-        year_frame = ttk.LabelFrame(self, text="対象年", padding=8)
-        year_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        year_frame = ttk.LabelFrame(self, text="対象年", padding=6, style="Soft.TLabelframe")
+        year_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         self.start_year = tk.StringVar(value=str(last_year))
         self.end_year = tk.StringVar(value=str(last_year))
         self.start_year_entry = ttk.Entry(year_frame, textvariable=self.start_year, width=8)
@@ -565,8 +573,8 @@ class CollectTab(ttk.Frame):
         self.end_year_entry.pack(side="left")
 
         # --- 取得順序 ---
-        order_frame = ttk.LabelFrame(self, text="取得順序", padding=8)
-        order_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        order_frame = ttk.LabelFrame(self, text="取得順序", padding=6, style="Soft.TLabelframe")
+        order_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         self.collection_order = tk.StringVar(value="station_year")
         for i, (label, token) in enumerate([
             ("観測所ごと（既定）", "station_year"),
@@ -577,8 +585,8 @@ class CollectTab(ttk.Frame):
             self._order_buttons.append(rb)
 
         # --- 観測所指定 (新UI) ---
-        station_frame = ttk.LabelFrame(self, text="観測所指定", padding=8)
-        station_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
+        station_frame = ttk.LabelFrame(self, text="観測所指定", padding=6, style="Soft.TLabelframe")
+        station_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 4))
         self.rowconfigure(3, weight=1)  # 観測所指定フレームを広げる
 
         jma_json = Path(__file__).resolve().parents[1] / "resources" / "jma_station_index.json"
@@ -731,8 +739,8 @@ class GenerateTab(ttk.Frame):
         self.parquet_detect_label.pack(side="right", padx=(12, 0))
 
         # --- 出力オプション ---
-        opt_frame = ttk.LabelFrame(self, text="出力オプション", padding=8)
-        opt_frame.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        opt_frame = ttk.LabelFrame(self, text="出力オプション", padding=6, style="Soft.TLabelframe")
+        opt_frame.grid(row=1, column=0, sticky="ew", pady=(0, 4))
         opt_frame.columnconfigure(1, weight=1)
 
         ttk.Label(opt_frame, text="出力対象").grid(row=0, column=0, sticky="w", padx=(0, 12))
@@ -771,8 +779,8 @@ class GenerateTab(ttk.Frame):
         self._sync_regenerate_option_state()
 
         # --- Parquetテーブル ---
-        table_frame = ttk.LabelFrame(self, text="Parquetデータ状況", padding=4)
-        table_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
+        table_frame = ttk.LabelFrame(self, text="Parquetデータ状況", padding=3, style="Soft.TLabelframe")
+        table_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 4))
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
 

@@ -76,6 +76,9 @@ class StationSelector(ttk.Frame):
             ],
             foreground=[("disabled", "#9CA3AF")],
         )
+        # 観測所指定ペインは枠線を減らして見出しで区切る
+        style.configure("StationPane.TFrame", relief="flat", borderwidth=0)
+        style.configure("StationPaneTitle.TLabel", foreground="#334155", font=("", 9, "bold"))
 
     def _load_data(self, jma_path: str | Path, waterinfo_path: str | Path) -> None:
         jma_file = Path(jma_path)
@@ -131,15 +134,18 @@ class StationSelector(ttk.Frame):
 
     def _build_ui(self) -> None:
         # 左ペイン: 都道府県
-        pref_frame = ttk.LabelFrame(self, text="都道府県", padding=6)
+        pref_frame = ttk.Frame(self, style="StationPane.TFrame", padding=4)
         pref_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
-        pref_frame.rowconfigure(1, weight=1)
+        pref_frame.rowconfigure(2, weight=1)
         pref_frame.columnconfigure(0, weight=1)
         pref_frame.columnconfigure(1, weight=0)
+        ttk.Label(pref_frame, text="都道府県", style="StationPaneTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 2)
+        )
 
         pref_toolbar = ttk.Frame(pref_frame)
         # 検索行はリスト本体(列0)と同幅にする。スクロールバー列は含めない。
-        pref_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        pref_toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 2))
         pref_toolbar.columnconfigure(1, weight=1)
 
         self._pref_search_var = tk.StringVar()
@@ -151,19 +157,22 @@ class StationSelector(ttk.Frame):
         pref_scroll = ttk.Scrollbar(pref_frame, orient="vertical")
         self._pref_listbox = tk.Listbox(pref_frame, yscrollcommand=pref_scroll.set, exportselection=False)
         pref_scroll.config(command=self._pref_listbox.yview)
-        self._pref_listbox.grid(row=1, column=0, sticky="nsew")
-        pref_scroll.grid(row=1, column=1, sticky="ns")
+        self._pref_listbox.grid(row=2, column=0, sticky="nsew")
+        pref_scroll.grid(row=2, column=1, sticky="ns")
 
         self._pref_listbox.bind("<<ListboxSelect>>", self._on_pref_selected)
 
         # 中央ペイン: 候補リスト
-        candidate_frame = ttk.LabelFrame(self, text="候補観測所", padding=6)
+        candidate_frame = ttk.Frame(self, style="StationPane.TFrame", padding=4)
         candidate_frame.grid(row=0, column=1, sticky="nsew", padx=4)
-        candidate_frame.rowconfigure(1, weight=1)
+        candidate_frame.rowconfigure(2, weight=1)
         candidate_frame.columnconfigure(0, weight=1)
+        ttk.Label(candidate_frame, text="候補観測所", style="StationPaneTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 2)
+        )
 
         toolbar = ttk.Frame(candidate_frame)
-        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 2))
         toolbar.columnconfigure(1, weight=1)
         toolbar.columnconfigure(2, weight=0)
 
@@ -204,28 +213,31 @@ class StationSelector(ttk.Frame):
         tree_scroll = ttk.Scrollbar(candidate_frame, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=tree_scroll.set)
 
-        self._tree.grid(row=1, column=0, sticky="nsew")
-        tree_scroll.grid(row=1, column=1, sticky="ns")
+        self._tree.grid(row=2, column=0, sticky="nsew")
+        tree_scroll.grid(row=2, column=1, sticky="ns")
 
         # 左右スクロール(JMAの名前が長すぎる場合など用)
         tree_xscroll = ttk.Scrollbar(candidate_frame, orient="horizontal", command=self._tree.xview)
         self._tree.configure(xscrollcommand=tree_xscroll.set)
-        tree_xscroll.grid(row=2, column=0, sticky="ew")
+        tree_xscroll.grid(row=3, column=0, sticky="ew")
 
         # Treeviewのクリックイベント（選択切替）
         self._tree.bind("<ButtonRelease-1>", self._on_tree_click)
         self._tree.bind("<Configure>", self._on_candidate_tree_configure, add="+")
 
         # 右ペイン: 選択中
-        selected_frame = ttk.LabelFrame(self, text="選択中", padding=6)
+        selected_frame = ttk.Frame(self, style="StationPane.TFrame", padding=4)
         selected_frame.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
-        selected_frame.rowconfigure(1, weight=1)
+        selected_frame.rowconfigure(2, weight=1)
         selected_frame.columnconfigure(0, weight=1)
         selected_frame.columnconfigure(1, weight=0)
+        ttk.Label(selected_frame, text="選択中", style="StationPaneTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 2)
+        )
 
         selected_toolbar = ttk.Frame(selected_frame)
         # ヘッダー行は選択中リスト本体(列0)と同幅にする。スクロールバー列は含めない。
-        selected_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        selected_toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 2))
         selected_toolbar.columnconfigure(2, weight=1)
 
         ttk.Label(selected_toolbar, text="件数", width=6, anchor="e").grid(row=0, column=0, sticky="e", padx=(0, 6))
@@ -259,14 +271,14 @@ class StationSelector(ttk.Frame):
         self._selected_tree.column("name", width=170, minwidth=110, anchor="w", stretch=False)
         self._selected_tree.column("code", width=120, minwidth=90, anchor="w", stretch=False)
         self._selected_tree.column("info", width=220, minwidth=120, anchor="w", stretch=True)
-        self._selected_tree.grid(row=1, column=0, sticky="nsew")
+        self._selected_tree.grid(row=2, column=0, sticky="nsew")
         selected_scroll = ttk.Scrollbar(selected_frame, orient="vertical", command=self._selected_tree.yview)
-        selected_scroll.grid(row=1, column=1, sticky="ns")
+        selected_scroll.grid(row=2, column=1, sticky="ns")
         self._selected_tree.configure(yscrollcommand=selected_scroll.set)
         self._selected_tree.bind("<Configure>", self._on_selected_tree_configure, add="+")
 
         manual_frame = ttk.Frame(selected_frame)
-        manual_frame.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        manual_frame.grid(row=3, column=0, sticky="ew", pady=(2, 0))
         manual_frame.columnconfigure(1, weight=1)
         self._manual_var = tk.StringVar()
         ttk.Label(manual_frame, text="観測所コード", anchor="e").grid(row=0, column=0, sticky="e", padx=(0, 6))
