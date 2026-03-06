@@ -1,6 +1,7 @@
 """parquet_store スキャン機能 + run_rainfall_generate のテスト。"""
 from __future__ import annotations
 
+from concurrent.futures import Future
 import sys
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ from river_meta.rainfall.parquet_store import (
     scan_parquet_dir,
 )
 from river_meta.rainfall.models import RainfallRecord
+import river_meta.services.rainfall as rainfall_service
 from river_meta.services.rainfall import (
     RainfallGenerateInput,
     run_rainfall_generate,
@@ -78,6 +80,31 @@ def _create_full_year_parquets(
             records = _make_dummy_records(source, station_key, year, m)
             pq_path = build_parquet_path(output_dir, source, station_key, year, month=m)
             save_records_parquet(records, pq_path)
+
+
+def _patch_immediate_process_pool(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    calls: list[int] = []
+
+    class _ImmediateProcessPoolExecutor:
+        def __init__(self, *, max_workers: int):
+            calls.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, /, *args, **kwargs):
+            future: Future = Future()
+            try:
+                future.set_result(fn(*args, **kwargs))
+            except Exception as exc:  # noqa: BLE001
+                future.set_exception(exc)
+            return future
+
+    monkeypatch.setattr(rainfall_service, "ProcessPoolExecutor", _ImmediateProcessPoolExecutor)
+    return calls
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +223,64 @@ def test_generate_with_chart(tmp_path):
     for path in result.chart_paths:
         assert Path(path).exists()
         assert path.endswith(".png")
+
+
+def test_generate_with_chart_parallel_disabled_compatibility(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+
+    class _ShouldNotInstantiate:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("ProcessPoolExecutor should not be used when parallel is disabled.")
+
+    monkeypatch.setattr(rainfall_service, "ProcessPoolExecutor", _ShouldNotInstantiate)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+        chart_parallel_enabled=False,
+        chart_parallel_workers=4,
+    )
+    result = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(result.chart_paths) >= 1
+    for path in result.chart_paths:
+        assert Path(path).exists()
+
+
+def test_generate_with_chart_parallel_enabled(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    calls = _patch_immediate_process_pool(monkeypatch)
+
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+        chart_parallel_enabled=True,
+        chart_parallel_workers=2,
+    )
+    result = run_rainfall_generate(config, log=lambda msg: None)
+    assert calls == [2]
+    assert len(result.chart_paths) >= 1
+    for path in result.chart_paths:
+        assert Path(path).exists()
+        assert path.endswith(".png")
+
+
+def test_generate_chart_parallel_diff_mode_skips_on_second_run(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    _patch_immediate_process_pool(monkeypatch)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+        chart_parallel_enabled=True,
+        chart_parallel_workers=2,
+    )
+
+    first = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(first.chart_paths) >= 1
+
+    second = run_rainfall_generate(config, log=lambda msg: None)
+    assert second.chart_paths == []
 
 
 def test_generate_diff_mode_skips_on_second_run(tmp_path):

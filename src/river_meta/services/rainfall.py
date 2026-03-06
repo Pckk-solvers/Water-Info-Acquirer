@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
@@ -90,6 +91,8 @@ class RainfallGenerateInput:
     parquet_dir: str
     export_excel: bool = True
     export_chart: bool = True
+    chart_parallel_enabled: bool = False
+    chart_parallel_workers: int = 1
     decimal_places: int = 2
     target_stations: list[tuple[str, str]] = field(default_factory=list)
     use_diff_mode: bool = True
@@ -104,6 +107,16 @@ class RainfallGenerateResult:
     excel_paths: list[str] = field(default_factory=list)
     chart_paths: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class _ChartGenerateJob:
+    source: str
+    station_key: str
+    station_name: str
+    timeseries_df: "pd.DataFrame"
+    chart_target_df: "pd.DataFrame"
+    year_digests: dict[int, str]
 
 
 def _noop_log(_: str) -> None:
@@ -172,6 +185,58 @@ def _to_relpath(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def _run_chart_generate_job(
+    timeseries_df: "pd.DataFrame",
+    chart_target_df: "pd.DataFrame",
+    *,
+    output_dir: str,
+    station_key: str,
+    station_name: str,
+) -> list[str]:
+    generated = export_rainfall_charts(
+        timeseries_df,
+        chart_target_df,
+        output_dir=output_dir,
+        station_key=station_key,
+        station_name=station_name,
+        should_stop=None,
+    )
+    return [str(path) for path in generated]
+
+
+def _update_chart_manifest_entries(
+    *,
+    chart_manifest: dict[str, object],
+    source: str,
+    station_key: str,
+    station_name: str,
+    chart_target_df: "pd.DataFrame",
+    year_digests: dict[int, str],
+    output_dir: str | Path,
+    out_dir_path: Path,
+) -> bool:
+    updated = False
+    for _, row in chart_target_df.iterrows():
+        year = int(row["年"])
+        metric = str(row["指標"])
+        expected_output = _build_chart_output_path(
+            output_dir,
+            station_key,
+            station_name,
+            year,
+            metric,
+        )
+        if not expected_output.exists():
+            continue
+        chart_id = build_chart_id(source, station_key, year, metric)
+        chart_manifest[chart_id] = {
+            "year_digest": year_digests.get(year, ""),
+            "output_relpath": _to_relpath(expected_output, out_dir_path),
+        }
+        updated = True
+    return updated
+
+
 def run_rainfall_generate(
     config: RainfallGenerateInput,
     *,
@@ -187,6 +252,8 @@ def run_rainfall_generate(
 
     logger = log or _noop_log
     diff_mode = bool(config.use_diff_mode) and not bool(config.force_full_regenerate)
+    chart_parallel_workers = max(1, int(config.chart_parallel_workers))
+    chart_parallel_mode = bool(config.chart_parallel_enabled) and chart_parallel_workers > 1
     all_errors: list[str] = []
     excel_paths: list[str] = []
     chart_paths: list[str] = []
@@ -262,6 +329,7 @@ def run_rainfall_generate(
         chart_manifest = {}
         manifest["charts"] = chart_manifest
     manifest_dirty = False
+    chart_jobs: list[_ChartGenerateJob] = []
 
     grouped_entries: dict[tuple[str, str], list[ParquetEntry]] = {}
     for entry in complete_entries:
@@ -401,40 +469,78 @@ def run_rainfall_generate(
             if chart_target.empty and diff_mode:
                 logger(f"[generate] 観測所={station_key} のグラフは digest 一致のため全件スキップ")
 
-            generated = export_rainfall_charts(
-                timeseries_df,
-                chart_target,
-                output_dir=str(out_dir_path / "charts"),
-                station_key=station_key,
-                station_name=station_name,
-                should_stop=should_stop,
-            )
-            chart_paths.extend(str(p) for p in generated)
-            generated_chart_count += len(generated)
-            if _is_cancelled(should_stop):
-                _append_cancelled_once(all_errors)
-                del timeseries_df, annual_max_df
-                break
-            for _, row in chart_target.iterrows():
-                year = int(row["年"])
-                metric = str(row["指標"])
-                expected_output = _build_chart_output_path(
-                    config.parquet_dir,
-                    station_key,
-                    station_name,
-                    year,
-                    metric,
+            if chart_parallel_mode:
+                chart_jobs.append(
+                    _ChartGenerateJob(
+                        source=source,
+                        station_key=station_key,
+                        station_name=station_name,
+                        timeseries_df=timeseries_df,
+                        chart_target_df=chart_target,
+                        year_digests=dict(year_digests),
+                    )
                 )
-                if not expected_output.exists():
-                    continue
-                chart_id = build_chart_id(source, station_key, year, metric)
-                chart_manifest[chart_id] = {
-                    "year_digest": year_digests.get(year, ""),
-                    "output_relpath": _to_relpath(expected_output, out_dir_path),
-                }
-                manifest_dirty = True
+            else:
+                generated = export_rainfall_charts(
+                    timeseries_df,
+                    chart_target,
+                    output_dir=str(out_dir_path / "charts"),
+                    station_key=station_key,
+                    station_name=station_name,
+                    should_stop=should_stop,
+                )
+                chart_paths.extend(str(p) for p in generated)
+                generated_chart_count += len(generated)
+                if _is_cancelled(should_stop):
+                    _append_cancelled_once(all_errors)
+                    del timeseries_df, annual_max_df
+                    break
+                if _update_chart_manifest_entries(
+                    chart_manifest=chart_manifest,
+                    source=source,
+                    station_key=station_key,
+                    station_name=station_name,
+                    chart_target_df=chart_target,
+                    year_digests=year_digests,
+                    output_dir=config.parquet_dir,
+                    out_dir_path=out_dir_path,
+                ):
+                    manifest_dirty = True
 
         del timeseries_df, annual_max_df
+
+    if chart_parallel_mode and chart_jobs:
+        chart_output_dir = str(out_dir_path / "charts")
+        with ProcessPoolExecutor(max_workers=chart_parallel_workers) as executor:
+            futures = [
+                (
+                    executor.submit(
+                        _run_chart_generate_job,
+                        job.timeseries_df,
+                        job.chart_target_df,
+                        output_dir=chart_output_dir,
+                        station_key=job.station_key,
+                        station_name=job.station_name,
+                    ),
+                    job,
+                )
+                for job in chart_jobs
+            ]
+            for future, job in futures:
+                generated = future.result()
+                chart_paths.extend(generated)
+                generated_chart_count += len(generated)
+                if _update_chart_manifest_entries(
+                    chart_manifest=chart_manifest,
+                    source=job.source,
+                    station_key=job.station_key,
+                    station_name=job.station_name,
+                    chart_target_df=job.chart_target_df,
+                    year_digests=job.year_digests,
+                    output_dir=config.parquet_dir,
+                    out_dir_path=out_dir_path,
+                ):
+                    manifest_dirty = True
 
     if manifest_dirty:
         try:
