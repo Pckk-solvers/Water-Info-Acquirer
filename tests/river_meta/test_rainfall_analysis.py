@@ -440,3 +440,218 @@ def test_run_rainfall_analyze_applies_jma_year_filter_and_fallback(monkeypatch, 
     assert any("観測所=11_62001 指定年数=2 -> 判定後年数=1 status=success_with_years" in line for line in logs)
     assert any("status=indeterminate" in line and "従来モードで継続" in line for line in logs)
     assert any("全体年判定: 4 -> 3 (1 年削減)" in line for line in logs)
+
+
+def test_run_rainfall_analyze_collection_order_station_year(monkeypatch, tmp_path):
+    called_jobs: list[tuple[str, str, int]] = []
+
+    def _fake_fetch_available_years_hourly(*, prec_no, block_no, timeout_sec=10.0, user_agent="river-meta/0.1"):  # noqa: ARG001
+        return JmaAvailabilityResult(
+            status="indeterminate",
+            years=set(),
+            reason="context_mismatch",
+        )
+
+    def _fake_fetch_jma_year_monthly(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        records_counter,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_jobs.append(("jma", station_key, year))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        "river_meta.services.rainfall.fetch_available_years_hourly",
+        _fake_fetch_available_years_hourly,
+    )
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_jma_year_monthly",
+        _fake_fetch_jma_year_monthly,
+    )
+
+    config = RainfallRunInput(
+        source="jma",
+        years=[2025, 2024],
+        interval="1hour",
+        jma_stations=[("12", "62002", "s1"), ("11", "62001", "s1")],
+        collection_order="station_year",
+    )
+    run_rainfall_analyze(config, output_dir=str(tmp_path))
+
+    assert called_jobs == [
+        ("jma", "11_62001", 2024),
+        ("jma", "11_62001", 2025),
+        ("jma", "12_62002", 2024),
+        ("jma", "12_62002", 2025),
+    ]
+
+
+def test_run_rainfall_analyze_collection_order_year_station(monkeypatch, tmp_path):
+    called_jobs: list[tuple[str, str, int]] = []
+
+    def _fake_fetch_available_years_hourly(*, prec_no, block_no, timeout_sec=10.0, user_agent="river-meta/0.1"):  # noqa: ARG001
+        return JmaAvailabilityResult(
+            status="indeterminate",
+            years=set(),
+            reason="context_mismatch",
+        )
+
+    def _fake_fetch_jma_year_monthly(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        records_counter,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_jobs.append(("jma", station_key, year))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        "river_meta.services.rainfall.fetch_available_years_hourly",
+        _fake_fetch_available_years_hourly,
+    )
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_jma_year_monthly",
+        _fake_fetch_jma_year_monthly,
+    )
+
+    config = RainfallRunInput(
+        source="jma",
+        years=[2025, 2024],
+        interval="1hour",
+        jma_stations=[("12", "62002", "s1"), ("11", "62001", "s1")],
+        collection_order=" Year-Station ",
+    )
+    run_rainfall_analyze(config, output_dir=str(tmp_path))
+
+    assert called_jobs == [
+        ("jma", "11_62001", 2024),
+        ("jma", "12_62002", 2024),
+        ("jma", "11_62001", 2025),
+        ("jma", "12_62002", 2025),
+    ]
+
+
+def test_run_rainfall_analyze_collection_order_source_both_is_stable(monkeypatch, tmp_path):
+    called_jobs: list[tuple[str, str, int]] = []
+
+    def _fake_fetch_available_years_hourly(*, prec_no, block_no, timeout_sec=10.0, user_agent="river-meta/0.1"):  # noqa: ARG001
+        return JmaAvailabilityResult(
+            status="indeterminate",
+            years=set(),
+            reason="context_mismatch",
+        )
+
+    def _fake_fetch_jma_year_monthly(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        records_counter,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_jobs.append(("jma", station_key, year))
+        return pd.DataFrame()
+
+    def _fake_fetch_waterinfo_year(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_jobs.append(("water_info", station_key, year))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        "river_meta.services.rainfall.fetch_available_years_hourly",
+        _fake_fetch_available_years_hourly,
+    )
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_jma_year_monthly",
+        _fake_fetch_jma_year_monthly,
+    )
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_waterinfo_year",
+        _fake_fetch_waterinfo_year,
+    )
+
+    config = RainfallRunInput(
+        source="both",
+        years=[2025, 2024],
+        interval="1hour",
+        jma_stations=[("11", "62001", "s1")],
+        waterinfo_station_codes=["2700000001"],
+        collection_order="year_station",
+    )
+    run_rainfall_analyze(config, output_dir=str(tmp_path))
+
+    assert called_jobs == [
+        ("jma", "11_62001", 2024),
+        ("water_info", "2700000001", 2024),
+        ("jma", "11_62001", 2025),
+        ("water_info", "2700000001", 2025),
+    ]
+
+
+def test_run_rainfall_analyze_resolves_years_from_datetime_range(monkeypatch, tmp_path):
+    called_jobs: list[tuple[str, int]] = []
+
+    def _fake_fetch_waterinfo_year(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_jobs.append((station_key, year))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_waterinfo_year",
+        _fake_fetch_waterinfo_year,
+    )
+
+    config = RainfallRunInput(
+        source="water_info",
+        start_at=datetime(2024, 6, 1, 0, 0, 0),
+        end_at=datetime(2026, 2, 1, 23, 59, 59),
+        interval="1hour",
+        waterinfo_station_codes=["2700000001"],
+    )
+    run_rainfall_analyze(config, output_dir=str(tmp_path))
+
+    assert called_jobs == [
+        ("2700000001", 2024),
+        ("2700000001", 2025),
+        ("2700000001", 2026),
+    ]

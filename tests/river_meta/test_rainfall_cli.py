@@ -15,6 +15,119 @@ from river_meta.rainfall.models import RainfallDataset
 from river_meta.services.rainfall import RainfallAnalyzeResult
 
 
+def test_rainfall_cli_collection_order_default_station_year(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeRunInput:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    monkeypatch.setattr("river_meta.rainfall.cli.RainfallRunInput", _FakeRunInput)
+
+    args = cli.build_parser().parse_args(
+        [
+            "--source",
+            "water_info",
+            "--year",
+            "2025",
+            "--output-dir",
+            "outputs/river_meta/rainfall",
+        ]
+    )
+
+    config = cli._build_run_input(args)
+    assert captured["collection_order"] == "station_year"
+    assert config.collection_order == "station_year"
+
+
+def test_rainfall_cli_collection_order_explicit_year_station(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeRunInput:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    monkeypatch.setattr("river_meta.rainfall.cli.RainfallRunInput", _FakeRunInput)
+
+    args = cli.build_parser().parse_args(
+        [
+            "--source",
+            "water_info",
+            "--year",
+            "2025",
+            "--collection-order",
+            "year_station",
+            "--output-dir",
+            "outputs/river_meta/rainfall",
+        ]
+    )
+
+    config = cli._build_run_input(args)
+    assert captured["collection_order"] == "year_station"
+    assert config.collection_order == "year_station"
+
+
+def test_rainfall_cli_collection_order_compatible_with_existing_args(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeRunInput:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    def _fake_analyze(
+        config,
+        *,
+        export_excel,
+        export_chart,
+        output_dir,
+        decimal_places,
+        log,
+        should_stop,
+    ):
+        captured["config"] = config
+        return RainfallAnalyzeResult(
+            dataset=RainfallDataset(records=[], errors=[]),
+            timeseries_df=pd.DataFrame(),
+            annual_max_df=pd.DataFrame(),
+            excel_paths=[],
+            chart_paths=[],
+        )
+
+    monkeypatch.setattr("river_meta.rainfall.cli.RainfallRunInput", _FakeRunInput)
+    monkeypatch.setattr("river_meta.rainfall.cli.run_rainfall_analyze", _fake_analyze)
+
+    code = cli.main(
+        [
+            "--source",
+            "water_info",
+            "--year",
+            "2025",
+            "--interval",
+            "10min",
+            "--include-raw",
+            "--waterinfo-pref-list",
+            "大阪,京都",
+            "--collection-order",
+            "year_station",
+            "--output-dir",
+            "outputs/river_meta/rainfall",
+        ]
+    )
+
+    assert code == 0
+    config = captured["config"]
+    assert config.year == 2025
+    assert config.interval == "10min"
+    assert config.include_raw is True
+    assert config.waterinfo_prefectures == ["大阪", "京都"]
+    assert config.collection_order == "year_station"
+
+
 def test_rainfall_cli_analyze_year_success(monkeypatch):
     captured: dict[str, object] = {}
 

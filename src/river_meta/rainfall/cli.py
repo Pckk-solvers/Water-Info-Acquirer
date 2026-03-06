@@ -25,6 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=["collect", "analyze", "generate"], default="analyze", help="実行モード")
     parser.add_argument("--source", default=None, help="データソース (jma / water_info / both)。generate時は不要")
     parser.add_argument("--interval", default="1hour", help="集計間隔 (10min / 1hour / 1day)")
+    parser.add_argument(
+        "--collection-order",
+        choices=["station_year", "year_station"],
+        default="station_year",
+        help="収集順序 (station_year / year_station)",
+    )
 
     parser.add_argument("--year", type=int, default=None, help="対象年（例: 2025）")
     parser.add_argument("--start-at", default=None, help="開始日時（例: 2025-01-01 00:00:00）")
@@ -153,21 +159,35 @@ def _build_run_input(args: argparse.Namespace) -> RainfallRunInput:
         if start_at is not None or end_at is not None:
             raise ValueError("year 指定時は --start-at/--end-at を併用できません。")
 
-    return RainfallRunInput(
-        source=args.source,
-        start_at=start_at,
-        end_at=end_at,
-        year=args.year,
-        interval=args.interval,
-        jma_prefectures=_merge_csv_values(args.jma_pref, args.jma_pref_list),
-        jma_station_codes=_merge_csv_values(args.jma_station_code, args.jma_station_code_list),
-        waterinfo_prefectures=_merge_csv_values(args.waterinfo_pref, args.waterinfo_pref_list),
-        waterinfo_station_codes=_merge_csv_values(args.waterinfo_station_code, args.waterinfo_station_code_list),
-        jma_station_index_path=args.jma_station_index_path,
-        jma_log_level=_optional_token(args.jma_log_level),
-        jma_enable_log_output=args.jma_log_output,
-        include_raw=bool(args.include_raw),
-    )
+    run_input_kwargs: dict[str, object] = {
+        "source": args.source,
+        "start_at": start_at,
+        "end_at": end_at,
+        "year": args.year,
+        "interval": args.interval,
+        "jma_prefectures": _merge_csv_values(args.jma_pref, args.jma_pref_list),
+        "jma_station_codes": _merge_csv_values(args.jma_station_code, args.jma_station_code_list),
+        "waterinfo_prefectures": _merge_csv_values(args.waterinfo_pref, args.waterinfo_pref_list),
+        "waterinfo_station_codes": _merge_csv_values(args.waterinfo_station_code, args.waterinfo_station_code_list),
+        "jma_station_index_path": args.jma_station_index_path,
+        "jma_log_level": _optional_token(args.jma_log_level),
+        "jma_enable_log_output": args.jma_log_output,
+        "include_raw": bool(args.include_raw),
+    }
+    if _supports_run_input_arg("collection_order"):
+        run_input_kwargs["collection_order"] = getattr(args, "collection_order", "station_year")
+    return RainfallRunInput(**run_input_kwargs)
+
+
+def _supports_run_input_arg(arg_name: str) -> bool:
+    try:
+        parameters = inspect.signature(RainfallRunInput).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    names = {parameter.name for parameter in parameters}
+    if arg_name in names:
+        return True
+    return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
 
 
 def _build_generate_input(args: argparse.Namespace) -> RainfallGenerateInput:

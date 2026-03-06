@@ -40,6 +40,18 @@ def _supports_generate_input_arg(arg_name: str) -> bool:
     return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
 
 
+def _supports_run_input_arg(arg_name: str) -> bool:
+    """RainfallRunInput が指定引数を受け取れるかを判定する。"""
+    try:
+        parameters = inspect.signature(RainfallRunInput).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    names = {parameter.name for parameter in parameters}
+    if arg_name in names:
+        return True
+    return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
+
+
 # =========================================================================
 # メインウィンドウ
 # =========================================================================
@@ -521,6 +533,7 @@ class CollectTab(ttk.Frame):
         self.columnconfigure(1, weight=1)
         self._enabled = True
         self._source_buttons: list[ttk.Radiobutton] = []
+        self._order_buttons: list[ttk.Radiobutton] = []
         self._tooltips: list[ToolTip] = []
         self._build()
 
@@ -551,14 +564,26 @@ class CollectTab(ttk.Frame):
         self.end_year_entry = ttk.Entry(year_frame, textvariable=self.end_year, width=8)
         self.end_year_entry.pack(side="left")
 
+        # --- 取得順序 ---
+        order_frame = ttk.LabelFrame(self, text="取得順序", padding=8)
+        order_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        self.collection_order = tk.StringVar(value="station_year")
+        for i, (label, token) in enumerate([
+            ("観測所ごと（既定）", "station_year"),
+            ("年ごと", "year_station"),
+        ]):
+            rb = ttk.Radiobutton(order_frame, text=label, variable=self.collection_order, value=token)
+            rb.grid(row=0, column=i, sticky="w", padx=(0, 16))
+            self._order_buttons.append(rb)
+
         # --- 観測所指定 (新UI) ---
         station_frame = ttk.LabelFrame(self, text="観測所指定", padding=8)
-        station_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
-        self.rowconfigure(2, weight=1) # 観測所指定フレームを広げる
-        
+        station_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
+        self.rowconfigure(3, weight=1)  # 観測所指定フレームを広げる
+
         jma_json = Path(__file__).resolve().parents[1] / "resources" / "jma_station_index.json"
         wi_json = Path(__file__).resolve().parents[1] / "resources" / "waterinfo_station_index.json"
-        
+
         self.station_selector = StationSelector(
             station_frame,
             jma_json_path=jma_json,
@@ -578,6 +603,8 @@ class CollectTab(ttk.Frame):
         self._enabled = enabled
         state = "normal" if enabled else "disabled"
         for rb in self._source_buttons:
+            rb.configure(state=state)
+        for rb in self._order_buttons:
             rb.configure(state=state)
         self.start_year_entry.configure(state=state)
         self.end_year_entry.configure(state=state)
@@ -618,16 +645,20 @@ class CollectTab(ttk.Frame):
         elif source == "water_info":
             wi_codes = codes
 
-        return RainfallRunInput(
-            source=source,
-            years=years,
-            interval="1hour",
-            jma_prefectures=jma_prefs,
-            jma_station_codes=jma_codes,
-            waterinfo_prefectures=wi_prefs,
-            waterinfo_station_codes=wi_codes,
-            include_raw=False,
-        )
+        run_input_kwargs: dict[str, object] = {
+            "source": source,
+            "years": years,
+            "interval": "1hour",
+            "jma_prefectures": jma_prefs,
+            "jma_station_codes": jma_codes,
+            "waterinfo_prefectures": wi_prefs,
+            "waterinfo_station_codes": wi_codes,
+            "include_raw": False,
+        }
+        if _supports_run_input_arg("collection_order"):
+            run_input_kwargs["collection_order"] = self.collection_order.get()
+
+        return RainfallRunInput(**run_input_kwargs)
 
 # =========================================================================
 # タブ2: 整理・出力

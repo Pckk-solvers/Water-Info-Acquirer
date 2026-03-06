@@ -68,7 +68,11 @@ class RainfallRunInput:
     jma_station_index_path: str | None = None
     jma_log_level: str | None = None
     jma_enable_log_output: bool | None = None
+    collection_order: str = "station_year"
     include_raw: bool = False
+
+    def __post_init__(self) -> None:
+        self.collection_order = _normalize_collection_order(self.collection_order)
 
 
 @dataclass(slots=True)
@@ -508,18 +512,17 @@ def run_rainfall_analyze(
         empty = pd.DataFrame()
         return RainfallAnalyzeResult(dataset=dataset, timeseries_df=empty, annual_max_df=empty, excel_paths=[], chart_paths=[])
 
-    all_records_count = 0
     all_errors: list[str] = []
     excel_paths: set[str] = set()
     chart_paths: list[str] = []
-    years = config.years if config.years else ([config.year] if config.year else [])
-    years = list(dict.fromkeys(years))
     created_parquet_paths: list[Path] = []
     jma_requested_year_total = 0
     jma_filtered_year_total = 0
+    target_years = _resolve_target_years_for_analyze(config)
 
     # We first collect the fully resolved stations to iterate over them safely without querying API twice
     resolved_sources = _resolve_sources(config.source)
+    source_order = {"jma": 0, "water_info": 1}
     jma_stations: list[JMAStationInput] = []
     waterinfo_codes: list[str] = []
 
@@ -528,30 +531,28 @@ def run_rainfall_analyze(
     if "water_info" in resolved_sources:
         waterinfo_codes = _resolve_waterinfo_codes_for_config(config, logger)
 
-    stations_to_process = []
-    for s in jma_stations:
-        stations_to_process.append(("jma", s.station_key, s.station_name, [s]))
-    for code in waterinfo_codes:
-        stations_to_process.append(("water_info", code, "", [WaterInfoStationInput(station_code=code)]))
-
-    if not stations_to_process:
+    if not jma_stations and not waterinfo_codes:
         dataset = RainfallDataset(records=[], errors=["No stations resolved"])
         empty = pd.DataFrame()
         return RainfallAnalyzeResult(dataset=dataset, timeseries_df=empty, annual_max_df=empty, excel_paths=[], chart_paths=[])
 
-    out_dir_path = Path(output_dir)
-    out_dir_path.mkdir(parents=True, exist_ok=True)
+    station_name_by_key: dict[tuple[str, str], str] = {}
+    jma_station_inputs: dict[str, list[JMAStationInput]] = {}
+    waterinfo_station_inputs: dict[str, list[WaterInfoStationInput]] = {}
+    job_units: list[tuple[str, str, int]] = []
 
-    for source_type, station_key, station_name, station_obj_list in stations_to_process:
+    for station in jma_stations:
         if _is_cancelled(should_stop):
             _append_cancelled_once(all_errors)
             break
+        station_key = station.station_key
+        station_name_by_key[("jma", station_key)] = station.station_name
+        jma_station_inputs[station_key] = [station]
 
-        years_for_station = years
-        if source_type == "jma" and years:
-            station = station_obj_list[0]
-            requested_count = len(years)
-            filtered_years = years
+        years_for_station = target_years
+        if target_years:
+            requested_count = len(target_years)
+            filtered_years = target_years
             availability = fetch_available_years_hourly(
                 prec_no=station.prefecture_code,
                 block_no=station.block_number,
@@ -566,7 +567,7 @@ def run_rainfall_analyze(
                     f"status=indeterminate ({availability.reason}) 従来モードで継続"
                 )
             else:
-                filtered_years = [year for year in years if year in availability.years]
+                filtered_years = [year for year in target_years if year in availability.years]
                 logger(
                     f"[JMA][availability] 観測所={station_key} 指定年数={requested_count}"
                     f" -> 判定後年数={len(filtered_years)} status={availability.status}"
@@ -582,88 +583,115 @@ def run_rainfall_analyze(
             if _is_cancelled(should_stop):
                 _append_cancelled_once(all_errors)
                 break
+            job_units.append(("jma", station_key, year))
 
+    for code in waterinfo_codes:
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            break
+        station_name_by_key[("water_info", code)] = ""
+        waterinfo_station_inputs[code] = [WaterInfoStationInput(station_code=code)]
+        for year in target_years:
+            if _is_cancelled(should_stop):
+                _append_cancelled_once(all_errors)
+                break
+            job_units.append(("water_info", code, year))
+
+    if config.collection_order == "year_station":
+        job_units.sort(key=lambda item: (item[2], source_order.get(item[0], 99), item[1]))
+    else:
+        job_units.sort(key=lambda item: (source_order.get(item[0], 99), item[1], item[2]))
+
+    out_dir_path = Path(output_dir)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
+
+    for source_type, station_key, year in job_units:
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            break
+
+        station_name = station_name_by_key.get((source_type, station_key), "")
+        if source_type == "jma":
             # --- JMA: 月単位で取得・キャッシュ ---
-            if source_type == "jma":
-                source_df = _fetch_jma_year_monthly(
-                    station_obj_list=station_obj_list,
-                    station_key=station_key,
-                    year=year,
-                    output_dir=output_dir,
-                    config=config,
-                    logger=logger,
-                    should_stop=should_stop,
-                    all_errors=all_errors,
-                    records_counter=lambda n: None,  # noqa: ARG005
-                    created_parquet_paths=created_parquet_paths,
-                )
-            else:
-                # --- water_info: 年単位で取得・キャッシュ ---
-                source_df = _fetch_waterinfo_year(
-                    station_obj_list=station_obj_list,
-                    station_key=station_key,
-                    year=year,
-                    output_dir=output_dir,
-                    config=config,
-                    logger=logger,
-                    should_stop=should_stop,
-                    all_errors=all_errors,
-                    created_parquet_paths=created_parquet_paths,
-                )
+            source_df = _fetch_jma_year_monthly(
+                station_obj_list=jma_station_inputs.get(station_key, []),
+                station_key=station_key,
+                year=year,
+                output_dir=output_dir,
+                config=config,
+                logger=logger,
+                should_stop=should_stop,
+                all_errors=all_errors,
+                records_counter=lambda n: None,  # noqa: ARG005
+                created_parquet_paths=created_parquet_paths,
+            )
+        else:
+            # --- water_info: 年単位で取得・キャッシュ ---
+            source_df = _fetch_waterinfo_year(
+                station_obj_list=waterinfo_station_inputs.get(station_key, []),
+                station_key=station_key,
+                year=year,
+                output_dir=output_dir,
+                config=config,
+                logger=logger,
+                should_stop=should_stop,
+                all_errors=all_errors,
+                created_parquet_paths=created_parquet_paths,
+            )
 
-            if source_df is None or source_df.empty:
-                continue
+        if source_df is None or source_df.empty:
+            continue
 
-            station_actual_name = station_name
-            if not station_actual_name:
-                station_actual_name = source_df["station_name"].iloc[0] if "station_name" in source_df.columns else ""
+        station_actual_name = station_name
+        if not station_actual_name:
+            station_actual_name = source_df["station_name"].iloc[0] if "station_name" in source_df.columns else ""
 
-            timeseries_df = build_hourly_timeseries_dataframe(source_df)
-            annual_max_df = build_annual_max_dataframe(timeseries_df)
-            del source_df  # メモリ解放
+        timeseries_df = build_hourly_timeseries_dataframe(source_df)
+        annual_max_df = build_annual_max_dataframe(timeseries_df)
+        del source_df  # メモリ解放
 
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            del timeseries_df, annual_max_df
+            break
+
+        if export_excel and not timeseries_df.empty:
+            safe_name = str(station_actual_name).replace("/", "_").replace("\\", "_")
+            filename = f"{station_key}_{safe_name}.xlsx" if safe_name else f"{station_key}.xlsx"
+            excel_dir = out_dir_path / "excel"
+            excel_dir.mkdir(parents=True, exist_ok=True)
+            output_path = excel_dir / filename
+
+            path = export_station_rainfall_excel(
+                timeseries_df,
+                annual_max_df,
+                output_path=str(output_path),
+                decimal_places=decimal_places,
+            )
+            if path is not None:
+                excel_paths.add(str(path))
+
+        if _is_cancelled(should_stop):
+            _append_cancelled_once(all_errors)
+            del timeseries_df, annual_max_df
+            break
+
+        if export_chart and not timeseries_df.empty and not annual_max_df.empty:
+            generated = export_rainfall_charts(
+                timeseries_df,
+                annual_max_df,
+                output_dir=str(out_dir_path / "charts"),
+                station_key=station_key,
+                station_name=station_actual_name,
+                should_stop=should_stop,
+            )
+            chart_paths.extend(str(p) for p in generated)
             if _is_cancelled(should_stop):
                 _append_cancelled_once(all_errors)
                 del timeseries_df, annual_max_df
                 break
 
-            if export_excel and not timeseries_df.empty:
-                safe_name = str(station_actual_name).replace("/", "_").replace("\\", "_")
-                filename = f"{station_key}_{safe_name}.xlsx" if safe_name else f"{station_key}.xlsx"
-                excel_dir = out_dir_path / "excel"
-                excel_dir.mkdir(parents=True, exist_ok=True)
-                output_path = excel_dir / filename
-
-                path = export_station_rainfall_excel(
-                    timeseries_df,
-                    annual_max_df,
-                    output_path=str(output_path),
-                    decimal_places=decimal_places,
-                )
-                if path is not None:
-                    excel_paths.add(str(path))
-
-            if _is_cancelled(should_stop):
-                _append_cancelled_once(all_errors)
-                del timeseries_df, annual_max_df
-                break
-
-            if export_chart and not timeseries_df.empty and not annual_max_df.empty:
-                generated = export_rainfall_charts(
-                    timeseries_df,
-                    annual_max_df,
-                    output_dir=str(out_dir_path / "charts"),
-                    station_key=station_key,
-                    station_name=station_actual_name,
-                    should_stop=should_stop,
-                )
-                chart_paths.extend(str(p) for p in generated)
-                if _is_cancelled(should_stop):
-                    _append_cancelled_once(all_errors)
-                    del timeseries_df, annual_max_df
-                    break
-
-            del timeseries_df, annual_max_df  # メモリ解放
+        del timeseries_df, annual_max_df  # メモリ解放
 
     if jma_requested_year_total > 0:
         reduced = jma_requested_year_total - jma_filtered_year_total
@@ -673,7 +701,9 @@ def run_rainfall_analyze(
         )
 
     if "cancelled" in all_errors:
-        _rollback_created_parquets(created_parquet_paths, logger)
+        kept_count = len(dict.fromkeys(created_parquet_paths))
+        if kept_count > 0:
+            logger(f"[Parquet] 停止時も {kept_count} 件の新規Parquetを保持します。")
 
     dataset = RainfallDataset(records=[], errors=all_errors)
     empty = pd.DataFrame()
@@ -975,6 +1005,44 @@ def _collect_waterinfo_with_resolved(
         message = f"water_info:{type(exc).__name__}: {exc}"
         logger(message)
         return RainfallDataset(records=[], errors=[message])
+
+
+def _normalize_collection_order(collection_order: str) -> str:
+    token = str(collection_order or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if token in {"station_year", "stationyear"}:
+        return "station_year"
+    if token in {"year_station", "yearstation"}:
+        return "year_station"
+    raise ValueError(
+        "collection_order must be one of: station_year, year_station"
+    )
+
+
+def _resolve_target_years_for_analyze(config: RainfallRunInput) -> list[int]:
+    years = config.years if config.years else ([config.year] if config.year else [])
+    years = [int(year) for year in years]
+    years = list(dict.fromkeys(years))
+    if years:
+        if config.start_at is not None or config.end_at is not None:
+            raise ValueError("Specify either year/years or start_at/end_at, not both")
+        start_year = min(years)
+        end_year = max(years)
+        if start_year < 1900 or end_year > 2100:
+            raise ValueError(f"Unsupported year range: {start_year}-{end_year}")
+        return years
+
+    if config.start_at is not None and config.end_at is not None:
+        if config.start_at > config.end_at:
+            raise ValueError("start_at must be earlier than or equal to end_at")
+        start_year = config.start_at.year
+        end_year = config.end_at.year
+        if start_year < 1900 or end_year > 2100:
+            raise ValueError(f"Unsupported year range: {start_year}-{end_year}")
+        return list(range(start_year, end_year + 1))
+
+    if config.start_at is None and config.end_at is None:
+        raise ValueError("start_at/end_at or year(s) is required")
+    raise ValueError("Both start_at and end_at are required when year is not specified")
 
 
 def _resolve_query_period(config: RainfallRunInput) -> tuple[datetime, datetime]:
