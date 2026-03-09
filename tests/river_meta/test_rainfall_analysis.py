@@ -185,6 +185,42 @@ def test_summary_has_wareki_value_for_single_year(tmp_path):
     assert summary.loc[0, "和暦"] == "H23"
 
 
+def test_summary_creates_one_row_per_year_for_same_station(tmp_path):
+    source_df = pd.concat(
+        [
+            _raw_records(
+                [
+                    ("2024-01-01 00:00:00", 1.0),
+                    ("2024-01-01 01:00:00", 2.0),
+                    ("2024-01-01 02:00:00", 3.0),
+                ]
+            ),
+            _raw_records(
+                [
+                    ("2025-01-01 00:00:00", 4.0),
+                    ("2025-01-01 01:00:00", 5.0),
+                    ("2025-01-01 02:00:00", 6.0),
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    ts = build_hourly_timeseries_dataframe(source_df)
+    annual = build_annual_max_dataframe(ts)
+
+    path = export_station_rainfall_excel(
+        ts,
+        annual,
+        output_path=str(tmp_path / "multi_year.xlsx"),
+        decimal_places=2,
+    )
+    assert path is not None
+
+    summary = pd.read_excel(path, sheet_name="年別サマリ")
+    assert len(summary) == 2
+    assert summary["西暦"].tolist() == [2024, 2025]
+
+
 def test_run_rainfall_collect_waterinfo_prefecture_resolve_path(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -197,8 +233,8 @@ def test_run_rainfall_collect_waterinfo_prefecture_resolve_path(monkeypatch):
         captured["interval"] = query.interval
         return []
 
-    monkeypatch.setattr("river_meta.services.rainfall.resolve_waterinfo_station_codes_from_prefectures", _fake_resolve)
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_waterinfo_rainfall", _fake_fetch)
+    monkeypatch.setattr("river_meta.services.rainfall_station_resolution.resolve_waterinfo_station_codes_from_prefectures", _fake_resolve)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.fetch_waterinfo_rainfall", _fake_fetch)
 
     config = RainfallRunInput(
         source="water_info",
@@ -222,7 +258,7 @@ def test_run_rainfall_collect_with_year_expands_to_calendar_year(monkeypatch):
         captured["end_at"] = query.end_at
         return []
 
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_waterinfo_rainfall", _fake_fetch)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.fetch_waterinfo_rainfall", _fake_fetch)
 
     config = RainfallRunInput(
         source="water_info",
@@ -243,7 +279,7 @@ def test_run_rainfall_collect_cancelled_before_fetch(monkeypatch):
         called["fetch"] = True
         return []
 
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_waterinfo_rainfall", _fake_fetch)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.fetch_waterinfo_rainfall", _fake_fetch)
 
     config = RainfallRunInput(
         source="water_info",
@@ -298,9 +334,9 @@ def test_run_rainfall_collect_source_both_merges_records(monkeypatch):
             )
         ]
 
-    monkeypatch.setattr("river_meta.services.rainfall.resolve_jma_stations_from_codes", _fake_resolve_jma)
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_jma_rainfall", _fake_fetch_jma)
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_waterinfo_rainfall", _fake_fetch_waterinfo)
+    monkeypatch.setattr("river_meta.services.rainfall_station_resolution.resolve_jma_stations_from_codes", _fake_resolve_jma)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_jma.fetch_jma_rainfall", _fake_fetch_jma)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.fetch_waterinfo_rainfall", _fake_fetch_waterinfo)
 
     config = RainfallRunInput(
         source="both",
@@ -334,9 +370,9 @@ def test_run_rainfall_analyze_source_both_continues_when_one_source_fails(monkey
             )
         ]
 
-    monkeypatch.setattr("river_meta.services.rainfall.resolve_jma_stations_from_codes", _fake_resolve_jma)
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_jma_rainfall", _fake_fetch_jma)
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_waterinfo_rainfall", _fake_fetch_waterinfo)
+    monkeypatch.setattr("river_meta.services.rainfall_station_resolution.resolve_jma_stations_from_codes", _fake_resolve_jma)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_jma.fetch_jma_rainfall", _fake_fetch_jma)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.fetch_waterinfo_rainfall", _fake_fetch_waterinfo)
 
     config = RainfallRunInput(
         source="both",
@@ -361,8 +397,8 @@ def test_run_rainfall_collect_passes_jma_log_controls(monkeypatch):
         captured["jma_enable_log_output"] = jma_enable_log_output
         return []
 
-    monkeypatch.setattr("river_meta.services.rainfall.resolve_jma_stations_from_codes", _fake_resolve_jma)
-    monkeypatch.setattr("river_meta.services.rainfall.fetch_jma_rainfall", _fake_fetch_jma)
+    monkeypatch.setattr("river_meta.services.rainfall_station_resolution.resolve_jma_stations_from_codes", _fake_resolve_jma)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_jma.fetch_jma_rainfall", _fake_fetch_jma)
 
     config = RainfallRunInput(
         source="jma",
@@ -494,6 +530,54 @@ def test_run_rainfall_analyze_collection_order_station_year(monkeypatch, tmp_pat
         ("jma", "11_62001", 2025),
         ("jma", "12_62002", 2024),
         ("jma", "12_62002", 2025),
+    ]
+
+
+def test_run_rainfall_analyze_groups_jma_obs_types_by_station_key(monkeypatch, tmp_path):
+    called_jobs: list[tuple[str, int, list[str]]] = []
+
+    def _fake_fetch_available_years_hourly(*, prec_no, block_no, timeout_sec=10.0, user_agent="river-meta/0.1"):  # noqa: ARG001
+        return JmaAvailabilityResult(
+            status="indeterminate",
+            years=set(),
+            reason="context_mismatch",
+        )
+
+    def _fake_fetch_jma_year_monthly(
+        *,
+        station_obj_list,
+        station_key,
+        year,
+        output_dir,
+        config,
+        logger,
+        should_stop,
+        all_errors,
+        records_counter,
+        created_parquet_paths,
+    ):  # noqa: ARG001
+        called_jobs.append((station_key, year, [station.obs_type for station in station_obj_list]))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        "river_meta.services.rainfall.fetch_available_years_hourly",
+        _fake_fetch_available_years_hourly,
+    )
+    monkeypatch.setattr(
+        "river_meta.services.rainfall._fetch_jma_year_monthly",
+        _fake_fetch_jma_year_monthly,
+    )
+
+    config = RainfallRunInput(
+        source="jma",
+        years=[2025],
+        interval="1hour",
+        jma_stations=[("11", "62001", "s1"), ("11", "62001", "a1")],
+    )
+    run_rainfall_analyze(config, output_dir=str(tmp_path))
+
+    assert called_jobs == [
+        ("11_62001", 2025, ["s1", "a1"]),
     ]
 
 

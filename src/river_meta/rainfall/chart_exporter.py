@@ -13,11 +13,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 import matplotlib
+
+matplotlib.use("Agg")  # GUIバックエンドを使わない
+
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
-
-matplotlib.use("Agg")  # GUIバックエンドを使わない
 
 # 日本語フォント設定 (Windows: MS Gothic / Yu Gothic, macOS: Hiragino, Linux: IPAGothic)
 import platform as _platform

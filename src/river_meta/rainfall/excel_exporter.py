@@ -66,13 +66,10 @@ def export_station_rainfall_excel(
     annual_df = _drop_station_columns(annual_df)
     timeseries = _drop_station_columns(timeseries)
 
-    output_exists = output.exists()
-
     with pd.ExcelWriter(
         output,
         engine="openpyxl",
-        mode="a" if output_exists else "w",
-        if_sheet_exists="overlay" if output_exists else None,
+        mode="w",
         date_format="YYYY/MM/DD HH:MM:SS",
     ) as writer:
         for sheet_name, data in (
@@ -80,11 +77,7 @@ def export_station_rainfall_excel(
             ("年最大雨量一覧", annual_df),
             ("時系列データ", timeseries),
         ):
-            if output_exists and sheet_name in writer.sheets:
-                startrow = writer.sheets[sheet_name].max_row
-                data.to_excel(writer, sheet_name=sheet_name, index=False, header=False, startrow=startrow)
-            else:
-                data.to_excel(writer, sheet_name=sheet_name, index=False)
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
 
         # openpyxl engine auto-fit
         for sheet_name in ("年別サマリ", "年最大雨量一覧", "時系列データ"):

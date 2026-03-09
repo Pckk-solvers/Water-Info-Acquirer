@@ -272,12 +272,18 @@ class RainfallGuiApp(tk.Tk):
             self._append_log(f"[整理・出力] 観測所フィルタ: {len(target_stations)}件")
         force_full_regenerate = self.generate_tab.get_force_full_regenerate()
         use_diff_mode = self.generate_tab.get_effective_use_diff_mode()
-        chart_parallel_enabled = self.generate_tab.get_chart_parallel_enabled()
-        chart_parallel_workers = self.generate_tab.get_chart_parallel_workers()
+        parallel_enabled = self.generate_tab.get_parallel_enabled()
+        parallel_workers = self.generate_tab.get_parallel_workers()
         if force_full_regenerate:
             self._append_log("[整理・出力] 全再生成を優先: 差分更新設定は無効化します。")
-        if chart_parallel_enabled:
-            self._append_log(f"[整理・出力] グラフ並列化: 有効（workers={chart_parallel_workers}）")
+        if parallel_enabled:
+            enabled_targets: list[str] = []
+            if self.generate_tab.export_excel.get():
+                enabled_targets.append("Excel")
+            if self.generate_tab.export_chart.get():
+                enabled_targets.append("グラフ")
+            target_text = "・".join(enabled_targets) if enabled_targets else "出力"
+            self._append_log(f"[整理・出力] 並列化: 有効（workers={parallel_workers} / {target_text} 共通）")
 
         generate_kwargs: dict[str, object] = {
             "parquet_dir": output_dir,
@@ -289,18 +295,22 @@ class RainfallGuiApp(tk.Tk):
             generate_kwargs["use_diff_mode"] = use_diff_mode
         if _supports_generate_input_arg("force_full_regenerate"):
             generate_kwargs["force_full_regenerate"] = force_full_regenerate
+        if _supports_generate_input_arg("excel_parallel_enabled"):
+            generate_kwargs["excel_parallel_enabled"] = parallel_enabled
+        if _supports_generate_input_arg("excel_parallel_workers"):
+            generate_kwargs["excel_parallel_workers"] = parallel_workers
         if _supports_generate_input_arg("chart_parallel_enabled"):
-            generate_kwargs["chart_parallel_enabled"] = chart_parallel_enabled
+            generate_kwargs["chart_parallel_enabled"] = parallel_enabled
         elif _supports_generate_input_arg("enable_chart_parallel"):
-            generate_kwargs["enable_chart_parallel"] = chart_parallel_enabled
+            generate_kwargs["enable_chart_parallel"] = parallel_enabled
         elif _supports_generate_input_arg("enable_chart_parallelization"):
-            generate_kwargs["enable_chart_parallelization"] = chart_parallel_enabled
+            generate_kwargs["enable_chart_parallelization"] = parallel_enabled
         if _supports_generate_input_arg("chart_parallel_workers"):
-            generate_kwargs["chart_parallel_workers"] = chart_parallel_workers
+            generate_kwargs["chart_parallel_workers"] = parallel_workers
         elif _supports_generate_input_arg("chart_workers"):
-            generate_kwargs["chart_workers"] = chart_parallel_workers
+            generate_kwargs["chart_workers"] = parallel_workers
         elif _supports_generate_input_arg("chart_parallel_worker_count"):
-            generate_kwargs["chart_parallel_worker_count"] = chart_parallel_workers
+            generate_kwargs["chart_parallel_worker_count"] = parallel_workers
 
         gen_config = RainfallGenerateInput(**generate_kwargs)
 
@@ -704,9 +714,9 @@ class GenerateTab(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)  # Treeview が伸縮
         self._enabled = True
-        self._chart_workers_min = 1
-        self._chart_workers_max = 8
-        self._recommended_chart_workers = self._chart_workers_min
+        self._parallel_workers_min = 1
+        self._parallel_workers_max = 8
+        self._recommended_parallel_workers = self._parallel_workers_min
         self._scan_running = False
         self._pending_scan: tuple[str, bool] | None = None
         self._entry_by_item_id: dict[str, object] = {}
@@ -804,48 +814,48 @@ class GenerateTab(ttk.Frame):
         ).grid(row=2, column=1, sticky="w", pady=(4, 0))
         self._sync_regenerate_option_state()
 
-        ttk.Label(opt_frame, text="グラフ並列化").grid(row=3, column=0, sticky="w", padx=(0, 12), pady=(6, 0))
-        chart_parallel_frame = ttk.Frame(opt_frame)
-        chart_parallel_frame.grid(row=3, column=1, sticky="w", pady=(6, 0))
-        self.enable_chart_parallel = tk.BooleanVar(value=False)
-        self.enable_chart_parallel_check = ttk.Checkbutton(
-            chart_parallel_frame,
+        ttk.Label(opt_frame, text="並列化").grid(row=3, column=0, sticky="w", padx=(0, 12), pady=(6, 0))
+        parallel_frame = ttk.Frame(opt_frame)
+        parallel_frame.grid(row=3, column=1, sticky="w", pady=(6, 0))
+        self.enable_parallel = tk.BooleanVar(value=False)
+        self.enable_parallel_check = ttk.Checkbutton(
+            parallel_frame,
             text="有効化",
-            variable=self.enable_chart_parallel,
+            variable=self.enable_parallel,
         )
-        self.enable_chart_parallel_check.pack(side="left")
-        ttk.Label(chart_parallel_frame, text="ワーカー数").pack(side="left", padx=(16, 4))
-        self.chart_parallel_workers = tk.IntVar(value=self._chart_workers_min)
-        self.chart_parallel_workers_spin = ttk.Spinbox(
-            chart_parallel_frame,
-            from_=self._chart_workers_min,
-            to=self._chart_workers_max,
+        self.enable_parallel_check.pack(side="left")
+        ttk.Label(parallel_frame, text="ワーカー数").pack(side="left", padx=(16, 4))
+        self.parallel_workers = tk.IntVar(value=self._parallel_workers_min)
+        self.parallel_workers_spin = ttk.Spinbox(
+            parallel_frame,
+            from_=self._parallel_workers_min,
+            to=self._parallel_workers_max,
             width=4,
-            textvariable=self.chart_parallel_workers,
+            textvariable=self.parallel_workers,
         )
-        self.chart_parallel_workers_spin.pack(side="left")
-        self.recalc_chart_workers_btn = ttk.Button(
-            chart_parallel_frame,
+        self.parallel_workers_spin.pack(side="left")
+        self.recalc_parallel_workers_btn = ttk.Button(
+            parallel_frame,
             text="推奨を再計算",
-            command=self._recalc_chart_workers_recommendation,
+            command=self._recalc_parallel_workers_recommendation,
             style="StationColor.TButton",
         )
-        self.recalc_chart_workers_btn.pack(side="left", padx=(12, 0))
-        self.apply_chart_workers_btn = ttk.Button(
-            chart_parallel_frame,
+        self.recalc_parallel_workers_btn.pack(side="left", padx=(12, 0))
+        self.apply_parallel_workers_btn = ttk.Button(
+            parallel_frame,
             text="推奨を適用",
-            command=self._apply_recommended_chart_workers,
+            command=self._apply_recommended_parallel_workers,
             style="StationColor.TButton",
         )
-        self.apply_chart_workers_btn.pack(side="left", padx=(8, 0))
-        self.chart_parallel_recommended = tk.StringVar(value="")
-        ttk.Label(opt_frame, textvariable=self.chart_parallel_recommended, foreground="#666").grid(
+        self.apply_parallel_workers_btn.pack(side="left", padx=(8, 0))
+        self.parallel_recommended = tk.StringVar(value="")
+        ttk.Label(opt_frame, textvariable=self.parallel_recommended, foreground="#666").grid(
             row=4,
             column=1,
             sticky="w",
             pady=(4, 0),
         )
-        self._recalc_chart_workers_recommendation()
+        self._recalc_parallel_workers_recommendation()
 
         # --- Parquetテーブル ---
         table_frame = ttk.LabelFrame(self, text="Parquetデータ状況", padding=3, style="Soft.TLabelframe")
@@ -915,15 +925,15 @@ class GenerateTab(ttk.Frame):
                     "更新方式を全再生成に切り替えます。",
                 ),
                 ToolTip(
-                    self.enable_chart_parallel_check,
-                    "有効時はグラフPNG出力を複数ワーカーで並列実行します。",
+                    self.enable_parallel_check,
+                    "有効時は Excel とグラフの出力で同じワーカー数を使って並列実行します。",
                 ),
                 ToolTip(
-                    self.recalc_chart_workers_btn,
+                    self.recalc_parallel_workers_btn,
                     "PCのCPUコア数と利用可能RAMから推奨ワーカー数を再計算します。",
                 ),
                 ToolTip(
-                    self.apply_chart_workers_btn,
+                    self.apply_parallel_workers_btn,
                     "推奨ワーカー数をワーカー数欄に反映します。",
                 ),
             ]
@@ -1085,18 +1095,18 @@ class GenerateTab(ttk.Frame):
             f"対象: {len(pairs)}観測所（選択行のみ／完全データのみ出力・不完全年は自動スキップ）"
         )
 
-    def _recalc_chart_workers_recommendation(self) -> None:
-        recommended, reason = self._calculate_recommended_chart_workers()
-        self._recommended_chart_workers = max(
-            self._chart_workers_min,
-            min(self._chart_workers_max, int(recommended)),
+    def _recalc_parallel_workers_recommendation(self) -> None:
+        recommended, reason = self._calculate_recommended_parallel_workers()
+        self._recommended_parallel_workers = max(
+            self._parallel_workers_min,
+            min(self._parallel_workers_max, int(recommended)),
         )
-        self.chart_parallel_recommended.set(reason)
+        self.parallel_recommended.set(reason)
 
-    def _apply_recommended_chart_workers(self) -> None:
-        self.chart_parallel_workers.set(self._recommended_chart_workers)
+    def _apply_recommended_parallel_workers(self) -> None:
+        self.parallel_workers.set(self._recommended_parallel_workers)
 
-    def _calculate_recommended_chart_workers(self) -> tuple[int, str]:
+    def _calculate_recommended_parallel_workers(self) -> tuple[int, str]:
         physical_cores: int | None = None
         available_gb: float | None = None
 
@@ -1133,17 +1143,29 @@ class GenerateTab(ttk.Frame):
     def use_selected_station_filter(self) -> bool:
         return bool(self.use_selection_filter.get())
 
+    def get_parallel_enabled(self) -> bool:
+        return bool(self.enable_parallel.get())
+
+    def get_parallel_workers(self) -> int:
+        try:
+            workers = int(self.parallel_workers.get())
+        except (ValueError, tk.TclError):
+            workers = self._recommended_parallel_workers
+        workers = max(self._parallel_workers_min, min(self._parallel_workers_max, workers))
+        self.parallel_workers.set(workers)
+        return workers
+
+    def get_excel_parallel_enabled(self) -> bool:
+        return self.get_parallel_enabled()
+
+    def get_excel_parallel_workers(self) -> int:
+        return self.get_parallel_workers()
+
     def get_chart_parallel_enabled(self) -> bool:
-        return bool(self.enable_chart_parallel.get())
+        return self.get_parallel_enabled()
 
     def get_chart_parallel_workers(self) -> int:
-        try:
-            workers = int(self.chart_parallel_workers.get())
-        except (ValueError, tk.TclError):
-            workers = self._recommended_chart_workers
-        workers = max(self._chart_workers_min, min(self._chart_workers_max, workers))
-        self.chart_parallel_workers.set(workers)
-        return workers
+        return self.get_parallel_workers()
 
     def get_use_diff_mode(self) -> bool:
         return self.regenerate_mode.get() == "diff"
@@ -1173,10 +1195,10 @@ class GenerateTab(ttk.Frame):
         state = "normal" if enabled else "disabled"
         self.export_excel_check.configure(state=state)
         self.export_chart_check.configure(state=state)
-        self.enable_chart_parallel_check.configure(state=state)
-        self.chart_parallel_workers_spin.configure(state=state)
-        self.recalc_chart_workers_btn.configure(state=state)
-        self.apply_chart_workers_btn.configure(state=state)
+        self.enable_parallel_check.configure(state=state)
+        self.parallel_workers_spin.configure(state=state)
+        self.recalc_parallel_workers_btn.configure(state=state)
+        self.apply_parallel_workers_btn.configure(state=state)
         self._sync_regenerate_option_state()
         self.selection_filter_check.configure(state=state)
         self.clear_selection_btn.configure(state=state)

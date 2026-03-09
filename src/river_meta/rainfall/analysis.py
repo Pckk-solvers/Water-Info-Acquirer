@@ -251,50 +251,67 @@ def build_station_summary_dataframe(timeseries_df: pd.DataFrame, annual_max_df: 
     ):
         station = group.sort_values("観測時刻").copy()
         station["観測時刻"] = pd.to_datetime(station["観測時刻"], errors="coerce")
+        station = station.dropna(subset=["観測時刻"])
+        if station.empty:
+            continue
 
-        hourly = pd.to_numeric(station["1時間雨量(mm)"], errors="coerce")
-        row: dict[str, object] = {
-            "データ元": source,
-            "観測所キー": station_key,
-            "観測所名": station_name,
-            "西暦": None,
-            "和暦": "",
-            "集計開始": station["観測時刻"].min(),
-            "集計終了": station["観測時刻"].max(),
-            "1時間データ数": int(hourly.notna().sum()),
-            "1時間欠測数": int(hourly.isna().sum()),
-        }
-
-        for label, column in metrics:
-            series = pd.to_numeric(station[column], errors="coerce")
-            valid = series.dropna()
-            if valid.empty:
-                row[f"{label}最大雨量(mm)"] = None
-                row[f"{label}最大発生日時"] = pd.NaT
-                continue
-            max_value = float(valid.max())
-            # 同値タイは最も早い日時を採用
-            occurred_at = station.loc[series.eq(max_value), "観測時刻"].min()
-            row[f"{label}最大雨量(mm)"] = max_value
-            row[f"{label}最大発生日時"] = occurred_at
-
+        station_indexed = station.set_index("観測時刻").sort_index()
         station_annual = annual_max_df[
-            (annual_max_df["観測所キー"] == station_key)
-            & (annual_max_df["指標"] == "1時間雨量")
-        ]
-        years = sorted({int(y) for y in station_annual["年"].dropna().tolist() if str(y).isdigit()})
-        if len(years) == 1:
-            row["西暦"] = years[0]
-            row["和暦"] = year_to_japanese_era(years[0])
+            (annual_max_df["データ元"] == source)
+            & (annual_max_df["観測所キー"] == station_key)
+            & (annual_max_df["観測所名"] == station_name)
+        ].copy()
+        candidate_years = sorted(
+            {
+                int(year)
+                for year in list(station_indexed.index.year.unique()) + station_annual["年"].dropna().tolist()
+                if str(year).isdigit()
+            }
+        )
 
-        if station_annual.empty:
-            is_complete = False
-        else:
-            is_complete = bool(station_annual["年間完全性"].fillna(False).all())
-        row["年間完全性"] = is_complete
-        row["備考"] = "" if is_complete else "参考値（欠測あり）"
+        for year in candidate_years:
+            year_start = datetime(year, 1, 1, 0, 0, 0)
+            year_end = datetime(year, 12, 31, 23, 0, 0)
+            full_index = pd.date_range(year_start, year_end, freq="h")
+            station_year = station_indexed.reindex(full_index)
+            actual_year_rows = station[station["観測時刻"].dt.year == year]
+            hourly = pd.to_numeric(station_year["1時間雨量(mm)"], errors="coerce")
+            annual_rows = station_annual[station_annual["年"] == year]
 
-        rows.append(row)
+            row: dict[str, object] = {
+                "データ元": source,
+                "観測所キー": station_key,
+                "観測所名": station_name,
+                "西暦": year,
+                "和暦": year_to_japanese_era(year),
+                "集計開始": actual_year_rows["観測時刻"].min(),
+                "集計終了": actual_year_rows["観測時刻"].max(),
+                "1時間データ数": int(hourly.notna().sum()),
+                "1時間欠測数": int(hourly.isna().sum()),
+            }
+
+            for label, _column in metrics:
+                metric_name = f"{label}雨量"
+                metric_row = annual_rows[annual_rows["指標"] == metric_name]
+                if metric_row.empty:
+                    row[f"{label}最大雨量(mm)"] = None
+                    row[f"{label}最大発生日時"] = pd.NaT
+                    continue
+                metric_first = metric_row.iloc[0]
+                row[f"{label}最大雨量(mm)"] = metric_first["最大雨量(mm)"]
+                row[f"{label}最大発生日時"] = metric_first["発生日時"]
+
+            base_metric = annual_rows[annual_rows["指標"] == "1時間雨量"]
+            if base_metric.empty:
+                is_complete = False
+                note = "参考値（欠測あり）"
+            else:
+                base_first = base_metric.iloc[0]
+                is_complete = bool(base_first["年間完全性"])
+                note = str(base_first["備考"] or "")
+            row["年間完全性"] = is_complete
+            row["備考"] = note
+            rows.append(row)
 
     summary = pd.DataFrame(rows, columns=STATION_SUMMARY_COLUMNS)
     if summary.empty:
@@ -303,4 +320,4 @@ def build_station_summary_dataframe(timeseries_df: pd.DataFrame, annual_max_df: 
     datetime_columns = [c for c in summary.columns if c.endswith("発生日時")] + ["集計開始", "集計終了"]
     for col in datetime_columns:
         summary[col] = pd.to_datetime(summary[col], errors="coerce")
-    return summary.sort_values(["観測所キー"]).reset_index(drop=True)
+    return summary.sort_values(["観測所キー", "西暦"]).reset_index(drop=True)

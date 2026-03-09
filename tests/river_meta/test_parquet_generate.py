@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
+from concurrent.futures.process import BrokenProcessPool
 import sys
 import time
 from pathlib import Path
@@ -246,6 +247,61 @@ def test_generate_with_chart_parallel_disabled_compatibility(tmp_path, monkeypat
         assert Path(path).exists()
 
 
+def test_generate_with_excel_parallel_enabled(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    calls = _patch_immediate_process_pool(monkeypatch)
+
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+        excel_parallel_enabled=True,
+        excel_parallel_workers=2,
+    )
+    result = run_rainfall_generate(config, log=lambda msg: None)
+    assert calls == [2]
+    assert len(result.excel_paths) == 1
+    assert Path(result.excel_paths[0]).exists()
+
+
+def test_generate_excel_parallel_diff_mode_skips_on_second_run(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    _patch_immediate_process_pool(monkeypatch)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+        excel_parallel_enabled=True,
+        excel_parallel_workers=2,
+    )
+
+    first = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(first.excel_paths) == 1
+
+    second = run_rainfall_generate(config, log=lambda msg: None)
+    assert second.excel_paths == []
+
+
+def test_generate_excel_parallel_excel_only_skips_parent_dataframe_load(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    calls = _patch_immediate_process_pool(monkeypatch)
+
+    def _should_not_load_in_parent(*args, **kwargs):
+        raise AssertionError("parent should not load source dataframe in excel-only parallel mode")
+
+    monkeypatch.setattr(rainfall_service, "_load_source_dataframe_for_station_entries", _should_not_load_in_parent)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+        excel_parallel_enabled=True,
+        excel_parallel_workers=2,
+    )
+    result = run_rainfall_generate(config, log=lambda msg: None)
+    assert calls == [2]
+    assert len(result.excel_paths) == 1
+
+
 def test_generate_with_chart_parallel_enabled(tmp_path, monkeypatch):
     _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
     calls = _patch_immediate_process_pool(monkeypatch)
@@ -281,6 +337,62 @@ def test_generate_chart_parallel_diff_mode_skips_on_second_run(tmp_path, monkeyp
 
     second = run_rainfall_generate(config, log=lambda msg: None)
     assert second.chart_paths == []
+
+
+def test_generate_chart_parallel_broken_pool_falls_back_to_serial(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+
+    class _BrokenProcessPoolExecutor:
+        def __init__(self, *, max_workers: int):
+            self.max_workers = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, /, *args, **kwargs):
+            future: Future = Future()
+            future.set_exception(BrokenProcessPool("worker terminated"))
+            return future
+
+    monkeypatch.setattr(rainfall_service, "ProcessPoolExecutor", _BrokenProcessPoolExecutor)
+    logs: list[str] = []
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+        chart_parallel_enabled=True,
+        chart_parallel_workers=2,
+    )
+
+    result = run_rainfall_generate(config, log=logs.append)
+    assert len(result.chart_paths) >= 1
+    assert any("直列フォールバック" in log for log in logs)
+    for path in result.chart_paths:
+        assert Path(path).exists()
+        assert path.endswith(".png")
+
+
+def test_generate_chart_parallel_chart_only_skips_parent_dataframe_load(tmp_path, monkeypatch):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    calls = _patch_immediate_process_pool(monkeypatch)
+
+    def _should_not_load_in_parent(*args, **kwargs):
+        raise AssertionError("parent should not load source dataframe in chart-only parallel mode")
+
+    monkeypatch.setattr(rainfall_service, "_load_source_dataframe_for_station_entries", _should_not_load_in_parent)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+        chart_parallel_enabled=True,
+        chart_parallel_workers=2,
+    )
+    result = run_rainfall_generate(config, log=lambda msg: None)
+    assert calls == [2]
+    assert len(result.chart_paths) >= 1
 
 
 def test_generate_diff_mode_skips_on_second_run(tmp_path):
@@ -347,3 +459,68 @@ def test_generate_force_full_regenerate_ignores_diff(tmp_path):
     second = run_rainfall_generate(force_config, log=lambda msg: None)
     assert len(second.excel_paths) == 1
     assert excel_path.stat().st_mtime_ns > first_mtime_ns
+
+
+def test_generate_force_full_regenerate_overwrites_excel_instead_of_appending(tmp_path):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+        force_full_regenerate=True,
+    )
+
+    first = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(first.excel_paths) == 1
+    excel_path = Path(first.excel_paths[0])
+    summary_first = pd.read_excel(excel_path, sheet_name="年別サマリ")
+    assert len(summary_first) == 1
+
+    second = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(second.excel_paths) == 1
+    summary_second = pd.read_excel(excel_path, sheet_name="年別サマリ")
+    assert len(summary_second) == 1
+
+
+def test_generate_force_full_regenerate_removes_stale_excel_outputs(tmp_path):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    stale_excel_dir = tmp_path / "excel"
+    stale_excel_dir.mkdir(parents=True, exist_ok=True)
+    stale_excel = stale_excel_dir / "stale.xlsx"
+    stale_excel.write_text("stale", encoding="utf-8")
+    assert stale_excel.exists()
+
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=True,
+        export_chart=False,
+        force_full_regenerate=True,
+    )
+    run_rainfall_generate(config, log=lambda msg: None)
+    assert not stale_excel.exists()
+
+
+def test_generate_force_full_regenerate_keeps_existing_chart_outputs(tmp_path):
+    _create_full_year_parquets(tmp_path, "jma", "47401", 2024)
+    config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+    )
+    first = run_rainfall_generate(config, log=lambda msg: None)
+    assert len(first.chart_paths) >= 1
+
+    stale_dir = tmp_path / "charts" / "stale_47401"
+    stale_dir.mkdir(parents=True, exist_ok=True)
+    stale_file = stale_dir / "stale.png"
+    stale_file.write_text("stale", encoding="utf-8")
+    assert stale_file.exists()
+
+    full_config = RainfallGenerateInput(
+        parquet_dir=str(tmp_path),
+        export_excel=False,
+        export_chart=True,
+        force_full_regenerate=True,
+    )
+    run_rainfall_generate(full_config, log=lambda msg: None)
+    assert stale_file.exists()

@@ -32,9 +32,9 @@ def test_fetch_waterinfo_year_skip_save_when_no_valid_rainfall(monkeypatch, tmp_
         save_calls["count"] += 1
         return Path(output_path)
 
-    monkeypatch.setattr("river_meta.services.rainfall.parquet_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr("river_meta.services.rainfall._collect_waterinfo_with_resolved", _fake_collect)
-    monkeypatch.setattr("river_meta.services.rainfall.save_records_parquet", _fake_save)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.parquet_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.collect_waterinfo_with_resolved", _fake_collect)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.save_records_parquet", _fake_save)
 
     result = _fetch_waterinfo_year(
         station_obj_list=[WaterInfoStationInput(station_code="2700000001")],
@@ -65,9 +65,9 @@ def test_fetch_waterinfo_year_save_when_has_valid_rainfall(monkeypatch, tmp_path
         save_calls["count"] += 1
         return Path(output_path)
 
-    monkeypatch.setattr("river_meta.services.rainfall.parquet_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr("river_meta.services.rainfall._collect_waterinfo_with_resolved", _fake_collect)
-    monkeypatch.setattr("river_meta.services.rainfall.save_records_parquet", _fake_save)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.parquet_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.collect_waterinfo_with_resolved", _fake_collect)
+    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.save_records_parquet", _fake_save)
 
     result = _fetch_waterinfo_year(
         station_obj_list=[WaterInfoStationInput(station_code="2700000001")],
