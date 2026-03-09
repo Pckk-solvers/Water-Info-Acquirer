@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -180,29 +181,34 @@ class ParquetEntry:
 
 def scan_parquet_dir(output_dir: str | Path) -> list[ParquetEntry]:
     """parquet/ 配下をスキャンして観測所×年ごとの状態を返す。"""
-    parquet_dir = Path(output_dir) / "parquet"
+    base_path = Path(output_dir)
+    parquet_dir = base_path if base_path.name.lower() == "parquet" else base_path / "parquet"
     if not parquet_dir.exists():
         return []
 
     # (source, station_key, year) -> set of months
     index: dict[tuple[str, str, int], set[int]] = {}
-    yearly_keys: set[tuple[str, str, int]] = set()
+    with os.scandir(parquet_dir) as entries:
+        for entry in entries:
+            if not entry.is_file() or not entry.name.endswith(".parquet"):
+                continue
+            try:
+                if entry.stat().st_size == 0:
+                    continue
+            except OSError:
+                continue
 
-    for path in sorted(parquet_dir.glob("*.parquet")):
-        if path.stat().st_size == 0:
-            continue
+            m = _MONTHLY_PATTERN.match(entry.name)
+            if m:
+                key = (m.group("source"), m.group("station_key"), int(m.group("year")))
+                index.setdefault(key, set()).add(int(m.group("month")))
+                continue
 
-        m = _MONTHLY_PATTERN.match(path.name)
-        if m:
-            key = (m.group("source"), m.group("station_key"), int(m.group("year")))
-            index.setdefault(key, set()).add(int(m.group("month")))
-            continue
-
-        m = _YEARLY_PATTERN.match(path.name)
-        if m:
-            key = (m.group("source"), m.group("station_key"), int(m.group("year")))
-            yearly_keys.add(key)
-            index.setdefault(key, set())
+            m = _YEARLY_PATTERN.match(entry.name)
+            if m:
+                key = (m.group("source"), m.group("station_key"), int(m.group("year")))
+                index.setdefault(key, set())
+                continue
 
     entries: list[ParquetEntry] = []
     for (source, station_key, year), months in sorted(index.items()):

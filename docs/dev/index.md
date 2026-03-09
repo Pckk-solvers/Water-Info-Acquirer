@@ -16,3 +16,7 @@
 - 整理・出力タブ 高速化 要件: `docs/dev/rainfall-generate-performance/requirements.md`
 - 整理・出力タブ 高速化 詳細設計: `docs/dev/rainfall-generate-performance/design.md`
 - 整理・出力タブ 高速化 タスク: `docs/dev/rainfall-generate-performance/task.md`
+- 雨量 Parquet 期間抽出 Overview: `docs/dev/rainfall-parquet-period-export/overview.md`
+- 雨量 Parquet 期間抽出 要件: `docs/dev/rainfall-parquet-period-export/requirements.md`
+- 雨量 Parquet 期間抽出 詳細設計: `docs/dev/rainfall-parquet-period-export/design.md`
+- 雨量 Parquet 期間抽出 タスク: `docs/dev/rainfall-parquet-period-export/task.md`

@@ -46,6 +46,17 @@ from river_meta.services.rainfall_common import (
 )
 import river_meta.services.rainfall_fetch_jma as _rainfall_fetch_jma_service
 import river_meta.services.rainfall_fetch_waterinfo as _rainfall_fetch_waterinfo_service
+from river_meta.services.rainfall_period_export import (
+    RainfallParquetPeriodBatchExportInput,
+    RainfallParquetPeriodBatchExportResult,
+    RainfallParquetPeriodExportInput,
+    RainfallParquetPeriodExportResult,
+    RainfallParquetPeriodExportTarget,
+    export_period_targets_csv,
+    load_period_targets_csv,
+    run_rainfall_parquet_period_batch_export,
+    run_rainfall_parquet_period_export,
+)
 from river_meta.services.rainfall_generate_support import (
     ChartGenerateJob as _ChartGenerateJob,
     ExcelGenerateJob as _ExcelGenerateJob,
