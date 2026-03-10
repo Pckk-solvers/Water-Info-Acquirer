@@ -19,16 +19,13 @@ from river_meta.rainfall.services import (
 
 
 class PeriodCsvExportTab(ttk.Frame):
-    _DEFAULT_PARQUET_DIR_PRIMARY = (
-        r"Z:\1175D109_大阪狭山市におけるため池を考慮した浸水シミュレーション構築に関する検討業務"
-        r"\50_作業\01_ochiai_temp\06_1974年-2025年_取得整形結果\parquet"
-    )
-    _DEFAULT_PARQUET_DIR_SECONDARY = (
-        r"Z:\1175D109_大阪狭山市におけるため池を考慮した浸水シミュレーション構築に関する検討業務"
-        r"\50_作業\01_ochiai_temp\07_1974-2025-mizmizDB\parquet"
-    )
-
-    def __init__(self, parent: ttk.Notebook) -> None:
+    def __init__(
+        self,
+        parent: ttk.Notebook,
+        *,
+        default_parquet_dir_primary: str = "",
+        default_parquet_dir_secondary: str = "",
+    ) -> None:
         super().__init__(parent, padding=10)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
@@ -39,6 +36,8 @@ class PeriodCsvExportTab(ttk.Frame):
         self._multi_targets: list[RainfallParquetPeriodExportTarget] = []
         self._jma_name_by_block: dict[str, str] = {}
         self._waterinfo_name_by_id: dict[str, str] = {}
+        self._default_parquet_dir_primary = str(default_parquet_dir_primary or "")
+        self._default_parquet_dir_secondary = str(default_parquet_dir_secondary or "")
         self._load_station_name_index()
         self._build()
         self._update_multi_target_summary()
@@ -84,8 +83,8 @@ class PeriodCsvExportTab(ttk.Frame):
         dir_frame.columnconfigure(1, weight=1, minsize=420)
         dir_frame.columnconfigure(2, weight=0, minsize=72)
         dir_frame.columnconfigure(3, weight=0, minsize=72)
-        self.parquet_dir_primary = tk.StringVar(value=self._DEFAULT_PARQUET_DIR_PRIMARY)
-        self.parquet_dir_secondary = tk.StringVar(value=self._DEFAULT_PARQUET_DIR_SECONDARY)
+        self.parquet_dir_primary = tk.StringVar(value=self._default_parquet_dir_primary)
+        self.parquet_dir_secondary = tk.StringVar(value=self._default_parquet_dir_secondary)
         ttk.Label(dir_frame, text="ParquetフォルダA").grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.parquet_dir_entry = ttk.Entry(dir_frame, textvariable=self.parquet_dir_primary)
         self.parquet_dir_entry.grid(row=0, column=1, sticky="ew")

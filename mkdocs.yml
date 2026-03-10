@@ -35,6 +35,7 @@ nav:
       - ランチャー: user/launcher.md
       - 国土交通省 水文データ取得: user/water-info.md
       - 気象庁 雨量データ取得: user/jma-rainfall.md
+      - 雨量整理・抽出: user/rainfall.md
       - 出力先とログ: user/outputs-and-logs.md
       - トラブルシューティング: user/troubleshooting.md
   - 上級者向け:
@@ -60,5 +61,6 @@ nav:
           - 削除計画: dev/postprocess/delete_plan.md
   - リリースノート:
       - releases/index.md
+      - v1.3.0: releases/v1.3.0.md
       - v1.2.0: releases/v1.2.0.md
       - v1.11: releases/v1.11.md

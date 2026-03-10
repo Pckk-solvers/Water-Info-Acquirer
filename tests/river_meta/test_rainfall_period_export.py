@@ -338,3 +338,32 @@ def test_period_target_settings_csv_round_trip(tmp_path):
     assert str(loaded[0].start_date) == "2025-01-03"
     assert loaded[1].station_key == "2700000001"
     assert str(loaded[1].start_date) == "2025-01-05"
+
+
+def test_period_target_settings_csv_round_trip_keeps_same_station_different_ranges(tmp_path):
+    targets = [
+        RainfallParquetPeriodExportTarget(
+            source="jma",
+            station_key="11_62001",
+            station_name="大阪",
+            display_station_code="62001",
+            start_date="2025-01-03",
+            end_date="2025-01-03",
+        ),
+        RainfallParquetPeriodExportTarget(
+            source="jma",
+            station_key="11_62001",
+            station_name="大阪",
+            display_station_code="62001",
+            start_date="2025-01-04",
+            end_date="2025-01-04",
+        ),
+    ]
+    csv_path = export_period_targets_csv(tmp_path / "targets_ranges.csv", targets)
+    loaded = load_period_targets_csv(csv_path)
+
+    assert len(loaded) == 2
+    assert loaded[0].station_key == "11_62001"
+    assert loaded[1].station_key == "11_62001"
+    assert str(loaded[0].start_date) == "2025-01-03"
+    assert str(loaded[1].start_date) == "2025-01-04"

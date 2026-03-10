@@ -1,7 +1,7 @@
 """ヘルプウィンドウ"""
 import tkinter as tk
 from tkinter import ttk, scrolledtext
-from src.app_names import get_module_title
+from water_info_acquirer.app_meta import get_module_title
 
 
 class HelpWindow:

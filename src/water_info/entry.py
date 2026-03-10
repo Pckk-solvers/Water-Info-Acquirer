@@ -132,7 +132,15 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
     return output_path
 
 
-def show_water(parent, single_sheet_mode=False, on_open_other=None, on_close=None, debug_ui: bool = False, initial_codes=None):
+def show_water(
+    parent,
+    single_sheet_mode=False,
+    on_open_other=None,
+    on_close=None,
+    on_return_home=None,
+    debug_ui: bool = False,
+    initial_codes=None,
+):
     """Factory for launcher to create water_info window."""
     return _show_water(
         parent=parent,
@@ -142,6 +150,7 @@ def show_water(parent, single_sheet_mode=False, on_open_other=None, on_close=Non
         single_sheet_mode=single_sheet_mode,
         on_open_other=on_open_other,
         on_close=on_close,
+        on_return_home=on_return_home,
         debug_ui=debug_ui,
         initial_codes=initial_codes,
     )

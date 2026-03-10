@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from tkinter import (
-    Frame, Label, Button, Entry, Listbox, Toplevel, Menu,
+    Frame, Label, Button, Entry, Listbox, Toplevel,
     StringVar, BooleanVar, Radiobutton, Checkbutton,
     PanedWindow, ttk, TOP, BOTTOM
 )
 
-from src.app_names import get_module_title
+from water_info_acquirer.app_meta import get_module_title
+from water_info_acquirer.navigation import build_navigation_menu
 from ..domain.models import WaterInfoRequest
 from .execution import ExecutionController, estimate_unit_total, to_snapshot
 from .debug import log
@@ -30,6 +31,7 @@ class WWRApp:
         single_sheet_mode=False,
         on_open_other=None,
         on_close=None,
+        on_return_home=None,
         debug_ui: bool = False,
         initial_codes: list[str] | None = None,
     ):
@@ -40,6 +42,7 @@ class WWRApp:
         self.parent = parent
         self.on_open_other = on_open_other
         self.on_close = on_close
+        self.on_return_home = on_return_home
         self._debug_ui = debug_ui
         self._initial_codes = initial_codes or []
         self.root = Toplevel(parent)
@@ -70,10 +73,10 @@ class WWRApp:
         self._clear_error_on_change = True
         self._build_ui()
 
-    def _open_jma(self):
+    def _open_other(self, app_key: str):
         if self.on_open_other:
             self.root.destroy()
-            self.on_open_other('jma')
+            self.on_open_other(app_key)
 
     def _handle_close(self):
         try:
@@ -81,6 +84,13 @@ class WWRApp:
         finally:
             if self.on_close:
                 self.on_close()
+
+    def _return_home(self):
+        try:
+            self.root.destroy()
+        finally:
+            if self.on_return_home:
+                self.on_return_home()
 
     def _build_ui(self):
         # ツールタイトル
@@ -90,11 +100,14 @@ class WWRApp:
               font=(None, 24, 'bold')
               ).pack(fill='x', pady=(10,5))
 
-        menubar = Menu(self.root)
-        nav_menu = Menu(menubar, tearoff=0)
-        nav_menu.add_command(label=get_module_title("jma", lang="jp"), command=self._open_jma)
-        menubar.add_cascade(label="メニュー", menu=nav_menu)
-        self.root.config(menu=menubar)
+        self.root.config(
+            menu=build_navigation_menu(
+                self.root,
+                current_app_key="water",
+                on_open_other=self._open_other,
+                on_return_home=self._return_home,
+            )
+        )
 
         # メインとサイドを分割する PanedWindow
         paned = PanedWindow(self.root, orient='horizontal')
@@ -385,6 +398,7 @@ def show_water(
     single_sheet_mode=False,
     on_open_other=None,
     on_close=None,
+    on_return_home=None,
     debug_ui: bool = False,
     initial_codes: list[str] | None = None,
 ):
@@ -397,6 +411,7 @@ def show_water(
         single_sheet_mode=single_sheet_mode,
         on_open_other=on_open_other,
         on_close=on_close,
+        on_return_home=on_return_home,
         debug_ui=debug_ui,
         initial_codes=initial_codes,
     )

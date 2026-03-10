@@ -11,14 +11,17 @@ from river_meta.rainfall import entry
 def test_entry_runs_gui_without_args(monkeypatch):
     called: dict[str, object] = {}
 
-    def _fake_gui_main() -> int:
+    def _fake_gui_main(**kwargs) -> int:
         called["gui"] = True
+        called["kwargs"] = kwargs
         return 11
 
     monkeypatch.setattr("river_meta.rainfall.gui.main", _fake_gui_main)
 
     assert entry.main([]) == 11
     assert called["gui"] is True
+    assert "default_parquet_dir_primary" in called["kwargs"]
+    assert "default_parquet_dir_secondary" in called["kwargs"]
 
 
 def test_entry_runs_cli_with_filtered_args(monkeypatch):
@@ -37,7 +40,7 @@ def test_entry_runs_cli_with_filtered_args(monkeypatch):
 def test_entry_sets_runtime_env(monkeypatch):
     monkeypatch.delenv("RIVER_RAINFALL_DISABLE_JMA_CACHE", raising=False)
     monkeypatch.delenv("RIVER_RAINFALL_DISABLE_JMA_LOG_OUTPUT", raising=False)
-    monkeypatch.setattr("river_meta.rainfall.gui.main", lambda: 0)
+    monkeypatch.setattr("river_meta.rainfall.gui.main", lambda **kwargs: 0)
 
     assert entry.main([]) == 0
     assert entry.os.environ["RIVER_RAINFALL_DISABLE_JMA_CACHE"] == "1"

@@ -58,12 +58,12 @@ def test_resolve_jma_stations_from_codes_station_id():
     )
     assert not issues
     assert len(stations) == 2
-    
+
     # 62078 should resolve to 大阪 (block_no 47401)
     osaka = next(s for s in stations if s.station_name == "大阪")
     assert osaka.prefecture_code == "27"
     assert osaka.block_number == "47401"
-    
+
     # 61286 should resolve to 京都 (block_no 0364)
     kyoto = next(s for s in stations if s.station_name == "京都")
     assert kyoto.prefecture_code == "26"

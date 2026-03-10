@@ -5,7 +5,7 @@ import tkinter as tk
 from pathlib import Path
 from typing import Iterable, Optional
 
-from src.app_names import get_app_title
+from water_info_acquirer.app_meta import get_app_title
 
 from .entry import show_water
 from .ui.dialogs import show_error

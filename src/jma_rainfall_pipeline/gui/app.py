@@ -1,21 +1,20 @@
 # gui/app.py
-import sys
 import tkinter as tk
-from tkinter import ttk
-import traceback
 
-from src.app_names import get_module_title
+from water_info_acquirer.app_meta import get_module_title
+from water_info_acquirer.navigation import build_navigation_menu
 from jma_rainfall_pipeline.gui.browse_tab import BrowseWindow
 from jma_rainfall_pipeline.gui.help_window import HelpWindow
 from jma_rainfall_pipeline.gui.error_dialog import show_error
 
 
 class App(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, on_open_other=None, on_close=None):
+    def __init__(self, parent: tk.Misc, on_open_other=None, on_close=None, on_return_home=None):
         """JMA GUI本体（Toplevel）。"""
         super().__init__(parent)
         self.on_open_other = on_open_other
         self.on_close = on_close
+        self.on_return_home = on_return_home
 
         try:
             self.title(get_module_title("jma", lang="jp"))
@@ -26,13 +25,14 @@ class App(tk.Toplevel):
             # ヘルプウィンドウのインスタンス
             self.help_window = HelpWindow(self)
 
-            # メニューバー（ヘルプと水文遷移）
-            menubar = tk.Menu(self)
-            nav_menu = tk.Menu(menubar, tearoff=0)
-            nav_menu.add_command(label=get_module_title("water_info", lang="jp"), command=self._open_water)
-            nav_menu.add_command(label="ヘルプ", command=self._show_help)
-            menubar.add_cascade(label="メニュー", menu=nav_menu)
-            self.config(menu=menubar)
+            self.config(
+                menu=build_navigation_menu(
+                    self,
+                    current_app_key="jma",
+                    on_open_other=self._open_other,
+                    on_return_home=self._return_home,
+                )
+            )
 
             # メインコンテナの配置
             self.browse_window = BrowseWindow(self)
@@ -53,13 +53,13 @@ class App(tk.Toplevel):
                        "アプリケーションの初期化中にエラーが発生しました。", e)
             if self.on_close:
                 self.on_close()
-            sys.exit(1)
+            raise
 
-    def _open_water(self):
-        """水文アプリを開くリクエストを上位に通知。"""
+    def _open_other(self, app_key: str):
+        """別アプリを開くリクエストを上位に通知。"""
         if self.on_open_other:
             self.destroy()
-            self.on_open_other("water")
+            self.on_open_other(app_key)
 
     def _show_help(self):
         """ヘルプウィンドウを表示する。"""
@@ -77,6 +77,13 @@ class App(tk.Toplevel):
             if self.on_close:
                 self.on_close()
 
+    def _return_home(self):
+        try:
+            self.destroy()
+        finally:
+            if self.on_return_home:
+                self.on_return_home()
+
     def handle_error(self, exc_type, exc_value, exc_traceback):
         """捕捉されない例外をここでまとめて処理。"""
         error_msg = str(exc_value) if exc_value else "不明なエラー"
@@ -85,9 +92,9 @@ class App(tk.Toplevel):
                   exc_value)
 
 
-def show_jma(parent: tk.Misc, on_open_other=None, on_close=None) -> App:
+def show_jma(parent: tk.Misc, on_open_other=None, on_close=None, on_return_home=None) -> App:
     """ランチャー/親Tkから呼び出すファクトリ。"""
-    return App(parent=parent, on_open_other=on_open_other, on_close=on_close)
+    return App(parent=parent, on_open_other=on_open_other, on_close=on_close, on_return_home=on_return_home)
 
 
 def main() -> None:

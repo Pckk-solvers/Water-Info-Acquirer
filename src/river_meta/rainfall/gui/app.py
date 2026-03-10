@@ -24,6 +24,8 @@ from .generate_tab import GenerateTab
 from .period_export_tab import PeriodCsvExportTab
 from .support import supports_input_arg
 from .tooltip import ToolTip
+from water_info_acquirer.app_meta import get_module_title
+from water_info_acquirer.navigation import build_navigation_menu
 
 
 Event = tuple[str, object]
@@ -34,12 +36,26 @@ def _supports_generate_input_arg(arg_name: str) -> bool:
     return supports_input_arg(RainfallGenerateInput, arg_name)
 
 
-class RainfallGuiApp(tk.Tk):
-    def __init__(self) -> None:
-        super().__init__()
-        self.title("RainfallCollector")
+class RainfallGuiApp(tk.Toplevel):
+    def __init__(
+        self,
+        *,
+        parent: tk.Misc,
+        on_open_other=None,
+        on_close=None,
+        on_return_home=None,
+        default_parquet_dir_primary: str = "",
+        default_parquet_dir_secondary: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self.on_open_other = on_open_other
+        self.on_close = on_close
+        self.on_return_home = on_return_home
+        self.title(get_module_title("rainfall", lang="jp"))
         self.geometry("1560x860")
         self.minsize(1360, 740)
+        self._default_parquet_dir_primary = str(default_parquet_dir_primary or "")
+        self._default_parquet_dir_secondary = str(default_parquet_dir_secondary or "")
         self._event_queue: queue.Queue[Event] = queue.Queue()
         self._running = False
         self._stop_event: threading.Event | None = None
@@ -52,6 +68,9 @@ class RainfallGuiApp(tk.Tk):
         self._sync_output_label()
         self.after(120, self._drain_events)
         self.after_idle(self._stabilize_initial_layout)
+        self.deiconify()
+        self.lift()
+        self.focus_force()
 
     def _setup_visual_styles(self) -> None:
         """枠線を減らし、見出し主体の軽量なセクションスタイルを定義する。"""
@@ -76,13 +95,26 @@ class RainfallGuiApp(tk.Tk):
             row=0, column=0, sticky="w", pady=(0, 6),
         )
 
+        self.config(
+            menu=build_navigation_menu(
+                self,
+                current_app_key="rainfall",
+                on_open_other=self._open_other,
+                on_return_home=self._return_home,
+            )
+        )
+
         # --- Notebook (タブ) ---
         self.notebook = ttk.Notebook(root)
         self.notebook.grid(row=1, column=0, sticky="nsew")
 
         self.collect_tab = CollectTab(self.notebook)
         self.generate_tab = GenerateTab(self.notebook)
-        self.period_export_tab = PeriodCsvExportTab(self.notebook)
+        self.period_export_tab = PeriodCsvExportTab(
+            self.notebook,
+            default_parquet_dir_primary=self._default_parquet_dir_primary,
+            default_parquet_dir_secondary=self._default_parquet_dir_secondary,
+        )
         self.notebook.add(self.collect_tab, text=" データ取得 ")
         self.notebook.add(self.generate_tab, text=" 整理・出力 ")
         self.notebook.add(self.period_export_tab, text=" 期間CSV出力 ")
@@ -549,9 +581,28 @@ class RainfallGuiApp(tk.Tk):
         if path:
             self.output_dir.set(path)
 
+    def _open_other(self, app_key: str) -> None:
+        if self.on_open_other:
+            self.destroy()
+            self.on_open_other(app_key)
+
+    def _destroy_window(self) -> None:
+        try:
+            self.destroy()
+        finally:
+            if self.on_close:
+                self.on_close()
+
+    def _return_home(self) -> None:
+        try:
+            self.destroy()
+        finally:
+            if self.on_return_home:
+                self.on_return_home()
+
     def _on_close(self) -> None:
         if not self._running:
-            self.destroy()
+            self._destroy_window()
             return
         if self._close_requested:
             force = messagebox.askyesno(
@@ -559,7 +610,7 @@ class RainfallGuiApp(tk.Tk):
                 "停止待機中です。強制終了しますか？\n処理途中の結果は失われる可能性があります。",
             )
             if force:
-                self.destroy()
+                self._destroy_window()
             return
         ok = messagebox.askyesno("終了確認", "実行中の処理を停止して終了しますか？")
         if not ok:
@@ -640,9 +691,44 @@ class RainfallGuiApp(tk.Tk):
 # =========================================================================
 
 
-def main() -> int:
-    app = RainfallGuiApp()
-    app.mainloop()
+def show_rainfall(
+    *,
+    parent: tk.Misc,
+    on_open_other=None,
+    on_close=None,
+    on_return_home=None,
+    default_parquet_dir_primary: str = "",
+    default_parquet_dir_secondary: str = "",
+) -> RainfallGuiApp:
+    return RainfallGuiApp(
+        parent=parent,
+        on_open_other=on_open_other,
+        on_close=on_close,
+        on_return_home=on_return_home,
+        default_parquet_dir_primary=default_parquet_dir_primary,
+        default_parquet_dir_secondary=default_parquet_dir_secondary,
+    )
+
+
+def main(
+    *,
+    default_parquet_dir_primary: str = "",
+    default_parquet_dir_secondary: str = "",
+) -> int:
+    root = tk.Tk()
+    root.withdraw()
+
+    def _on_close():
+        root.destroy()
+
+    show_rainfall(
+        parent=root,
+        on_open_other=None,
+        on_close=_on_close,
+        default_parquet_dir_primary=default_parquet_dir_primary,
+        default_parquet_dir_secondary=default_parquet_dir_secondary,
+    )
+    root.mainloop()
     return 0
 
 

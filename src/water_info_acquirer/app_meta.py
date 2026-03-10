@@ -1,6 +1,6 @@
 """アプリ/モジュール名称・バージョンの一元管理。"""
 
-from importlib.metadata import version as meta_version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version as meta_version
 from pathlib import Path
 import sys
 import tomllib
@@ -19,6 +19,10 @@ MODULES = {
         "jp": "気象庁 雨量データ取得",
         "en": "JMA Rainfall",
     },
+    "rainfall": {
+        "jp": "雨量整理・抽出",
+        "en": "Rainfall Tools",
+    },
 }
 
 PACKAGE_NAME = "Water-Info-Acquirer"
@@ -34,11 +38,10 @@ def get_module_title(key: str, lang: str = "jp") -> str:
 
 
 def _read_pyproject_version() -> str | None:
-    """pyproject.toml から version を読む（メタデータが無い場合のフォールバック）。"""
     candidates = []
     if getattr(sys, "frozen", False):
         candidates.append(Path(sys.executable).resolve().parent / "pyproject.toml")
-    candidates.append(Path(__file__).resolve().parent.parent / "pyproject.toml")
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "pyproject.toml")
 
     for pyproj in candidates:
         if pyproj.is_file():
@@ -51,7 +54,6 @@ def _read_pyproject_version() -> str | None:
 
 
 def get_version() -> str:
-    """インストールメタデータ → pyproject.toml → FALLBACK の順で取得。"""
     try:
         return meta_version(PACKAGE_NAME)
     except PackageNotFoundError:
@@ -63,7 +65,3 @@ def get_version() -> str:
     if v:
         return v
     return FALLBACK_VERSION
-
-
-if __name__ == "__main__":
-    print(get_version())
