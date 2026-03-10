@@ -20,6 +20,12 @@ if TYPE_CHECKING:
     from river_meta.rainfall.domain.usecase_models import RainfallRunInput
 
 
+def fetch_jma_rainfall(*args, **kwargs):
+    from river_meta.rainfall.sources.jma.adapter import fetch_jma_rainfall as _fetch_jma_rainfall
+
+    return _fetch_jma_rainfall(*args, **kwargs)
+
+
 def collect_jma_with_resolved(
     stations: list[JMAStationInput],
     query: RainfallQuery,
@@ -29,8 +35,6 @@ def collect_jma_with_resolved(
     jma_log_level: str | None,
     jma_enable_log_output: bool | None,
 ) -> RainfallDataset:
-    from river_meta.rainfall.sources.jma.adapter import fetch_jma_rainfall
-
     fetch_fn = fetch_jma_rainfall
     try:
         records = fetch_fn(

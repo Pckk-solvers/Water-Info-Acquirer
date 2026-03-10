@@ -22,7 +22,7 @@ def _is_enabled_env(name: str) -> bool:
 
 _initialized = False  # ログ設定が初期化されたかのフラグ
 _runtime_level_override: str | None = None
-_runtime_enable_log_output: bool = not _is_enabled_env(DISABLE_LOG_OUTPUT_ENV)
+_runtime_enable_log_output: bool = False
 _runtime_logger_scope: Literal["root", "jma"] = "jma"
 
 
@@ -36,7 +36,7 @@ def setup_logging(
     *,
     log_file_override: Optional[str | Path] = None,
     level_override: Optional[str] = None,
-    enable_log_output: bool = True,
+    enable_log_output: bool = False,
     logger_scope: Literal["root", "jma"] = "jma",
 ) -> None:
     """
