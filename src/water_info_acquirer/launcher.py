@@ -30,6 +30,7 @@ TEXT_TERTIARY = "#6b7280"
 def main() -> None:
     ensure_src_on_path()
     root = tk.Tk()
+    root.withdraw()
     root.title(get_app_title())
     root.geometry("640x420")
     root.minsize(560, 320)
@@ -240,5 +241,8 @@ def main() -> None:
     pos_x = max(0, (screen_w - width) // 2)
     pos_y = max(0, (screen_h - height) // 2)
     root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+    root.deiconify()
+    root.lift()
+    root.focus_force()
 
     root.mainloop()
