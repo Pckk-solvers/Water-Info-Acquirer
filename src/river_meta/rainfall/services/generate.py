@@ -1,63 +1,32 @@
 from __future__ import annotations
 
+import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
-from dataclasses import dataclass, field
-from datetime import datetime
-import shutil
-from typing import TYPE_CHECKING
-
 from pathlib import Path
 
-from river_meta.rainfall.analysis import build_annual_max_dataframe, build_hourly_timeseries_dataframe
-from river_meta.rainfall.chart_exporter import export_rainfall_charts
-from river_meta.rainfall.excel_exporter import export_station_rainfall_excel
-from river_meta.rainfall.generate_manifest import (
+from river_meta.rainfall.outputs.analysis import build_annual_max_dataframe, build_hourly_timeseries_dataframe
+from river_meta.rainfall.outputs.chart_exporter import export_rainfall_charts
+from river_meta.rainfall.outputs.excel_exporter import export_station_rainfall_excel
+from river_meta.rainfall.storage.manifest import (
     build_chart_id,
     build_digest_from_parquet_paths,
     build_station_digest,
     build_station_id,
-    empty_manifest,
     load_manifest,
     save_manifest,
 )
-from river_meta.rainfall.parquet_store import (
-    ParquetEntry,
-    find_missing_months,
-    scan_parquet_dir,
-)
-from river_meta.rainfall.jma_availability import fetch_available_years_hourly
-from river_meta.rainfall.models import (
-    JMAStationInput,
-    RainfallDataset,
-    RainfallQuery,
-    WaterInfoStationInput,
-)
-from river_meta.rainfall.normalizer import normalize_interval_token
-from river_meta.services.rainfall_common import (
+from river_meta.rainfall.storage.parquet_store import ParquetEntry, find_missing_months, scan_parquet_dir
+from river_meta.rainfall.support.common import (
     CancelFn,
     LogFn,
     append_cancelled_once as _append_cancelled_once,
     build_excel_output_path as _build_excel_output_path,
     is_cancelled as _is_cancelled,
     noop_log as _noop_log,
-    rollback_created_parquets as _rollback_created_parquets,
     to_relpath as _to_relpath,
 )
-import river_meta.services.rainfall_fetch_jma as _rainfall_fetch_jma_service
-import river_meta.services.rainfall_fetch_waterinfo as _rainfall_fetch_waterinfo_service
-from river_meta.services.rainfall_period_export import (
-    RainfallParquetPeriodBatchExportInput,
-    RainfallParquetPeriodBatchExportResult,
-    RainfallParquetPeriodExportInput,
-    RainfallParquetPeriodExportResult,
-    RainfallParquetPeriodExportTarget,
-    export_period_targets_csv,
-    load_period_targets_csv,
-    run_rainfall_parquet_period_batch_export,
-    run_rainfall_parquet_period_export,
-)
-from river_meta.services.rainfall_generate_support import (
+from river_meta.rainfall.support.generate_support import (
     ChartGenerateJob as _ChartGenerateJob,
     ExcelGenerateJob as _ExcelGenerateJob,
     ExcelGenerateJobResult as _ExcelGenerateJobResult,
@@ -68,87 +37,8 @@ from river_meta.services.rainfall_generate_support import (
     run_excel_generate_job as _run_excel_generate_job,
     update_chart_manifest_entries as _update_chart_manifest_entries,
 )
-import river_meta.services.rainfall_station_resolution as _rainfall_station_resolution
-from river_meta.services.rainfall_period import (
-    format_station_target_period_log as _format_station_target_period_log,
-    format_target_years_normalization_log as _format_target_years_normalization_log,
-    normalize_collection_order as _normalize_collection_order,
-    resolve_query_period as _resolve_query_period,
-    resolve_target_years_for_analyze as _resolve_target_years_for_analyze,
-)
 
-if TYPE_CHECKING:
-    import pandas as pd
-
-
-def _resolve_jma_stations_for_config(config: RainfallRunInput, logger: LogFn) -> list[JMAStationInput]:
-    return _rainfall_station_resolution.resolve_jma_stations_for_config(config, logger)
-
-
-def _resolve_waterinfo_codes_for_config(config: RainfallRunInput, logger: LogFn) -> list[str]:
-    return _rainfall_station_resolution.resolve_waterinfo_codes_for_config(config, logger)
-
-
-def _resolve_sources(source: str) -> list[str]:
-    return _rainfall_station_resolution.resolve_sources(source)
-
-
-@dataclass(slots=True)
-class RainfallRunInput:
-    source: str
-    start_at: datetime | None = None
-    end_at: datetime | None = None
-    year: int | None = None
-    years: list[int] | None = None
-    interval: str = "1hour"
-    jma_prefectures: list[str] = field(default_factory=list)
-    jma_station_codes: list[str] = field(default_factory=list)
-    jma_stations: list[tuple[str, str, str]] = field(default_factory=list)
-    waterinfo_prefectures: list[str] = field(default_factory=list)
-    waterinfo_station_codes: list[str] = field(default_factory=list)
-    jma_station_index_path: str | None = None
-    jma_log_level: str | None = None
-    jma_enable_log_output: bool | None = None
-    collection_order: str = "station_year"
-    include_raw: bool = False
-
-    def __post_init__(self) -> None:
-        self.collection_order = _normalize_collection_order(self.collection_order)
-
-
-@dataclass(slots=True)
-class RainfallAnalyzeResult:
-    dataset: RainfallDataset
-    timeseries_df: "pd.DataFrame"
-    annual_max_df: "pd.DataFrame"
-    excel_paths: list[str] = field(default_factory=list)
-    chart_paths: list[str] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class RainfallGenerateInput:
-    """Parquet ディレクトリを入力として Excel/グラフを生成するための設定。"""
-    parquet_dir: str
-    export_excel: bool = True
-    export_chart: bool = True
-    excel_parallel_enabled: bool = False
-    excel_parallel_workers: int = 1
-    chart_parallel_enabled: bool = False
-    chart_parallel_workers: int = 1
-    decimal_places: int = 2
-    target_stations: list[tuple[str, str]] = field(default_factory=list)
-    use_diff_mode: bool = True
-    force_full_regenerate: bool = False
-
-
-@dataclass(slots=True)
-class RainfallGenerateResult:
-    """generate モードの出力結果。"""
-    entries: list[ParquetEntry] = field(default_factory=list)
-    incomplete_entries: list[ParquetEntry] = field(default_factory=list)
-    excel_paths: list[str] = field(default_factory=list)
-    chart_paths: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
+from ..domain.usecase_models import RainfallGenerateInput, RainfallGenerateResult
 
 
 def _remove_file_if_exists(path: Path) -> bool:
@@ -212,10 +102,7 @@ def _cleanup_generate_outputs_for_full_mode(
                 if _matches_station_excel_filename(candidate, station_key) and _remove_file_if_exists(candidate):
                     removed_excel += 1
 
-    logger(
-        "[generate] full mode 初期化: "
-        f"excel={removed_excel}"
-    )
+    logger("[generate] full mode 初期化: " f"excel={removed_excel}")
     return manifest
 
 
@@ -225,13 +112,6 @@ def run_rainfall_generate(
     log: LogFn | None = None,
     should_stop: CancelFn | None = None,
 ) -> RainfallGenerateResult:
-    """Parquet ディレクトリを入力として Excel/グラフを生成する。
-
-    完全年（JMAなら12ヶ月分のParquetが揃っている年）のみ出力する。
-    不完全年は ``incomplete_entries`` に格納してスキップする。
-    """
-    import pandas as pd
-
     logger = log or _noop_log
     diff_mode = bool(config.use_diff_mode) and not bool(config.force_full_regenerate)
     excel_parallel_workers = max(1, int(config.excel_parallel_workers))
@@ -295,9 +175,7 @@ def run_rainfall_generate(
         if entry.complete:
             complete_entries.append(entry)
         else:
-            missing = find_missing_months(
-                config.parquet_dir, entry.source, entry.station_key, entry.year,
-            )
+            missing = find_missing_months(config.parquet_dir, entry.source, entry.station_key, entry.year)
             logger(
                 f"[generate][WARN] 観測所={entry.station_key} 年={entry.year}"
                 f" 不足月={missing} — スキップ"
@@ -307,11 +185,7 @@ def run_rainfall_generate(
     if not complete_entries:
         if "cancelled" in all_errors:
             logger("[generate] 停止要求により処理を中断しました。")
-            return RainfallGenerateResult(
-                entries=entries,
-                incomplete_entries=incomplete_entries,
-                errors=all_errors,
-            )
+            return RainfallGenerateResult(entries=entries, incomplete_entries=incomplete_entries, errors=all_errors)
         logger("[generate] 完全年のデータがありません。")
         return RainfallGenerateResult(
             entries=entries,
@@ -369,10 +243,7 @@ def run_rainfall_generate(
         station_name = ""
         years_text = ",".join(str(item.year) for item in station_entries)
         logger(f"[generate] 処理中: {source} 観測所={station_key} 年={years_text}")
-        if (
-            (not config.export_excel or excel_parallel_mode)
-            and (not config.export_chart or chart_parallel_mode)
-        ):
+        if (not config.export_excel or excel_parallel_mode) and (not config.export_chart or chart_parallel_mode):
             if config.export_excel and not excel_skip_by_digest:
                 excel_jobs.append(
                     (
@@ -421,10 +292,7 @@ def run_rainfall_generate(
                 )
             continue
 
-        source_df, inferred_station_name = _load_source_dataframe_for_station_entries(
-            config.parquet_dir,
-            station_entries,
-        )
+        source_df, inferred_station_name = _load_source_dataframe_for_station_entries(config.parquet_dir, station_entries)
         if _is_cancelled(should_stop):
             _append_cancelled_once(all_errors)
             break
@@ -722,11 +590,9 @@ def run_rainfall_generate(
                 "[generate][WARN] グラフ並列プールが利用不能になりました。"
                 f" ({type(exc).__name__}: {exc}) 直列フォールバックへ切り替えます。"
             )
+
         if pool_broken:
-            fallback_keys = {
-                _chart_job_key(job)
-                for job in fallback_jobs
-            }
+            fallback_keys = {_chart_job_key(job) for job in fallback_jobs}
             for job in chart_jobs:
                 job_key = _chart_job_key(job)
                 if job_key in completed_chart_job_keys or job_key in fallback_keys:
@@ -743,8 +609,7 @@ def run_rainfall_generate(
             seen_fallback_keys.add(job_key)
             unique_fallback_jobs.append(job)
 
-        fallback_jobs = unique_fallback_jobs
-        for job in fallback_jobs:
+        for job in unique_fallback_jobs:
             try:
                 job_result = _run_chart_generate_job(job)
             except Exception as exc:  # noqa: BLE001
@@ -788,410 +653,4 @@ def run_rainfall_generate(
         excel_paths=sorted(excel_paths),
         chart_paths=sorted(chart_paths),
         errors=all_errors,
-    )
-
-def run_rainfall_collect(
-    config: RainfallRunInput,
-    *,
-    log: LogFn | None = None,
-    should_stop: CancelFn | None = None,
-) -> RainfallDataset:
-    logger = log or _noop_log
-    try:
-        sources = _resolve_sources(config.source)
-        interval = normalize_interval_token(config.interval)
-        start_at, end_at = _resolve_query_period(config)
-        query = RainfallQuery(start_at=start_at, end_at=end_at, interval=interval)
-
-        if _is_cancelled(should_stop):
-            return RainfallDataset(records=[], errors=["cancelled"])
-
-        all_records = []
-        all_errors = []
-        for source in sources:
-            if _is_cancelled(should_stop):
-                _append_cancelled_once(all_errors)
-                break
-            if source == "jma":
-                part = _collect_jma(config, query=query, logger=logger, should_stop=should_stop)
-            else:
-                part = _collect_waterinfo(config, query=query, logger=logger, should_stop=should_stop)
-            all_records.extend(part.records)
-            all_errors.extend(part.errors)
-
-        all_records.sort(key=lambda item: (item.station_key, item.observed_at, item.source))
-        return RainfallDataset(records=all_records, errors=all_errors)
-    except Exception as exc:  # noqa: BLE001
-        message = f"{type(exc).__name__}: {exc}"
-        logger(message)
-        return RainfallDataset(records=[], errors=[message])
-
-
-def run_rainfall_analyze(
-    config: RainfallRunInput,
-    *,
-    export_excel: bool = False,
-    export_chart: bool = False,
-    output_dir: str = "outputs/river_meta/rainfall",
-    decimal_places: int = 2,
-    log: LogFn | None = None,
-    should_stop: CancelFn | None = None,
-) -> RainfallAnalyzeResult:
-    import pandas as pd
-
-    logger = log or _noop_log
-
-    if normalize_interval_token(config.interval) != "1hour":
-        dataset = RainfallDataset(records=[], errors=["run_rainfall_analyze supports interval='1hour' only"])
-        empty = pd.DataFrame()
-        return RainfallAnalyzeResult(dataset=dataset, timeseries_df=empty, annual_max_df=empty, excel_paths=[], chart_paths=[])
-
-    all_errors: list[str] = []
-    excel_paths: set[str] = set()
-    chart_paths: list[str] = []
-    created_parquet_paths: list[Path] = []
-    jma_requested_year_total = 0
-    jma_filtered_year_total = 0
-    target_years = _resolve_target_years_for_analyze(config)
-    logger(f"[collect] 取得順序: {config.collection_order}")
-    logger(_format_target_years_normalization_log(config, target_years))
-
-    # We first collect the fully resolved stations to iterate over them safely without querying API twice
-    resolved_sources = _resolve_sources(config.source)
-    source_order = {"jma": 0, "water_info": 1}
-    jma_stations: list[JMAStationInput] = []
-    waterinfo_codes: list[str] = []
-
-    if "jma" in resolved_sources:
-        jma_stations = _resolve_jma_stations_for_config(config, logger)
-    if "water_info" in resolved_sources:
-        waterinfo_codes = _resolve_waterinfo_codes_for_config(config, logger)
-
-    if not jma_stations and not waterinfo_codes:
-        dataset = RainfallDataset(records=[], errors=["No stations resolved"])
-        empty = pd.DataFrame()
-        return RainfallAnalyzeResult(dataset=dataset, timeseries_df=empty, annual_max_df=empty, excel_paths=[], chart_paths=[])
-
-    station_name_by_key: dict[tuple[str, str], str] = {}
-    jma_station_inputs: dict[str, list[JMAStationInput]] = {}
-    waterinfo_station_inputs: dict[str, list[WaterInfoStationInput]] = {}
-    job_units: list[tuple[str, str, int]] = []
-
-    grouped_jma_stations: dict[str, list[JMAStationInput]] = {}
-    for station in jma_stations:
-        grouped_jma_stations.setdefault(station.station_key, []).append(station)
-
-    for station_key, station_group in sorted(grouped_jma_stations.items()):
-        if _is_cancelled(should_stop):
-            _append_cancelled_once(all_errors)
-            break
-        primary_station = station_group[0]
-        station_name = next((station.station_name for station in station_group if station.station_name), "")
-        station_name_by_key[("jma", station_key)] = station_name
-        jma_station_inputs[station_key] = list(station_group)
-
-        years_for_station = target_years
-        station_period_reason = "JMA観測所別の年判定前（全体対象年を仮適用）"
-        if target_years:
-            requested_count = len(target_years)
-            filtered_years = target_years
-            availability = fetch_available_years_hourly(
-                prec_no=primary_station.prefecture_code,
-                block_no=primary_station.block_number,
-            )
-            if availability.status == "indeterminate":
-                logger(
-                    f"[JMA][availability] 観測所={station_key} 指定年数={requested_count}"
-                    f" -> 判定後年数={requested_count} status={availability.status}"
-                )
-                logger(
-                    f"[JMA][availability] 観測所={station_key} "
-                    f"status=indeterminate ({availability.reason}) 従来モードで継続"
-                )
-                station_period_reason = (
-                    f"可用性判定が不確定のため全体対象年を使用 "
-                    f"(status={availability.status}, reason={availability.reason})"
-                )
-            else:
-                filtered_years = [year for year in target_years if year in availability.years]
-                logger(
-                    f"[JMA][availability] 観測所={station_key} 指定年数={requested_count}"
-                    f" -> 判定後年数={len(filtered_years)} status={availability.status}"
-                )
-                if not filtered_years:
-                    logger(f"[JMA][availability] 観測所={station_key} 判定後の対象年なしのためスキップ")
-                    station_period_reason = "可用性判定の結果、対象年なし"
-                else:
-                    station_period_reason = "可用性判定で存在年のみへ絞り込み"
-
-            jma_requested_year_total += requested_count
-            jma_filtered_year_total += len(filtered_years)
-            years_for_station = filtered_years
-        logger(_format_station_target_period_log("jma", station_key, years_for_station, station_period_reason))
-
-        for year in years_for_station:
-            if _is_cancelled(should_stop):
-                _append_cancelled_once(all_errors)
-                break
-            job_units.append(("jma", station_key, year))
-
-    for code in waterinfo_codes:
-        if _is_cancelled(should_stop):
-            _append_cancelled_once(all_errors)
-            break
-        station_name_by_key[("water_info", code)] = ""
-        waterinfo_station_inputs[code] = [WaterInfoStationInput(station_code=code)]
-        logger(
-            _format_station_target_period_log(
-                "water_info",
-                code,
-                target_years,
-                "WaterInfoは観測所別の年可用性判定を行わないため、全体対象年をそのまま使用",
-            )
-        )
-        for year in target_years:
-            if _is_cancelled(should_stop):
-                _append_cancelled_once(all_errors)
-                break
-            job_units.append(("water_info", code, year))
-
-    if config.collection_order == "year_station":
-        job_units.sort(key=lambda item: (item[2], source_order.get(item[0], 99), item[1]))
-    else:
-        job_units.sort(key=lambda item: (source_order.get(item[0], 99), item[1], item[2]))
-
-    out_dir_path = Path(output_dir)
-    out_dir_path.mkdir(parents=True, exist_ok=True)
-
-    for source_type, station_key, year in job_units:
-        if _is_cancelled(should_stop):
-            _append_cancelled_once(all_errors)
-            break
-
-        station_name = station_name_by_key.get((source_type, station_key), "")
-        if source_type == "jma":
-            # --- JMA: 月単位で取得・キャッシュ ---
-            source_df = _fetch_jma_year_monthly(
-                station_obj_list=jma_station_inputs.get(station_key, []),
-                station_key=station_key,
-                year=year,
-                output_dir=output_dir,
-                config=config,
-                logger=logger,
-                should_stop=should_stop,
-                all_errors=all_errors,
-                records_counter=lambda n: None,  # noqa: ARG005
-                created_parquet_paths=created_parquet_paths,
-            )
-        else:
-            # --- water_info: 年単位で取得・キャッシュ ---
-            source_df = _fetch_waterinfo_year(
-                station_obj_list=waterinfo_station_inputs.get(station_key, []),
-                station_key=station_key,
-                year=year,
-                output_dir=output_dir,
-                config=config,
-                logger=logger,
-                should_stop=should_stop,
-                all_errors=all_errors,
-                created_parquet_paths=created_parquet_paths,
-            )
-
-        if source_df is None or source_df.empty:
-            continue
-
-        station_actual_name = station_name
-        if not station_actual_name:
-            station_actual_name = source_df["station_name"].iloc[0] if "station_name" in source_df.columns else ""
-
-        timeseries_df = build_hourly_timeseries_dataframe(source_df)
-        annual_max_df = build_annual_max_dataframe(timeseries_df)
-        del source_df  # メモリ解放
-
-        if _is_cancelled(should_stop):
-            _append_cancelled_once(all_errors)
-            del timeseries_df, annual_max_df
-            break
-
-        if export_excel and not timeseries_df.empty:
-            safe_name = str(station_actual_name).replace("/", "_").replace("\\", "_")
-            filename = f"{station_key}_{safe_name}.xlsx" if safe_name else f"{station_key}.xlsx"
-            excel_dir = out_dir_path / "excel"
-            excel_dir.mkdir(parents=True, exist_ok=True)
-            output_path = excel_dir / filename
-
-            path = export_station_rainfall_excel(
-                timeseries_df,
-                annual_max_df,
-                output_path=str(output_path),
-                decimal_places=decimal_places,
-            )
-            if path is not None:
-                excel_paths.add(str(path))
-
-        if _is_cancelled(should_stop):
-            _append_cancelled_once(all_errors)
-            del timeseries_df, annual_max_df
-            break
-
-        if export_chart and not timeseries_df.empty and not annual_max_df.empty:
-            generated = export_rainfall_charts(
-                timeseries_df,
-                annual_max_df,
-                output_dir=str(out_dir_path / "charts"),
-                station_key=station_key,
-                station_name=station_actual_name,
-                should_stop=should_stop,
-            )
-            chart_paths.extend(str(p) for p in generated)
-            if _is_cancelled(should_stop):
-                _append_cancelled_once(all_errors)
-                del timeseries_df, annual_max_df
-                break
-
-        del timeseries_df, annual_max_df  # メモリ解放
-
-    if jma_requested_year_total > 0:
-        reduced = jma_requested_year_total - jma_filtered_year_total
-        logger(
-            "[JMA][availability] 全体年判定: "
-            f"{jma_requested_year_total} -> {jma_filtered_year_total} ({reduced} 年削減)"
-        )
-
-    if "cancelled" in all_errors:
-        kept_count = len(dict.fromkeys(created_parquet_paths))
-        if kept_count > 0:
-            logger(f"[Parquet] 停止時も {kept_count} 件の新規Parquetを保持します。")
-
-    dataset = RainfallDataset(records=[], errors=all_errors)
-    empty = pd.DataFrame()
-    return RainfallAnalyzeResult(
-        dataset=dataset,
-        timeseries_df=empty,
-        annual_max_df=empty,
-        excel_paths=sorted(list(excel_paths)),
-        chart_paths=sorted(chart_paths),
-    )
-
-def _fetch_jma_year_monthly(
-    *,
-    station_obj_list: list[JMAStationInput],
-    station_key: str,
-    year: int,
-    output_dir: str,
-    config: RainfallRunInput,
-    logger: LogFn,
-    should_stop: CancelFn | None,
-    all_errors: list[str],
-    records_counter: Callable[[int], None],
-    created_parquet_paths: list[Path],
-) -> pd.DataFrame | None:
-    return _rainfall_fetch_jma_service.fetch_jma_year_monthly(
-        station_obj_list=station_obj_list,
-        station_key=station_key,
-        year=year,
-        output_dir=output_dir,
-        config=config,
-        logger=logger,
-        should_stop=should_stop,
-        all_errors=all_errors,
-        records_counter=records_counter,
-        created_parquet_paths=created_parquet_paths,
-    )
-
-
-def _fetch_waterinfo_year(
-    *,
-    station_obj_list: list[WaterInfoStationInput],
-    station_key: str,
-    year: int,
-    output_dir: str,
-    config: RainfallRunInput,
-    logger: LogFn,
-    should_stop: CancelFn | None,
-    all_errors: list[str],
-    created_parquet_paths: list[Path],
-) -> pd.DataFrame | None:
-    return _rainfall_fetch_waterinfo_service.fetch_waterinfo_year(
-        station_obj_list=station_obj_list,
-        station_key=station_key,
-        year=year,
-        output_dir=output_dir,
-        config=config,
-        logger=logger,
-        should_stop=should_stop,
-        all_errors=all_errors,
-        created_parquet_paths=created_parquet_paths,
-    )
-
-def _collect_jma(
-    config: RainfallRunInput,
-    *,
-    query: RainfallQuery,
-    logger: LogFn,
-    should_stop: CancelFn | None,
-) -> RainfallDataset:
-    try:
-        stations = _resolve_jma_stations_for_config(config, logger)
-        if not stations:
-            raise ValueError("jma_stations or jma_station_codes or jma_prefectures is required for source=jma")
-        return _collect_jma_with_resolved(stations, query, config.include_raw, logger, should_stop, config.jma_log_level, config.jma_enable_log_output)
-    except Exception as exc:  # noqa: BLE001
-        message = f"jma:{type(exc).__name__}: {exc}"
-        logger(message)
-        return RainfallDataset(records=[], errors=[message])
-
-
-def _collect_jma_with_resolved(
-    stations: list[JMAStationInput],
-    query: RainfallQuery,
-    include_raw: bool,
-    logger: LogFn,
-    should_stop: CancelFn | None,
-    jma_log_level: str | None,
-    jma_enable_log_output: bool | None,
-) -> RainfallDataset:
-    return _rainfall_fetch_jma_service.collect_jma_with_resolved(
-        stations,
-        query,
-        include_raw,
-        logger,
-        should_stop,
-        jma_log_level,
-        jma_enable_log_output,
-    )
-
-
-def _collect_waterinfo(
-    config: RainfallRunInput,
-    *,
-    query: RainfallQuery,
-    logger: LogFn,
-    should_stop: CancelFn | None,
-) -> RainfallDataset:
-    try:
-        station_codes = _resolve_waterinfo_codes_for_config(config, logger)
-        if not station_codes:
-            raise ValueError("waterinfo_station_codes or waterinfo_prefectures is required for source=water_info")
-        stations = [WaterInfoStationInput(station_code=code) for code in station_codes]
-        return _collect_waterinfo_with_resolved(stations, query, config.include_raw, logger, should_stop)
-    except Exception as exc:  # noqa: BLE001
-        message = f"water_info:{type(exc).__name__}: {exc}"
-        logger(message)
-        return RainfallDataset(records=[], errors=[message])
-
-
-def _collect_waterinfo_with_resolved(
-    stations: list[WaterInfoStationInput],
-    query: RainfallQuery,
-    include_raw: bool,
-    logger: LogFn,
-    should_stop: CancelFn | None,
-) -> RainfallDataset:
-    return _rainfall_fetch_waterinfo_service.collect_waterinfo_with_resolved(
-        stations,
-        query,
-        include_raw,
-        logger,
-        should_stop,
     )

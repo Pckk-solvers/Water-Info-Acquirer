@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.station_index import (
+from river_meta.rainfall.sources.jma.station_index import (
     resolve_jma_stations_from_codes,
 )
 

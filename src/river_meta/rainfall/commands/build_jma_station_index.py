@@ -6,7 +6,7 @@ from pathlib import Path
 
 from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import fetch_prefecture_codes, fetch_station_codes
 
-from .station_index import default_station_index_path
+from river_meta.rainfall.sources.jma.station_index import default_station_index_path
 
 
 def _to_obs_type(obs_method: str) -> str:
@@ -39,8 +39,11 @@ def build_jma_station_index(*, output_path: str | None = None) -> Path:
                 "pref_name": pref_name,
                 "block_no": block_no,
                 "station_name": str(rec.get("station", "")),
+                "station_name_kana": str(rec.get("station_kana", "")),
                 "obs_method": str(rec.get("obs_method", "")),
                 "obs_type": _to_obs_type(str(rec.get("obs_method", ""))),
+                "latitude": str(rec.get("latitude", "")).strip(),
+                "longitude": str(rec.get("longitude", "")).strip(),
             }
             by_block_no.setdefault(block_no, []).append(item)
             station_count += 1

@@ -110,12 +110,7 @@ def extract_amedas_table_rows(
                         "lat_min": cols[8],
                         "lon_deg": cols[9],
                         "lon_min": cols[10],
-                        "elevation_m": cols[11],
-                        "wind_height_m": cols[12],
-                        "temp_height_m": cols[13],
                         "start_date": cols[14],
-                        "note1": cols[15],
-                        "note2": cols[16],
                         "source_page": str(page_idx),
                     }
                     rows.append(row)

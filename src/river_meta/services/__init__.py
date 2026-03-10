@@ -20,24 +20,6 @@ except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency fal
     def run_csv_to_gpkg(*args, **kwargs):  # type: ignore[no-redef]
         raise ModuleNotFoundError("run_csv_to_gpkg requires optional GIS dependencies") from _gpkg_import_error
 
-from .rainfall import (
-    RainfallAnalyzeResult,
-    RainfallGenerateInput,
-    RainfallGenerateResult,
-    RainfallParquetPeriodBatchExportInput,
-    RainfallParquetPeriodBatchExportResult,
-    RainfallParquetPeriodExportInput,
-    RainfallParquetPeriodExportResult,
-    RainfallParquetPeriodExportTarget,
-    RainfallRunInput,
-    export_period_targets_csv,
-    load_period_targets_csv,
-    run_rainfall_analyze,
-    run_rainfall_collect,
-    run_rainfall_generate,
-    run_rainfall_parquet_period_batch_export,
-    run_rainfall_parquet_period_export,
-)
 from .river_meta import RiverMetaRunInput, RiverMetaRunResult, collect_station_ids, run_river_meta
 from .station_ids import StationIdsRunInput, StationIdsRunResult, run_station_ids_collect
 
@@ -51,23 +33,8 @@ __all__ = [
     "RiverMetaRunResult",
     "run_amedas_extract",
     "run_csv_to_gpkg",
-    "run_rainfall_analyze",
-    "run_rainfall_collect",
     "run_river_meta",
-    "run_rainfall_parquet_period_batch_export",
-    "run_rainfall_parquet_period_export",
     "run_station_ids_collect",
     "StationIdsRunInput",
     "StationIdsRunResult",
-    "RainfallAnalyzeResult",
-    "RainfallGenerateInput",
-    "RainfallGenerateResult",
-    "RainfallParquetPeriodBatchExportInput",
-    "RainfallParquetPeriodBatchExportResult",
-    "RainfallParquetPeriodExportInput",
-    "RainfallParquetPeriodExportResult",
-    "RainfallParquetPeriodExportTarget",
-    "RainfallRunInput",
-    "export_period_targets_csv",
-    "load_period_targets_csv",
 ]

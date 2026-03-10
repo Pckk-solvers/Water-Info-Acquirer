@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .models import RainfallRecord
+from river_meta.rainfall.domain.models import RainfallRecord
 
 # Parquet に保存するカラム（raw は除外してファイルサイズを抑える）
 PARQUET_COLUMNS = [

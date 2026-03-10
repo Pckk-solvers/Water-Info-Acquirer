@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.waterinfo_station_index import resolve_waterinfo_station_codes_from_prefectures
+from river_meta.rainfall.sources.water_info.station_index import resolve_waterinfo_station_codes_from_prefectures
 
 
 def test_resolve_waterinfo_station_codes_from_prefectures(monkeypatch):
@@ -21,11 +21,11 @@ def test_resolve_waterinfo_station_codes_from_prefectures(monkeypatch):
     }
 
     monkeypatch.setattr(
-        "river_meta.rainfall.waterinfo_station_index.build_session",
+        "river_meta.rainfall.sources.water_info.station_index.build_session",
         lambda user_agent: object(),
     )
     monkeypatch.setattr(
-        "river_meta.rainfall.waterinfo_station_index.fetch_master_options",
+        "river_meta.rainfall.sources.water_info.station_index.fetch_master_options",
         lambda session, timeout: (pref_options, komoku_options),
     )
 
@@ -41,7 +41,7 @@ def test_resolve_waterinfo_station_codes_from_prefectures(monkeypatch):
         codes = ids_by_pref.get(params["KEN"], [])
         return codes, len(codes)
 
-    monkeypatch.setattr("river_meta.rainfall.waterinfo_station_index.collect_station_ids", _fake_collect)
+    monkeypatch.setattr("river_meta.rainfall.sources.water_info.station_index.collect_station_ids", _fake_collect)
 
     codes, unknown = resolve_waterinfo_station_codes_from_prefectures(
         ["大阪", "京都", "不存在県"],

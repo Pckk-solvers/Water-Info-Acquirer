@@ -6,8 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.models import RainfallDataset, RainfallRecord, WaterInfoStationInput
-from river_meta.services.rainfall import RainfallRunInput, _fetch_waterinfo_year
+from river_meta.rainfall.domain.models import RainfallDataset, RainfallRecord, WaterInfoStationInput
+from river_meta.rainfall.domain.usecase_models import RainfallRunInput
+from river_meta.rainfall.services.analyze import _fetch_waterinfo_year
 
 
 def _record(rainfall_mm: float | None) -> RainfallRecord:
@@ -32,9 +33,9 @@ def test_fetch_waterinfo_year_skip_save_when_no_valid_rainfall(monkeypatch, tmp_
         save_calls["count"] += 1
         return Path(output_path)
 
-    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.parquet_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.collect_waterinfo_with_resolved", _fake_collect)
-    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.save_records_parquet", _fake_save)
+    monkeypatch.setattr("river_meta.rainfall.sources.fetch_water_info.parquet_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr("river_meta.rainfall.sources.fetch_water_info.collect_waterinfo_with_resolved", _fake_collect)
+    monkeypatch.setattr("river_meta.rainfall.sources.fetch_water_info.save_records_parquet", _fake_save)
 
     result = _fetch_waterinfo_year(
         station_obj_list=[WaterInfoStationInput(station_code="2700000001")],
@@ -65,9 +66,9 @@ def test_fetch_waterinfo_year_save_when_has_valid_rainfall(monkeypatch, tmp_path
         save_calls["count"] += 1
         return Path(output_path)
 
-    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.parquet_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.collect_waterinfo_with_resolved", _fake_collect)
-    monkeypatch.setattr("river_meta.services.rainfall_fetch_waterinfo.save_records_parquet", _fake_save)
+    monkeypatch.setattr("river_meta.rainfall.sources.fetch_water_info.parquet_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr("river_meta.rainfall.sources.fetch_water_info.collect_waterinfo_with_resolved", _fake_collect)
+    monkeypatch.setattr("river_meta.rainfall.sources.fetch_water_info.save_records_parquet", _fake_save)
 
     result = _fetch_waterinfo_year(
         station_obj_list=[WaterInfoStationInput(station_code="2700000001")],

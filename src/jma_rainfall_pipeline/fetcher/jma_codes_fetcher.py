@@ -17,6 +17,9 @@ BASE_URL = "https://www.data.jma.go.jp/obd"
 
 logger = logging.getLogger(__name__)
 
+VIEWPOINT_RE = re.compile(r"viewPoint\((.*)\)\s*;?\s*$", re.DOTALL)
+VIEWPOINT_ARGS_RE = re.compile(r"'([^']*)'|([^,]+)")
+
 
 def fetch_prefecture_codes(timeout: int = 10) -> List[Tuple[str, str]]:
     """Fetch the list of prefecture codes and names with persistent caching."""
@@ -122,12 +125,52 @@ def _download_station_codes(prec_no: str, timeout: int) -> List[Dict[str, Any]]:
         on_mouse = area.get("onmouseover", "")
         m_method = re.search(r"viewPoint\('([a-z])'", on_mouse)
         obs_method = m_method.group(1) if m_method else ""
+        meta = _parse_viewpoint_metadata(on_mouse)
         stations.append({
             "block_no": block_no,
             "station": name,
             "obs_method": obs_method,
+            "station_kana": meta.get("station_kana", ""),
+            "latitude": meta.get("latitude", ""),
+            "longitude": meta.get("longitude", ""),
         })
     return stations
+
+
+def _parse_viewpoint_metadata(on_mouse: str) -> Dict[str, str]:
+    text = str(on_mouse or "").strip()
+    matched = VIEWPOINT_RE.search(text)
+    if not matched:
+        return {}
+
+    raw_args = matched.group(1)
+    args: list[str] = []
+    for token in VIEWPOINT_ARGS_RE.finditer(raw_args):
+        if token.group(1) is not None:
+            args.append(token.group(1))
+        else:
+            args.append(str(token.group(2) or "").strip())
+
+    if len(args) < 8:
+        return {}
+
+    station_kana = str(args[3]).strip()
+    latitude = _to_decimal_text(args[4], args[5])
+    longitude = _to_decimal_text(args[6], args[7])
+    return {
+        "station_kana": station_kana,
+        "latitude": latitude,
+        "longitude": longitude,
+    }
+
+
+def _to_decimal_text(deg_text: str, min_text: str) -> str:
+    try:
+        deg = float(str(deg_text).strip())
+        minute = float(str(min_text).strip())
+    except ValueError:
+        return ""
+    return f"{deg + minute / 60.0:.6f}"
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.jma_availability import (  # noqa: E402
+from river_meta.rainfall.sources.jma.availability import (  # noqa: E402
     JmaAvailabilityResult,
     build_jma_index_url,
     fetch_available_years_hourly,
@@ -52,7 +52,7 @@ def test_fetch_available_years_hourly_returns_indeterminate_on_context_mismatch(
     def _fake_get(url, *, headers, timeout):  # noqa: ARG001
         return _FakeResponse()
 
-    monkeypatch.setattr("river_meta.rainfall.jma_availability.requests.get", _fake_get)
+    monkeypatch.setattr("river_meta.rainfall.sources.jma.availability.requests.get", _fake_get)
 
     result = fetch_available_years_hourly(prec_no="11", block_no="47401")
     assert isinstance(result, JmaAvailabilityResult)

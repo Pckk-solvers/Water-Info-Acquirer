@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import JMAStationInput
+from ...domain.models import JMAStationInput
 
 _INDEX_FILENAME = "jma_station_index.json"
 
 
 def default_station_index_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "resources" / _INDEX_FILENAME
+    return Path(__file__).resolve().parents[3] / "resources" / _INDEX_FILENAME
 
 
 def load_station_index(path: str | None = None) -> dict[str, Any]:

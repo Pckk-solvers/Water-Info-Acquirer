@@ -4,15 +4,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from river_meta.rainfall.waterinfo_adapter import fetch_waterinfo_rainfall
-from river_meta.rainfall.models import RainfallDataset, RainfallQuery, WaterInfoStationInput
-from river_meta.rainfall.parquet_store import build_parquet_path, load_records_parquet, parquet_exists, save_records_parquet
+from river_meta.rainfall.sources.water_info.adapter import fetch_waterinfo_rainfall
+from river_meta.rainfall.domain.models import RainfallDataset, RainfallQuery, WaterInfoStationInput
+from river_meta.rainfall.storage.parquet_store import build_parquet_path, load_records_parquet, parquet_exists, save_records_parquet
 
-from .rainfall_common import CancelFn, LogFn, append_cancelled_once, is_cancelled
+from river_meta.rainfall.support.common import CancelFn, LogFn, append_cancelled_once, is_cancelled
 
 if TYPE_CHECKING:
     import pandas as pd
-    from river_meta.services.rainfall import RainfallRunInput
+    from river_meta.rainfall.domain.usecase_models import RainfallRunInput
 
 
 def collect_waterinfo_with_resolved(

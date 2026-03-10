@@ -5,7 +5,19 @@
 - ランチャー: `src/launcher.py`
 - 国交省 水文データ取得: `src/water_info/`
 - 気象庁 雨量データ取得: `src/jma_rainfall_pipeline/`
+- 共通雨量 GUI/CLI/サービス: `src/river_meta/rainfall/`
+  - 入口: `entry.py`, `cli.py`, `__main__.py`
+  - GUI: `gui/`
+  - ユースケース: `services/`
+  - source連携: `sources/`
+  - ストレージ: `storage/`
+  - 出力: `outputs/`
+  - ドメイン/共通ロジック: `domain/`, `support/`
 - 雨量共通フォーマット化メモ: `docs/dev/river-meta-rainfall-unified-design.md`
+- 観測所インデックス可用年メンテナンス Overview: `docs/dev/station-index-availability-maintenance/overview.md`
+- 観測所インデックス可用年メンテナンス 要件: `docs/dev/station-index-availability-maintenance/requirements.md`
+- 観測所インデックス可用年メンテナンス 詳細設計: `docs/dev/station-index-availability-maintenance/design.md`
+- 観測所インデックス可用年メンテナンス タスク: `docs/dev/station-index-availability-maintenance/task.md`
 - JMA 年存在判定（hourly最適化）要件: `docs/dev/jma-hourly-availability-optimization/requirements.md`
 - JMA 年存在判定（hourly最適化）詳細設計: `docs/dev/jma-hourly-availability-optimization/design.md`
 - JMA 年存在判定（hourly最適化）タスク: `docs/dev/jma-hourly-availability-optimization/task.md`

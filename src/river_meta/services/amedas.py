@@ -64,12 +64,7 @@ def _write_rows(path: str, rows: list[dict[str, str]], *, encoding: str) -> None
         "lat_min",
         "lon_deg",
         "lon_min",
-        "elevation_m",
-        "wind_height_m",
-        "temp_height_m",
         "start_date",
-        "note1",
-        "note2",
         "source_page",
     ]
     with out_path.open("w", encoding=encoding, newline="") as file:

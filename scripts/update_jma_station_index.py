@@ -48,11 +48,12 @@ def _normalize_pref_name(value: str) -> str:
 
 _PDF_FIELDS = (
     "station_id",
-    "latitude",
-    "longitude",
-    "elevation_m",
     "start_date_raw",
     "start_date",
+)
+
+_REMOVED_FIELDS = (
+    "elevation_m",
 )
 
 _START_DATE_RE = re.compile(
@@ -121,15 +122,14 @@ def _build_station_lookup(index_data: dict) -> dict[tuple[str, str, str], dict]:
 
 def _apply_pdf_fields(station: dict, matched_row: dict[str, str]) -> None:
     raw_start_date = str(matched_row.get("start_date", "") or "").strip()
+    _drop_removed_fields(station)
     station["station_id"] = str(matched_row.get("station_id", "") or "").strip()
-    station["latitude"] = str(matched_row.get("latitude", "") or "").strip()
-    station["longitude"] = str(matched_row.get("longitude", "") or "").strip()
-    station["elevation_m"] = str(matched_row.get("elevation_m", "") or "").strip()
     station["start_date_raw"] = raw_start_date
     station["start_date"] = _normalize_start_date(raw_start_date)
 
 
 def _copy_existing_pdf_fields(station: dict, existing_station: dict | None) -> bool:
+    _drop_removed_fields(station)
     if not existing_station:
         return False
     copied = False
@@ -141,8 +141,14 @@ def _copy_existing_pdf_fields(station: dict, existing_station: dict | None) -> b
 
 
 def _clear_pdf_fields(station: dict) -> None:
+    _drop_removed_fields(station)
     for field_name in _PDF_FIELDS:
         station[field_name] = ""
+
+
+def _drop_removed_fields(station: dict) -> None:
+    for field_name in _REMOVED_FIELDS:
+        station.pop(field_name, None)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -296,7 +302,7 @@ def run_update_jma_index(
         print(f"詳細: {exc}")
         return 1
 
-    from river_meta.rainfall.build_station_index import build_jma_station_index
+    from river_meta.rainfall.commands.build_jma_station_index import build_jma_station_index
 
     if not pdf_path.exists():
         print(f"Error: PDFが見つかりません: {pdf_path}")
@@ -336,7 +342,7 @@ def run_update_jma_index(
     if summary.not_found_count > 0:
         print(
             f"  - PDFにも既存値にも見つからず未補完: {summary.not_found_count}件 "
-            "(station_id/座標/標高/開始日は空文字)"
+            "(station_id/座標/開始日は空文字)"
         )
 
     print("\n--- 4. 保存 ---")

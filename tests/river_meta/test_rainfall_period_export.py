@@ -8,9 +8,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.models import RainfallRecord
-from river_meta.rainfall.parquet_store import build_parquet_path, save_records_parquet
-from river_meta.services.rainfall import (
+from river_meta.rainfall.domain.models import RainfallRecord
+from river_meta.rainfall.storage.parquet_store import build_parquet_path, save_records_parquet
+from river_meta.rainfall.services import (
     RainfallParquetPeriodBatchExportInput,
     RainfallParquetPeriodExportInput,
     RainfallParquetPeriodExportTarget,

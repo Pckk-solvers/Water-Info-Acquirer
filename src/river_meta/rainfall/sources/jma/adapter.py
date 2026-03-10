@@ -9,8 +9,8 @@ from jma_rainfall_pipeline.fetcher.fetcher import Fetcher
 from jma_rainfall_pipeline.logger.app_logger import set_runtime_log_options, setup_logging
 from jma_rainfall_pipeline.parser import parse_html
 
-from .models import JMAStationInput, RainfallQuery, RainfallRecord
-from .normalizer import infer_quality, normalize_observed_at, normalize_rainfall_value
+from ...domain.models import JMAStationInput, RainfallQuery, RainfallRecord
+from ...domain.normalizer import infer_quality, normalize_observed_at, normalize_rainfall_value
 
 _NO_DATA_MARKERS = (
     "データは存在しません",

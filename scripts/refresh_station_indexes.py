@@ -89,6 +89,25 @@ def _build_jma_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
     return cmd
 
 
+def _build_jma_availability_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--mode",
+        args.jma_mode,
+        "--index",
+        args.jma_index,
+        "--output",
+        args.jma_index,
+    ]
+    if args.max_count > 0:
+        cmd.extend(["--max-count", str(args.max_count)])
+    if args.test_pref:
+        cmd.extend(["--pref", args.test_pref])
+    cmd.extend(["--timeout", str(args.timeout), "--sleep", str(args.sleep)])
+    return cmd
+
+
 def _build_jma_pdf_download_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
     return [
         sys.executable,
@@ -120,6 +139,28 @@ def _build_waterinfo_cmd(args: argparse.Namespace, script_path: Path) -> list[st
     return cmd
 
 
+def _build_waterinfo_availability_cmd(args: argparse.Namespace, script_path: Path) -> list[str]:
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--mode",
+        "rebuild" if args.waterinfo_mode == "rebuild" else "update",
+        "--index",
+        args.waterinfo_index,
+        "--output",
+        args.waterinfo_index,
+        "--timeout",
+        str(args.timeout),
+        "--sleep",
+        str(args.sleep),
+    ]
+    if args.max_count > 0:
+        cmd.extend(["--max-count", str(args.max_count)])
+    if args.test_pref:
+        cmd.extend(["--test-pref", args.test_pref])
+    return cmd
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     root_dir = Path(__file__).resolve().parents[1]
@@ -127,7 +168,9 @@ def main(argv: list[str] | None = None) -> int:
 
     download_jma_pdf_script = scripts_dir / "download_amedas_pdf.py"
     jma_script = scripts_dir / "update_jma_station_index.py"
+    jma_availability_script = scripts_dir / "update_jma_station_availability.py"
     waterinfo_script = scripts_dir / "build_waterinfo_station_index.py"
+    waterinfo_availability_script = scripts_dir / "update_waterinfo_station_availability.py"
 
     targets: list[str]
     if args.target == "all":
@@ -151,9 +194,19 @@ def main(argv: list[str] | None = None) -> int:
                         return rc
                     continue
             rc = _run_subprocess(_build_jma_cmd(args, jma_script), dry_run=args.dry_run)
+            if rc == 0:
+                rc = _run_subprocess(
+                    _build_jma_availability_cmd(args, jma_availability_script),
+                    dry_run=args.dry_run,
+                )
         else:
             print("\n=== WaterInfo station index refresh ===")
             rc = _run_subprocess(_build_waterinfo_cmd(args, waterinfo_script), dry_run=args.dry_run)
+            if rc == 0:
+                rc = _run_subprocess(
+                    _build_waterinfo_availability_cmd(args, waterinfo_availability_script),
+                    dry_run=args.dry_run,
+                )
         if rc != 0:
             failed = True
             print(f"[ERROR] {target} refresh failed (exit={rc})")

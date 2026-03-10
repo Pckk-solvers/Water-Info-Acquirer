@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from river_meta.rainfall.models import JMAStationInput
-from river_meta.rainfall.normalizer import normalize_source_token
-from river_meta.rainfall.station_index import (
+from river_meta.rainfall.domain.models import JMAStationInput
+from river_meta.rainfall.domain.normalizer import normalize_source_token
+from river_meta.rainfall.sources.jma.station_index import (
     resolve_jma_stations_from_codes,
     resolve_jma_stations_from_prefectures,
 )
-from river_meta.rainfall.waterinfo_station_index import resolve_waterinfo_station_codes_from_prefectures
+from river_meta.rainfall.sources.water_info.station_index import resolve_waterinfo_station_codes_from_prefectures
 
-from .rainfall_common import LogFn
+from river_meta.rainfall.support.common import LogFn
 
 if TYPE_CHECKING:
-    from .rainfall import RainfallRunInput
+    from river_meta.rainfall.domain.usecase_models import RainfallRunInput
 
 
 def dedupe_jma_stations(stations: list[JMAStationInput]) -> list[JMAStationInput]:

@@ -209,7 +209,7 @@ class StationSelector(ttk.Frame):
         self._tree.column("name", width=170, minwidth=110, anchor="w", stretch=False)
         self._tree.column("code", width=120, minwidth=90, anchor="w", stretch=False)
         self._tree.column("info", width=250, minwidth=150, anchor="w", stretch=True)
-        
+
         tree_scroll = ttk.Scrollbar(candidate_frame, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=tree_scroll.set)
 
@@ -452,15 +452,15 @@ class StationSelector(ttk.Frame):
         region = self._tree.identify_region(event.x, event.y)
         if region != "cell":
             return
-            
+
         col = self._tree.identify_column(event.x)
         if col != "#1": # 名前カラム（チェックボックスがある列）以外は無視
             return
-            
+
         item_id = self._tree.identify_row(event.y)
         if not item_id:
             return
-            
+
         pref = self._get_selected_pref()
         if not pref:
             return

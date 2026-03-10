@@ -8,8 +8,8 @@ import pandas as pd
 from water_info.infra.http_client import HEADERS, throttled_get
 from water_info.service.flow_fetch import fetch_daily_dataframe_for_code, fetch_hourly_dataframe_for_code
 
-from .models import RainfallQuery, RainfallRecord, WaterInfoStationInput
-from .normalizer import infer_quality, normalize_observed_at, normalize_rainfall_value
+from ...domain.models import RainfallQuery, RainfallRecord, WaterInfoStationInput
+from ...domain.normalizer import infer_quality, normalize_observed_at, normalize_rainfall_value
 
 LogFn = Callable[[str], None]
 CancelFn = Callable[[], bool]

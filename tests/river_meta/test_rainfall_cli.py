@@ -11,8 +11,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from river_meta.rainfall import cli
-from river_meta.rainfall.models import RainfallDataset
-from river_meta.services.rainfall import RainfallAnalyzeResult
+from river_meta.rainfall.domain.models import RainfallDataset
+from river_meta.rainfall.services import RainfallAnalyzeResult
 
 
 def test_rainfall_cli_collection_order_default_station_year(monkeypatch):

@@ -37,6 +37,11 @@ uv sync
 ```bash
 uv run python main.py
 ```
+雨量 GUI/CLI を直接確認する場合:
+```bash
+uv run python river_rainfall.py --help
+uv run python river_rainfall.py --gui
+```
 
 #### 代替（pip）
 ```bash

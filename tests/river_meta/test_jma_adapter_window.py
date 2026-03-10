@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.jma_adapter import _align_hourly_timestamp_to_waterinfo
+from river_meta.rainfall.sources.jma.adapter import _align_hourly_timestamp_to_waterinfo
 
 
 def test_align_hourly_timestamp_shifts_back_one_hour():

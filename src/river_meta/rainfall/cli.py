@@ -8,7 +8,7 @@ import threading
 from datetime import datetime
 from typing import Sequence
 
-from river_meta.services.rainfall import (
+from river_meta.rainfall.services import (
     RainfallGenerateInput,
     RainfallRunInput,
     run_rainfall_analyze,

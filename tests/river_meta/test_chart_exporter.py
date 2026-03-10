@@ -8,8 +8,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from river_meta.rainfall.analysis import build_annual_max_dataframe, build_hourly_timeseries_dataframe
-from river_meta.rainfall.chart_exporter import (
+from river_meta.rainfall.outputs.analysis import build_annual_max_dataframe, build_hourly_timeseries_dataframe
+from river_meta.rainfall.outputs.chart_exporter import (
     METRICS,
     _compute_before_after,
     compute_chart_config,
