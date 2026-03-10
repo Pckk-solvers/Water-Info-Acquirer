@@ -211,7 +211,6 @@ def run_river_meta(
     log_warn: LogFn | None = None,
     log_error: LogFn | None = None,
 ) -> RiverMetaRunResult:
-    info = log_info or _noop_log
     warn = log_warn or _noop_log
     error = log_error or _noop_log
 

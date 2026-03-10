@@ -28,10 +28,10 @@ def render_markdown(report: StationReport) -> str:
     lines.append("")
 
     lines.append("## データ登録状況（年）")
-    lines.append(f"### 日雨量（KIND=3）")
+    lines.append("### 日雨量（KIND=3）")
     lines.append(_years_line(report.available_years_daily))
     lines.append("")
-    lines.append(f"### 時間雨量（KIND=2）")
+    lines.append("### 時間雨量（KIND=2）")
     lines.append(_years_line(report.available_years_hourly))
     lines.append("")
 
