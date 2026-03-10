@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from river_meta.rainfall.sources.jma.adapter import fetch_jma_rainfall
 from river_meta.rainfall.domain.models import JMAStationInput, RainfallDataset, RainfallQuery
 from river_meta.rainfall.storage.parquet_store import (
     build_parquet_path,
@@ -30,6 +29,8 @@ def collect_jma_with_resolved(
     jma_log_level: str | None,
     jma_enable_log_output: bool | None,
 ) -> RainfallDataset:
+    from river_meta.rainfall.sources.jma.adapter import fetch_jma_rainfall
+
     fetch_fn = fetch_jma_rainfall
     try:
         records = fetch_fn(

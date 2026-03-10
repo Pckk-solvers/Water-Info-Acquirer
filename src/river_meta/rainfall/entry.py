@@ -14,13 +14,13 @@ DEFAULT_PARQUET_DIR_SECONDARY = (
 )
 
 
-def _configure_runtime() -> None:
+def configure_runtime() -> None:
     os.environ.setdefault("RIVER_RAINFALL_DISABLE_JMA_CACHE", "1")
     os.environ.setdefault("RIVER_RAINFALL_DISABLE_JMA_LOG_OUTPUT", "1")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    _configure_runtime()
+    configure_runtime()
     args = list(argv) if argv is not None else []
     if not args or args == ["--gui"]:
         from .gui import main as gui_main

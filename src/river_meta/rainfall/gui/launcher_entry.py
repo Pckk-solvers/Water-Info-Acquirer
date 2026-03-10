@@ -4,8 +4,6 @@ from typing import Callable
 
 import tkinter as tk
 
-from .app import show_rainfall
-
 
 def open_rainfall_app(
     *,
@@ -14,6 +12,10 @@ def open_rainfall_app(
     on_close: Callable[[], None] | None = None,
     on_return_home: Callable[[], None] | None = None,
 ):
+    from ..entry import configure_runtime
+    from .app import show_rainfall
+
+    configure_runtime()
     return show_rainfall(
         parent=parent,
         on_open_other=on_open_other,

@@ -8,8 +8,8 @@ build
 *.parquet
 
 # tools outputs
-outputs
 *.log
 *.csv
 cache
 site
+outputs/charts
