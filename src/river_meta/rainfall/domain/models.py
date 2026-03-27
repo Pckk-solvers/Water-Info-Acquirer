@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 RainfallSource = Literal["jma", "water_info"]
 RainfallInterval = Literal["10min", "1hour", "1day"]
+TimeseriesMetric = Literal["rainfall", "water_level", "discharge"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -65,6 +66,34 @@ class RainfallRecord:
             "observed_at": self.observed_at.isoformat(),
             "interval": self.interval,
             "rainfall_mm": self.rainfall_mm,
+            "quality": self.quality,
+            "raw": dict(self.raw),
+        }
+
+
+@dataclass(slots=True)
+class UnifiedTimeseriesRecord:
+    source: RainfallSource
+    station_key: str
+    station_name: str
+    observed_at: datetime
+    metric: TimeseriesMetric
+    value: float | None
+    unit: str
+    interval: RainfallInterval
+    quality: str = "normal"
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "station_key": self.station_key,
+            "station_name": self.station_name,
+            "observed_at": self.observed_at.isoformat(),
+            "metric": self.metric,
+            "value": self.value,
+            "unit": self.unit,
+            "interval": self.interval,
             "quality": self.quality,
             "raw": dict(self.raw),
         }

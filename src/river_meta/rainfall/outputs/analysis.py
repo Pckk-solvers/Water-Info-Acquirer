@@ -107,6 +107,13 @@ def build_hourly_timeseries_dataframe(records_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=TIMESERIES_COLUMNS)
 
     prepared = records_df.copy()
+    # 新スキーマ (metric/value) 入力も受け付ける。時系列雨量集計では rainfall のみ対象。
+    if "rainfall_mm" not in prepared.columns and {"metric", "value"}.issubset(set(prepared.columns)):
+        metric_series = prepared.get("metric", pd.Series([""] * len(prepared), index=prepared.index)).astype(str)
+        value_series = pd.to_numeric(prepared.get("value"), errors="coerce")
+        prepared = prepared[metric_series.eq("rainfall")].copy()
+        prepared["rainfall_mm"] = value_series.loc[prepared.index]
+
     prepared["observed_at"] = pd.to_datetime(prepared.get("observed_at"), errors="coerce")
     prepared = prepared[prepared["interval"].astype(str).eq("1hour")]
     prepared = prepared.dropna(subset=["observed_at"])

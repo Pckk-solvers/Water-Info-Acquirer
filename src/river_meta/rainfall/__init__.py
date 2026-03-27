@@ -13,6 +13,7 @@ from .domain.models import (
     RainfallDataset,
     RainfallQuery,
     RainfallRecord,
+    UnifiedTimeseriesRecord,
     WaterInfoStationInput,
 )
 from .domain.normalizer import (
@@ -54,6 +55,7 @@ __all__ = [
     "RainfallDataset",
     "RainfallQuery",
     "RainfallRecord",
+    "UnifiedTimeseriesRecord",
     "WaterInfoStationInput",
     "normalize_interval_token",
     "normalize_observed_at",
