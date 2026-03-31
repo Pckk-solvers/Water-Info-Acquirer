@@ -27,7 +27,7 @@ TEXT_SECONDARY = "#4b5563"
 TEXT_TERTIARY = "#6b7280"
 
 
-def main() -> None:
+def main(*, developer_mode: bool = False) -> None:
     ensure_src_on_path()
     root = tk.Tk()
     root.withdraw()
@@ -75,6 +75,7 @@ def main() -> None:
                 on_open_other=_on_open_other,
                 on_close=_on_close,
                 on_return_home=_return_home,
+                developer_mode=developer_mode,
             )
         except Exception as exc:  # noqa: BLE001
             root.deiconify()
@@ -149,7 +150,7 @@ def main() -> None:
     ).pack(anchor="w", pady=(8, 0))
     tk.Label(
         header,
-        text="起動する機能を選択してください",
+        text="起動する機能を選択してください" + ("（開発者モード）" if developer_mode else ""),
         bg=BG_ROOT,
         fg=TEXT_SECONDARY,
         font=SUBTITLE_FONT,
