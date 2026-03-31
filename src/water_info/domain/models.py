@@ -46,6 +46,7 @@ class Period:
 class Options:
     use_daily: bool
     single_sheet: bool
+    export_parquet: bool = False
 
 
 @dataclass(frozen=True)

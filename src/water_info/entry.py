@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from .service.flow_fetch import fetch_hourly_dataframe_for_code, fetch_daily_dataframe_for_code
 from .service.flow_write import write_hourly_excel, write_daily_excel
 from .infra.http_client import HEADERS, throttled_get
@@ -16,6 +18,29 @@ class EmptyExcelWarning(Exception):
     pass
 
 
+_UNIFIED_COLUMNS = [
+    "source",
+    "station_key",
+    "station_name",
+    "observed_at",
+    "metric",
+    "value",
+    "unit",
+    "interval",
+    "quality",
+]
+
+
+def _save_unified_records_parquet(records: list[dict], output_path: Path) -> Path:
+    df = pd.DataFrame(records, columns=_UNIFIED_COLUMNS)
+    if df.empty:
+        df = pd.DataFrame(columns=_UNIFIED_COLUMNS)
+    df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(output_path, engine="pyarrow", index=False)
+    return output_path
+
+
 def _resolve_gui_output_path(file_name: str | Path) -> Path:
     """water_info GUI のExcel出力先を outputs/water_info に固定する。"""
     out_dir = Path("outputs") / "water_info"
@@ -23,11 +48,137 @@ def _resolve_gui_output_path(file_name: str | Path) -> Path:
     return out_dir / Path(file_name).name
 
 
+def _resolve_gui_parquet_dir() -> Path:
+    out_dir = Path("outputs") / "water_info" / "parquet"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def _safe_token(value: str) -> str:
+    return str(value).replace("/", "_").replace("\\", "_")
+
+
+def _metric_and_unit(mode_type: str) -> tuple[str, str]:
+    if mode_type == "S":
+        return "water_level", "m"
+    if mode_type == "R":
+        return "discharge", "m3/s"
+    return "rainfall", "mm"
+
+
+def _build_water_info_parquet_path(
+    *,
+    code: str,
+    mode_type: str,
+    interval: str,
+    year_start: str,
+    month_start: str,
+    year_end: str,
+    month_end: str,
+) -> Path:
+    metric, _ = _metric_and_unit(mode_type)
+    month_start_num = int(str(month_start).replace("月", ""))
+    month_end_num = int(str(month_end).replace("月", ""))
+    period_start = f"{year_start}{month_start_num:02d}"
+    period_end = f"{year_end}{month_end_num:02d}"
+    name = (
+        f"water_info_{_safe_token(code)}_{metric}_{interval}_"
+        f"{period_start}_{period_end}.parquet"
+    )
+    return _resolve_gui_parquet_dir() / name
+
+
+def _export_water_info_parquet(
+    *,
+    df: pd.DataFrame,
+    code: str,
+    station_name: str,
+    mode_type: str,
+    interval: str,
+    year_start: str,
+    month_start: str,
+    year_end: str,
+    month_end: str,
+    value_col: str,
+) -> Path:
+    metric, unit = _metric_and_unit(mode_type)
+    station_key = str(code)
+    out_path = _build_water_info_parquet_path(
+        code=code,
+        mode_type=mode_type,
+        interval=interval,
+        year_start=year_start,
+        month_start=month_start,
+        year_end=year_end,
+        month_end=month_end,
+    )
+
+    rows = []
+    if interval == "1day":
+        date_idx = df.index if "datetime" not in df.columns else pd.to_datetime(df["datetime"], errors="coerce")
+        for idx, value_raw in zip(date_idx, df[value_col]):
+            observed_at = pd.to_datetime(idx, errors="coerce")
+            if pd.isna(observed_at):
+                continue
+            value = pd.to_numeric(value_raw, errors="coerce")
+            value_float = None if pd.isna(value) else float(value)
+            rows.append(
+                {
+                    "source": "water_info",
+                    "station_key": station_key,
+                    "station_name": station_name or "",
+                    "observed_at": observed_at.to_pydatetime(),
+                    "metric": metric,
+                    "value": value_float,
+                    "unit": unit,
+                    "interval": interval,
+                    "quality": "normal" if value_float is not None else "missing",
+                }
+            )
+    else:
+        # 共通スキーマの observed_at は Hydro時刻(00..23)で保持する。
+        # water_info の display_dt は表示用に +1h されているため、保存時は datetime を優先する。
+        datetime_col = df.get("datetime")
+        datetimes = pd.to_datetime(datetime_col, errors="coerce") if datetime_col is not None else None
+        if datetimes is None or datetimes.isna().all():
+            datetimes = pd.to_datetime(df.get("display_dt"), errors="coerce") - pd.Timedelta(hours=1)
+        for observed_at, value_raw in zip(datetimes, df[value_col]):
+            if pd.isna(observed_at):
+                continue
+            value = pd.to_numeric(value_raw, errors="coerce")
+            value_float = None if pd.isna(value) else float(value)
+            rows.append(
+                {
+                    "source": "water_info",
+                    "station_key": station_key,
+                    "station_name": station_name or "",
+                    "observed_at": observed_at.to_pydatetime(),
+                    "metric": metric,
+                    "value": value_float,
+                    "unit": unit,
+                    "interval": interval,
+                    "quality": "normal" if value_float is not None else "missing",
+                }
+            )
+
+    return _save_unified_records_parquet(rows, out_path)
+
+
 def source_info_item_label(mode_type: str) -> str:
     return {"S": "水位", "R": "流量", "U": "雨量"}[mode_type]
 
 
-def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, progress_callback=None):
+def process_data_for_code(
+    code,
+    Y1,
+    Y2,
+    M1,
+    M2,
+    mode_type,
+    single_sheet=False,
+    export_parquet=False,
+    progress_callback=None,
+):
     df, file_name, value_col = fetch_hourly_dataframe_for_code(
         code=code,
         year_start=Y1,
@@ -71,12 +222,36 @@ def process_data_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, p
         source_info=source_info,
         empty_error_type=EmptyExcelWarning,
     )
+    if export_parquet:
+        parquet_path = _export_water_info_parquet(
+            df=df,
+            code=str(code),
+            station_name=station_name,
+            mode_type=mode_type,
+            interval="1hour",
+            year_start=str(Y1),
+            month_start=str(M1),
+            year_end=str(Y2),
+            month_end=str(M2),
+            value_col=value_col,
+        )
+        print(f"Parquetファイルを出力しました。 {parquet_path}")
 
     print(f"Excelファイルの作成が完了しました。 {output_path}")
     return output_path
 
 
-def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single_sheet=False, progress_callback=None):
+def process_period_date_display_for_code(
+    code,
+    Y1,
+    Y2,
+    M1,
+    M2,
+    mode_type,
+    single_sheet=False,
+    export_parquet=False,
+    progress_callback=None,
+):
     """
     年単位URL（各年のBGNDATE=YYYY0101, ENDDATE=YYYY1231）を用いて指定年分のデータを取得し、
     開始月・終了月で指定された期間（例：2022/1～2023/9）にフィルタリング後、
@@ -127,6 +302,20 @@ def process_period_date_display_for_code(code, Y1, Y2, M1, M2, mode_type, single
         single_sheet=single_sheet,
         source_info=source_info,
     )
+    if export_parquet:
+        parquet_path = _export_water_info_parquet(
+            df=df,
+            code=str(code),
+            station_name=station_name,
+            mode_type=mode_type,
+            interval="1day",
+            year_start=str(Y1),
+            month_start=str(M1),
+            year_end=str(Y2),
+            month_end=str(M2),
+            value_col=data_label,
+        )
+        print(f"Parquetファイルを出力しました。 {parquet_path}")
 
     print(f"生成完了: {output_path}")
     return output_path

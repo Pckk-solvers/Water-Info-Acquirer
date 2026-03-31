@@ -23,6 +23,10 @@ MODULES = {
         "jp": "雨量整理・抽出",
         "en": "Rainfall Tools",
     },
+    "hydrology_graphs": {
+        "jp": "水文グラフ作成",
+        "en": "Hydrology Graphs",
+    },
 }
 
 PACKAGE_NAME = "Water-Info-Acquirer"

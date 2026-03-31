@@ -61,6 +61,7 @@ class WWRApp:
         self.codes = []
         self.mode = StringVar(value="S")
         self.use_data_sru = BooleanVar(value=False)
+        self.export_parquet = BooleanVar(value=False)
         self.year_start = StringVar(value=str(datetime.now().year))
         self.month_start = StringVar(value="1月")
         self.year_end = StringVar(value=str(datetime.now().year))
@@ -185,6 +186,7 @@ class WWRApp:
 
         # 指定全期間シート挿入
         Checkbutton(main, text="指定全期間シート挿入", variable=self.single_sheet_var, bg="#d1f6ff").pack(anchor='center', pady=10)
+        Checkbutton(main, text="Parquetを出力", variable=self.export_parquet, bg="#d1f6ff").pack(anchor='center', pady=(0, 10))
 
         # 実行ボタン
         self.execute_button = Button(main, text="実行", command=self._on_execute, height=2, width=8)
@@ -258,6 +260,7 @@ class WWRApp:
                 mode_type=self.mode.get(),
                 use_daily=self.use_data_sru.get(),
                 single_sheet=self.single_sheet_var.get(),
+                export_parquet=self.export_parquet.get(),
             )
             self._set_period_error("")
         except ValueError as exc:
@@ -305,6 +308,7 @@ class WWRApp:
                 mode_type=self.mode.get(),
                 use_daily=self.use_data_sru.get(),
                 single_sheet=self.single_sheet_var.get(),
+                export_parquet=self.export_parquet.get(),
             )
         except ValueError as exc:
             self._set_period_error(format_input_error_message(exc))

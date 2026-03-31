@@ -4,7 +4,7 @@ import platform
 import subprocess
 import threading
 import tkinter as tk
-from datetime import datetime, timedelta, time
+from datetime import date, datetime, timedelta, time
 from pathlib import Path
 from time import perf_counter
 from tkinter import filedialog, messagebox, ttk
@@ -44,6 +44,7 @@ class BrowseWindow(ttk.Frame):
         self.interval_var = tk.StringVar()
         self.csv_output_var = tk.BooleanVar(value=False)  # CSV出力フラグ（初期状態はFalse）
         self.excel_output_var = tk.BooleanVar(value=True)  # Excel出力フラグ（初期状態はTrue）
+        self.parquet_output_var = tk.BooleanVar(value=False)  # Parquet出力フラグ（初期状態はFalse）
         self.log_output_var = tk.BooleanVar(value=False)  # ログ出力フラグ（初期状態はFalse）
         self.log_level_var = tk.StringVar(value="INFO")  # ログレベル
         self.status_var = tk.StringVar(value="準備完了")
@@ -64,7 +65,7 @@ class BrowseWindow(ttk.Frame):
 
         description = (
             "① 期間と間隔を指定し、② 都道府県と観測所を選択、③ リストに追加した観測所のデータを取得します。\n"
-            "日付は YYYY-MM または YYYY-MM-DD 形式で入力できます。\n"
+            "日付は YYYY-MM 形式で入力してください。\n"
         )
         ttk.Label(
             self,
@@ -112,7 +113,6 @@ class BrowseWindow(ttk.Frame):
         ttk.Label(quick_frame, text="クイック選択:").pack(side=tk.LEFT)
         ttk.Button(quick_frame, text="今月", command=lambda: self._set_quick_range("this_month")).pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(quick_frame, text="先月", command=lambda: self._set_quick_range("last_month")).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(quick_frame, text="直近7日", command=lambda: self._set_quick_range("last_7")).pack(side=tk.LEFT, padx=(5, 0))
 
         # 出力オプション
         output_frame = ttk.LabelFrame(self, text="出力オプション")
@@ -131,6 +131,12 @@ class BrowseWindow(ttk.Frame):
             checkbox_frame,
             text="Excelを出力",
             variable=self.excel_output_var
+        ).pack(side=tk.LEFT, padx=5, pady=5)
+
+        ttk.Checkbutton(
+            checkbox_frame,
+            text="Parquetを出力",
+            variable=self.parquet_output_var,
         ).pack(side=tk.LEFT, padx=5, pady=5)
 
         ttk.Checkbutton(
@@ -283,17 +289,20 @@ class BrowseWindow(ttk.Frame):
             return {
                 "csv_dir": Path(output_dirs["csv_dir"]),
                 "excel_dir": Path(output_dirs["excel_dir"]),
+                "parquet_dir": Path(output_dirs["parquet_dir"]),
                 "log_file": Path(output_dirs["log_file"]),
             }
 
         base_dir = Path(custom_dir)
         csv_dir = base_dir / "csv"
         excel_dir = base_dir / "excel"
+        parquet_dir = base_dir / "parquet"
         log_file_name = Path(output_dirs["log_file"]).name
         log_file = base_dir / "logs" / log_file_name
         return {
             "csv_dir": csv_dir,
             "excel_dir": excel_dir,
+            "parquet_dir": parquet_dir,
             "log_file": log_file,
         }
 
@@ -301,14 +310,19 @@ class BrowseWindow(ttk.Frame):
         output_dirs = get_output_directories()
         csv_dir = Path(output_dirs["csv_dir"]).resolve()
         excel_dir = Path(output_dirs["excel_dir"]).resolve()
+        parquet_dir = Path(output_dirs["parquet_dir"]).resolve()
         log_file = Path(output_dirs["log_file"]).resolve()
 
         base_csv = csv_dir.parent
         base_excel = excel_dir.parent
+        base_parquet = parquet_dir.parent
         base_log = log_file.parent
-        if base_csv == base_excel == base_log:
+        if base_csv == base_excel == base_parquet == base_log:
             return f"未指定 (既定: {base_csv})"
-        return f"未指定 (既定: CSV={csv_dir} / Excel={excel_dir} / ログ={log_file})"
+        return (
+            "未指定 (既定: "
+            f"CSV={csv_dir} / Excel={excel_dir} / Parquet={parquet_dir} / ログ={log_file})"
+        )
 
     def _load_prefectures_async(self) -> None:
         """都道府県一覧の取得をバックグラウンドで行い、起動をブロックしない。"""
@@ -453,8 +467,8 @@ class BrowseWindow(ttk.Frame):
         self._update_fetch_button_state()
         self._set_status("選択済み観測所をすべてクリアしました")
 
-    def _parse_date_input(self, date_str: str) -> Tuple[datetime, datetime]:
-        """日付入力を検証し datetime を返す"""
+    def _parse_date_input(self, date_str: str) -> Tuple[date, date]:
+        """日付入力を検証し date 範囲を返す"""
 
         from jma_rainfall_pipeline.utils.date_utils import validate_date_range
 
@@ -468,7 +482,7 @@ class BrowseWindow(ttk.Frame):
             start_date, _ = self._parse_date_input(start_date_str)
             _, end_date = self._parse_date_input(end_date_str)
         except ValueError:
-            messagebox.showerror("日付エラー", "YYYY-MM-DD形式またはYYYY-MM形式で入力してください")
+            messagebox.showerror("日付エラー", "YYYY-MM形式で入力してください")
             self._set_status("日付の形式に誤りがあります")
             return
 
@@ -497,12 +511,15 @@ class BrowseWindow(ttk.Frame):
         output_paths = self._get_effective_output_paths()
         csv_dir: Path = output_paths["csv_dir"]
         excel_dir: Path = output_paths["excel_dir"]
+        parquet_dir: Path = output_paths["parquet_dir"]
         log_file_path: Path = output_paths["log_file"]
 
         if self.csv_output_var.get():
             csv_dir.mkdir(parents=True, exist_ok=True)
         if self.excel_output_var.get():
             excel_dir.mkdir(parents=True, exist_ok=True)
+        if self.parquet_output_var.get():
+            parquet_dir.mkdir(parents=True, exist_ok=True)
         if self.log_output_var.get():
             log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -529,13 +546,14 @@ class BrowseWindow(ttk.Frame):
             if len(valid_stations) > 5:
                 selected_preview += ", ..."
             logger.info(
-                "取得ジョブ開始: 観測所=%s, 期間=%s～%s, 間隔=%s, 出力(csv=%s, excel=%s, log=%s)",
+                "取得ジョブ開始: 観測所=%s, 期間=%s～%s, 間隔=%s, 出力(csv=%s, excel=%s, parquet=%s, log=%s)",
                 len(valid_stations),
                 start,
                 end,
                 interval_option,
                 csv_dir,
                 excel_dir if self.excel_output_var.get() else "disabled",
+                parquet_dir if self.parquet_output_var.get() else "disabled",
                 log_file_path if self.log_output_var.get() else "disabled",
             )
             logger.info("対象観測所(先頭): %s", selected_preview if selected_preview else "なし")
@@ -548,6 +566,8 @@ class BrowseWindow(ttk.Frame):
                 export_csv=self.csv_output_var.get(),
                 export_excel=self.excel_output_var.get(),
                 excel_output_dir=excel_dir,
+                export_parquet=self.parquet_output_var.get(),
+                parquet_output_dir=parquet_dir,
             )
             elapsed = perf_counter() - started
             logger.info("取得ジョブ完了: 観測所=%s, 経過秒=%.1f", len(valid_stations), elapsed)
@@ -559,6 +579,8 @@ class BrowseWindow(ttk.Frame):
                 output_files.extend(list(csv_dir.glob("*.csv")))
             if self.excel_output_var.get():
                 output_files.extend(list(excel_dir.glob("*.xlsx")))
+            if self.parquet_output_var.get():
+                output_files.extend(list(parquet_dir.glob("*.parquet")))
 
             recent_files = [
                 f for f in output_files if (current_time - f.stat().st_mtime) < 60
@@ -571,6 +593,8 @@ class BrowseWindow(ttk.Frame):
                     output_info.append(f"CSV出力先: {csv_dir}")
                 if self.excel_output_var.get():
                     output_info.append(f"Excel出力先: {excel_dir}")
+                if self.parquet_output_var.get():
+                    output_info.append(f"Parquet出力先: {parquet_dir}")
                 if self.log_output_var.get():
                     output_info.append(f"ログ出力先: {log_file_path}")
 
@@ -584,6 +608,8 @@ class BrowseWindow(ttk.Frame):
                     output_info.append(f"CSV出力先: {csv_dir}")
                 if self.excel_output_var.get():
                     output_info.append(f"Excel出力先: {excel_dir}")
+                if self.parquet_output_var.get():
+                    output_info.append(f"Parquet出力先: {parquet_dir}")
                 if self.log_output_var.get():
                     output_info.append(f"ログ出力先: {log_file_path}")
 
@@ -603,6 +629,8 @@ class BrowseWindow(ttk.Frame):
                     self._open_output_directory(str(csv_dir))
                 elif self.excel_output_var.get():
                     self._open_output_directory(str(excel_dir))
+                elif self.parquet_output_var.get():
+                    self._open_output_directory(str(parquet_dir))
                 else:
                     self._open_output_directory(str(log_file_path.parent))
             self._set_status("データの取得とエクスポートが完了しました")
@@ -631,10 +659,6 @@ class BrowseWindow(ttk.Frame):
             start = last_month_end.replace(day=1)
             self.start_date_var.set(start.strftime("%Y-%m"))
             self.end_date_var.set(last_month_end.strftime("%Y-%m"))
-        elif preset == "last_7":
-            start = today - timedelta(days=6)
-            self.start_date_var.set(start.strftime("%Y-%m-%d"))
-            self.end_date_var.set(today.strftime("%Y-%m-%d"))
         self._set_status("クイック選択を適用しました")
 
     def _update_fetch_button_state(self) -> None:

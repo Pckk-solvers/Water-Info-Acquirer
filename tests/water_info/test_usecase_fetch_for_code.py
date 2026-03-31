@@ -40,3 +40,27 @@ def test_fetch_for_code_returns_error_on_failure():
     assert outcome.error.code == "999"
     assert outcome.error.error_type == "RuntimeError"
     assert outcome.error.message == "boom"
+
+
+def test_fetch_for_code_passes_export_parquet_flag():
+    period = Period(year_start="2024", year_end="2024", month_start="1月", month_end="1月")
+    request = WaterInfoRequest(
+        period=period,
+        mode_type="S",
+        options=Options(use_daily=False, single_sheet=False, export_parquet=True),
+    )
+    observed = {}
+
+    def _hourly(*args, **kwargs):
+        observed["export_parquet"] = kwargs.get("export_parquet")
+        return "out.xlsx"
+
+    outcome = fetch_for_code(
+        code="123",
+        request=request,
+        fetch_hourly=_hourly,
+        fetch_daily=lambda *a, **k: "",
+    )
+
+    assert outcome.error is None
+    assert observed["export_parquet"] is True

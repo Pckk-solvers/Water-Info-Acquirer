@@ -11,6 +11,7 @@ import traceback
 import pandas as pd
 
 from ..exporter.csv_exporter import export_weather_data
+from ..exporter.parquet_exporter import export_weather_parquet
 from ..fetcher.fetcher import Fetcher
 from ..logger.app_logger import get_logger
 from ..parser import parse_html
@@ -46,6 +47,8 @@ class WeatherDataController:
         export_csv: bool = True,
         export_excel: bool = True,
         excel_output_dir: Path | None = None,
+        export_parquet: bool = False,
+        parquet_output_dir: Path | None = None,
     ) -> Path:
         """
         指定された観測所リスト・期間でデータを取得しCSV/Excelへ出力する。
@@ -60,6 +63,8 @@ class WeatherDataController:
             output_dir = Path(output_dirs["csv_dir"])
             if excel_output_dir is None:
                 excel_output_dir = Path(output_dirs["excel_dir"])
+            if parquet_output_dir is None:
+                parquet_output_dir = Path(output_dirs["parquet_dir"])
         else:
             output_dir = Path(output_dir)
             if excel_output_dir is None:
@@ -67,6 +72,11 @@ class WeatherDataController:
                 excel_output_dir = Path(output_dirs["excel_dir"])
             else:
                 excel_output_dir = Path(excel_output_dir)
+            if parquet_output_dir is None:
+                output_dirs = get_output_directories()
+                parquet_output_dir = Path(output_dirs["parquet_dir"])
+            else:
+                parquet_output_dir = Path(parquet_output_dir)
 
         interval = self.fetcher.interval
         interval_label = self._get_interval_str(interval)
@@ -81,7 +91,17 @@ class WeatherDataController:
         self.logger.info("取得対象: 観測所数=%s, 期間=%s ～ %s", len(station_list), start, end)
         self.logger.info("観測所リスト: %s", station_list)
 
-        results = list(self.fetcher.schedule_fetch(station_list, start, end))
+        fetch_start = start
+        if interval < timedelta(days=1):
+            # JMAの24時（翌日00:00）を欠かさないため、1日前から内部取得する。
+            fetch_start = start - timedelta(days=1)
+            self.logger.info(
+                "hourly/10min の00:00補完のため、内部取得開始日を1日前へ拡張: %s -> %s",
+                start,
+                fetch_start,
+            )
+
+        results = list(self.fetcher.schedule_fetch(station_list, fetch_start, end))
         if not results:
             raise ValueError("有効なデータが取得できませんでした。観測所や日時を確認してください。")
         self.logger.info("取得件数: %s レコード", len(results))
@@ -131,6 +151,8 @@ class WeatherDataController:
 
         if export_csv:
             output_dir.mkdir(parents=True, exist_ok=True)
+        if export_parquet:
+            parquet_output_dir.mkdir(parents=True, exist_ok=True)
 
         station_dfs: Dict[Tuple[str, str], List[pd.DataFrame]] = defaultdict(list)
         for prec_value, block_value, df in dfs:
@@ -170,6 +192,24 @@ class WeatherDataController:
                 request_urls=request_list,
             )
             output_paths.append(output_path)
+            if export_parquet:
+                parquet_df = self._filter_dataframe_for_parquet(merged_df, interval_label, start, end)
+                if parquet_df.empty:
+                    self.logger.warning(
+                        "観測所 %s-%s はParquet対象期間内のデータがありません",
+                        prec_no,
+                        block_no,
+                    )
+                    continue
+                export_weather_parquet(
+                    parquet_df,
+                    prec_no=str(prec_no),
+                    block_no=str(block_no),
+                    interval_label=interval_label,
+                    start_date=start.date(),
+                    end_date=end.date(),
+                    output_dir=parquet_output_dir,
+                )
 
         if not output_paths:
             raise ValueError("有効なファイルを出力できませんでした")
@@ -214,6 +254,28 @@ class WeatherDataController:
             return df
         except Exception as exc:  # pragma: no cover - 異常データ時の救済
             self.logger.warning("期間フィルタリングでエラーが発生しました: %s", exc)
+            return df
+
+    def _filter_dataframe_for_parquet(
+        self, df: pd.DataFrame, interval_label: str, start: datetime, end: datetime
+    ) -> pd.DataFrame:
+        """Parquet保存向けにDataFrameをフィルタリングする。"""
+        if df.empty:
+            return df
+        if interval_label != "hourly":
+            return self._filter_dataframe_by_range(df, interval_label, start, end)
+        if "datetime" not in df.columns:
+            return self._filter_dataframe_by_range(df, interval_label, start, end)
+
+        try:
+            datetimes = pd.to_datetime(df["datetime"], errors="coerce")
+            # Hydro時刻(1時→00)へ変換する前提で、ソース時刻の1時間先窓を抽出する。
+            source_start = start + timedelta(hours=1)
+            source_end = end + timedelta(hours=1)
+            mask = (datetimes >= source_start) & (datetimes <= source_end)
+            return df.loc[mask.fillna(False)].reset_index(drop=True)
+        except Exception as exc:  # pragma: no cover - 異常データ時の救済
+            self.logger.warning("Parquet期間フィルタリングでエラーが発生しました: %s", exc)
             return df
 
     def _determine_interval(self, start: datetime, end: datetime) -> timedelta:

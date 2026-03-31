@@ -47,6 +47,7 @@ def fetch_one(
             period.month_end,
             request.mode_type,
             single_sheet=options.single_sheet,
+            export_parquet=options.export_parquet,
             progress_callback=progress_callback,
         )
     else:
@@ -58,6 +59,7 @@ def fetch_one(
             period.month_end,
             request.mode_type,
             single_sheet=options.single_sheet,
+            export_parquet=options.export_parquet,
             progress_callback=progress_callback,
         )
     station_name = _extract_station_name(file_path, code)

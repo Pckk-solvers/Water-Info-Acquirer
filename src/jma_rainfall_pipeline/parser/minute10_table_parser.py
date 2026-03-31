@@ -34,6 +34,17 @@ class Minute10TableParser(TableParser):
         ("sunshine_minutes", 8, "float"),
     ]
 
+    def _build_timestamp(self, current_date: date, hour: int, minute: int) -> datetime:
+        """時分からタイムスタンプを生成する。
+
+        JMAの24:00は翌日00:00として扱う。
+        """
+        if hour == 24 and minute == 0:
+            return datetime.combine(current_date, time.min) + timedelta(days=1)
+        if hour > 24 or minute > 59:
+            raise ValueError(f"不正な時刻です: {hour}:{minute}")
+        return datetime.combine(current_date, time(hour, minute))
+
     
     def can_parse(self, table: Tag) -> bool:
         """10分間隔データのテーブルかどうかを判定
@@ -335,10 +346,7 @@ class Minute10TableParser(TableParser):
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
 
-            if hour == 24 and minute == 0:
-                timestamp = datetime.combine(current_date, time(23, 59, 59, 999999))
-            else:
-                timestamp = datetime.combine(current_date, time(hour, minute))
+            timestamp = self._build_timestamp(current_date, hour, minute)
 
             row_data: Dict[str, Any] = {
                 'date': timestamp.date(),
@@ -386,10 +394,7 @@ class Minute10TableParser(TableParser):
             hour = int(time_match.group(1))
             minute = int(time_match.group(2))
 
-            if hour == 24 and minute == 0:
-                timestamp = datetime.combine(current_date, time(23, 59, 59, 999999))
-            else:
-                timestamp = datetime.combine(current_date, time(hour, minute))
+            timestamp = self._build_timestamp(current_date, hour, minute)
 
             row_data: Dict[str, Any] = {
                 'date': timestamp.date(),

@@ -31,11 +31,13 @@ def get_output_directories(
 
     csv_path = resolve_path(csv_dir_override, output_config.get("csv_dir", "outputs/jma/csv"))
     excel_path = resolve_path(excel_dir_override, output_config.get("excel_dir", "outputs/jma/excel"))
+    parquet_path = resolve_path(None, output_config.get("parquet_dir", "outputs/jma/parquet"))
     log_path = resolve_path(log_file_override, logging_config.get("file", "outputs/jma/jma_app.log"))
 
     return {
         "csv_dir": str(csv_path),
         "excel_dir": str(excel_path),
+        "parquet_dir": str(parquet_path),
         "db_url": output_config.get("db_url", "sqlite:///data/precip.db"),
         "log_file": str(log_path),
     }

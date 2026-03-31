@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from typing import List, Dict, Any, Optional
 from bs4 import Tag
 from .date_utils import extract_date_from_html
@@ -84,12 +84,11 @@ class BaseHourlyTableParser(TableParser):
     def _parse_datetime(self, date_obj: date, hour: int) -> datetime:
         """日付と時間からdatetimeオブジェクトを作成
         
-        JMAの時間データは1-24時で1日を表すため、24時はその日の23:59:59.999999として扱う
-        例：6月2日1時 〜 6月3日0時（24時）は全て6月2日として扱う
+        JMAの時間データは1-24時で1日を表すため、24時は翌日の00:00として扱う。
         """
-        # 24時はその日の23:59:59.999999として扱う
+        # 24時は翌日00:00として扱う
         if hour == 24:
-            return datetime.combine(date_obj, time(23, 59, 59, 999999))
+            return datetime.combine(date_obj, time.min) + timedelta(days=1)
         # 24時を超える場合はエラー（通常は発生しない）
         elif hour > 24:
             raise ValueError(f"不正な時間です: {hour}時")

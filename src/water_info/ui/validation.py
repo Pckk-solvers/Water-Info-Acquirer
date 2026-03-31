@@ -42,6 +42,7 @@ class InputValidator:
         mode_type: str,
         use_daily: bool,
         single_sheet: bool,
+        export_parquet: bool,
     ) -> WaterInfoRequest:
         return WaterInfoRequest(
             period=Period(
@@ -54,6 +55,7 @@ class InputValidator:
             options=Options(
                 use_daily=use_daily,
                 single_sheet=single_sheet,
+                export_parquet=export_parquet,
             ),
         )
 

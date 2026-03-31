@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from river_meta.rainfall.domain.models import RainfallRecord
+from ..domain.models import RainfallRecord
 
 # Parquet に保存するカラム（raw は除外してファイルサイズを抑える）
 PARQUET_COLUMNS = [
@@ -22,6 +22,18 @@ PARQUET_COLUMNS = [
     "observed_at",
     "interval",
     "rainfall_mm",
+    "quality",
+]
+
+UNIFIED_PARQUET_COLUMNS = [
+    "source",
+    "station_key",
+    "station_name",
+    "observed_at",
+    "metric",
+    "value",
+    "unit",
+    "interval",
     "quality",
 ]
 
@@ -62,6 +74,19 @@ def save_records_parquet(records: list[RainfallRecord], output_path: str | Path)
         })
 
     df = pd.DataFrame(rows, columns=PARQUET_COLUMNS)
+    df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
+    df.to_parquet(path, engine="pyarrow", index=False)
+    return path
+
+
+def save_unified_records_parquet(records: list[dict], output_path: str | Path) -> Path:
+    """共通時系列レコードを Parquet ファイルに保存する。"""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = pd.DataFrame(records, columns=UNIFIED_PARQUET_COLUMNS)
+    if df.empty:
+        df = pd.DataFrame(columns=UNIFIED_PARQUET_COLUMNS)
     df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
     df.to_parquet(path, engine="pyarrow", index=False)
     return path
