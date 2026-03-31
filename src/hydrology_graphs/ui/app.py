@@ -21,6 +21,8 @@ from hydrology_graphs.io.threshold_store import ThresholdLoadResult, load_thresh
 from hydrology_graphs.services import BatchRunInput, BatchTarget, HydrologyGraphService, PrecheckInput, PreviewInput
 from water_info_acquirer.app_meta import get_module_title
 from water_info_acquirer.navigation import build_navigation_menu
+from .tabs_execute import build_execute_tab
+from .tabs_style import build_style_tab
 
 """水文グラフ生成 GUI の本体。
 
@@ -74,6 +76,10 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
 
 class HydrologyGraphsApp(tk.Toplevel):
     """水文グラフ生成のメインウィンドウ。"""
+
+    GRAPH_TYPE_LABELS = GRAPH_TYPE_LABELS
+    GRAPH_TYPES = GRAPH_TYPES
+    COMMON_STYLE_FIELDS = COMMON_STYLE_FIELDS
 
     def __init__(
         self,
@@ -173,257 +179,11 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _build_execute_tab(self, parent: ttk.Frame) -> None:
         """条件設定・実行タブを構築する。"""
-
-        parent.rowconfigure(0, weight=3)
-        parent.rowconfigure(2, weight=2)
-        parent.columnconfigure(0, weight=1)
-
-        top = ttk.Frame(parent)
-        top.grid(row=0, column=0, sticky="nsew")
-        top.columnconfigure(0, weight=3)
-        top.columnconfigure(1, weight=2)
-        top.rowconfigure(0, weight=1)
-
-        left = ttk.Frame(top)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(3, weight=1)
-        left.rowconfigure(4, weight=1)
-
-        parquet_box = ttk.LabelFrame(left, text="Parquet入力")
-        parquet_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        parquet_box.columnconfigure(0, weight=1)
-        self.parquet_entry = ttk.Entry(parquet_box, textvariable=self.parquet_dir)
-        self.parquet_entry.grid(row=0, column=0, sticky="ew", padx=(6, 4), pady=6)
-        self.btn_browse_parquet = ttk.Button(parquet_box, text="参照", command=self._browse_parquet_dir)
-        self.btn_browse_parquet.grid(row=0, column=1, padx=(0, 4), pady=6)
-        self.btn_scan = ttk.Button(parquet_box, text="スキャン", command=self._scan_parquet)
-        self.btn_scan.grid(row=0, column=2, padx=(0, 6), pady=6)
-
-        threshold_box = ttk.LabelFrame(left, text="基準線定義")
-        threshold_box.grid(row=1, column=0, sticky="ew", pady=(0, 6))
-        threshold_box.columnconfigure(0, weight=1)
-        self.threshold_entry = ttk.Entry(threshold_box, textvariable=self.threshold_path)
-        self.threshold_entry.grid(row=0, column=0, sticky="ew", padx=(6, 4), pady=6)
-        self.btn_browse_threshold = ttk.Button(threshold_box, text="参照", command=self._browse_threshold_file)
-        self.btn_browse_threshold.grid(row=0, column=1, padx=(0, 6), pady=6)
-
-        graph_box = ttk.LabelFrame(left, text="グラフ種別")
-        graph_box.grid(row=2, column=0, sticky="ew", pady=(0, 6))
-        # 3列×2行で見やすく並べる。
-        for col in range(3):
-            graph_box.columnconfigure(col, weight=1)
-        self.graph_type_vars: dict[str, tk.BooleanVar] = {}
-        for idx, graph_type in enumerate(GRAPH_TYPES):
-            var = tk.BooleanVar(value=True)
-            self.graph_type_vars[graph_type] = var
-            chk = ttk.Checkbutton(graph_box, text=GRAPH_TYPE_LABELS.get(graph_type, graph_type), variable=var)
-            chk.grid(row=idx // 3, column=idx % 3, sticky="w", padx=6, pady=4)
-            self._graph_type_checkbuttons.append(chk)
-
-        station_box = ttk.LabelFrame(left, text="観測所選択（複数）")
-        station_box.grid(row=3, column=0, sticky="nsew", pady=(0, 6))
-        station_box.columnconfigure(0, weight=1)
-        station_box.rowconfigure(0, weight=1)
-        self.station_list = tk.Listbox(station_box, selectmode="extended", height=10)
-        self.station_list.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
-        station_scroll = ttk.Scrollbar(station_box, command=self.station_list.yview)
-        station_scroll.grid(row=0, column=1, sticky="ns", pady=6)
-        self.station_list.configure(yscrollcommand=station_scroll.set)
-
-        base_date_box = ttk.LabelFrame(left, text="基準日設定（YYYY-MM-DD, 改行区切り）")
-        base_date_box.grid(row=4, column=0, sticky="nsew", pady=(0, 6))
-        base_date_box.columnconfigure(0, weight=1)
-        base_date_box.rowconfigure(0, weight=1)
-        self.base_dates_text = tk.Text(base_date_box, height=5)
-        self.base_dates_text.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
-
-        window_box = ttk.LabelFrame(left, text="イベント窓設定")
-        window_box.grid(row=5, column=0, sticky="ew")
-        self.radio_window_3 = ttk.Radiobutton(window_box, text="3日", value=3, variable=self.event_window_days)
-        self.radio_window_3.grid(row=0, column=0, padx=6, pady=6)
-        self.radio_window_5 = ttk.Radiobutton(window_box, text="5日", value=5, variable=self.event_window_days)
-        self.radio_window_5.grid(row=0, column=1, padx=6, pady=6)
-        self.btn_precheck = ttk.Button(window_box, text="実行前検証", command=self._run_precheck)
-        self.btn_precheck.grid(row=0, column=2, padx=12, pady=6)
-
-        right = ttk.LabelFrame(top, text="実行前検証結果")
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(1, weight=1)
-        self.precheck_summary = tk.StringVar(value="対象数: 0 / NG: 0")
-        ttk.Label(right, textvariable=self.precheck_summary).grid(row=0, column=0, sticky="w", padx=6, pady=(6, 4))
-        pre_columns = ("target", "status", "reason")
-        self.precheck_tree = ttk.Treeview(right, columns=pre_columns, show="headings", height=18)
-        self.precheck_tree.heading("target", text="対象")
-        self.precheck_tree.heading("status", text="判定")
-        self.precheck_tree.heading("reason", text="理由")
-        self.precheck_tree.column("target", width=330, anchor="w")
-        self.precheck_tree.column("status", width=80, anchor="center")
-        self.precheck_tree.column("reason", width=280, anchor="w")
-        self.precheck_tree.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
-        pre_scroll = ttk.Scrollbar(right, command=self.precheck_tree.yview)
-        pre_scroll.grid(row=1, column=1, sticky="ns", pady=(0, 6))
-        self.precheck_tree.configure(yscrollcommand=pre_scroll.set)
-
-        execute_ctrl = ttk.LabelFrame(parent, text="実行")
-        execute_ctrl.grid(row=1, column=0, sticky="ew", pady=(8, 8))
-        execute_ctrl.columnconfigure(1, weight=1)
-        self.run_btn = ttk.Button(execute_ctrl, text="バッチ実行", command=self._start_batch_run)
-        self.run_btn.grid(row=0, column=0, padx=(6, 6), pady=6)
-        self.stop_btn = ttk.Button(execute_ctrl, text="停止", command=self._request_stop, state="disabled")
-        self.stop_btn.grid(row=0, column=1, padx=(0, 6), pady=6, sticky="w")
-        ttk.Label(execute_ctrl, text="状態:").grid(row=0, column=2, padx=(12, 4), pady=6, sticky="w")
-        ttk.Label(execute_ctrl, textvariable=self.batch_status).grid(row=0, column=3, padx=(0, 6), pady=6, sticky="w")
-
-        bottom = ttk.Frame(parent)
-        bottom.grid(row=2, column=0, sticky="nsew")
-        bottom.columnconfigure(0, weight=2)
-        bottom.columnconfigure(1, weight=3)
-        bottom.rowconfigure(0, weight=1)
-
-        result_box = ttk.LabelFrame(bottom, text="実行結果")
-        result_box.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        result_box.columnconfigure(0, weight=1)
-        result_box.rowconfigure(0, weight=1)
-        cols = ("target", "status", "reason", "path")
-        self.batch_tree = ttk.Treeview(result_box, columns=cols, show="headings")
-        for key, text, width in (
-            ("target", "対象", 220),
-            ("status", "結果", 70),
-            ("reason", "理由", 220),
-            ("path", "出力先", 280),
-        ):
-            self.batch_tree.heading(key, text=text)
-            self.batch_tree.column(key, width=width, anchor="w" if key in ("target", "reason", "path") else "center")
-        self.batch_tree.grid(row=0, column=0, sticky="nsew")
-        result_scroll = ttk.Scrollbar(result_box, command=self.batch_tree.yview)
-        result_scroll.grid(row=0, column=1, sticky="ns")
-        self.batch_tree.configure(yscrollcommand=result_scroll.set)
-
-        log_box = ttk.LabelFrame(bottom, text="ログ")
-        log_box.grid(row=0, column=1, sticky="nsew")
-        log_box.columnconfigure(0, weight=1)
-        log_box.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_box, wrap="none")
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-        log_scroll = ttk.Scrollbar(log_box, command=self.log_text.yview)
-        log_scroll.grid(row=0, column=1, sticky="ns")
-        self.log_text.configure(yscrollcommand=log_scroll.set)
-
-        self._execution_disable_widgets = [
-            self.parquet_entry,
-            self.threshold_entry,
-            self.btn_browse_parquet,
-            self.btn_scan,
-            self.btn_browse_threshold,
-            self.station_list,
-            self.base_dates_text,
-            self.radio_window_3,
-            self.radio_window_5,
-            self.btn_precheck,
-        ]
+        build_execute_tab(self, parent)
 
     def _build_style_tab(self, parent: ttk.Frame) -> None:
         """スタイル調整タブを構築する。"""
-
-        parent.columnconfigure(0, weight=2)
-        parent.columnconfigure(1, weight=3)
-        parent.rowconfigure(0, weight=1)
-
-        left = ttk.Frame(parent, padding=6)
-        left.grid(row=0, column=0, sticky="nsew")
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(4, weight=1)
-        ttk.Label(left, text="スタイル設定", font=("", 11, "bold")).grid(row=0, column=0, sticky="w")
-
-        common_box = ttk.LabelFrame(left, text="共通設定")
-        common_box.grid(row=1, column=0, sticky="ew", pady=(6, 6))
-        common_box.columnconfigure(1, weight=1)
-        self._style_common_controls = []
-        for row, field in enumerate(COMMON_STYLE_FIELDS):
-            control = self._create_style_control(common_box, row=row, field=field)
-            self._style_common_controls.append(control)
-        ttk.Label(
-            common_box,
-            text="※ DPIは出力品質の設定です。プレビュー表示サイズは幅・高さを基準に調整されます。",
-            foreground="#475569",
-        ).grid(row=len(COMMON_STYLE_FIELDS), column=0, columnspan=2, sticky="w", padx=6, pady=(2, 4))
-
-        self.graph_style_box = ttk.LabelFrame(left, text="グラフ別設定")
-        self.graph_style_box.grid(row=2, column=0, sticky="ew", pady=(0, 6))
-        self.graph_style_box.columnconfigure(1, weight=1)
-
-        style_btns = ttk.Frame(left)
-        style_btns.grid(row=3, column=0, sticky="ew", pady=(0, 4))
-        ttk.Button(style_btns, text="フォーム適用", command=self._on_style_form_commit).grid(row=0, column=0, padx=(0, 4))
-        ttk.Button(style_btns, text="元に戻す(Ctrl+Z)", command=self._undo_style_change).grid(row=0, column=1, padx=(0, 4))
-        ttk.Button(style_btns, text="やり直し(Ctrl+Y)", command=self._redo_style_change).grid(row=0, column=2, padx=(0, 8))
-        ttk.Separator(style_btns, orient="vertical").grid(row=0, column=3, sticky="ns", padx=(0, 8))
-        ttk.Button(style_btns, text="読込", command=self._load_style_from_file).grid(row=0, column=4, padx=(0, 4))
-        ttk.Button(style_btns, text="保存", command=self._save_style_to_file).grid(row=0, column=5, padx=(0, 4))
-        ttk.Button(style_btns, text="初期化", command=self._reset_style).grid(row=0, column=6)
-
-        json_box = ttk.LabelFrame(left, text="高度設定(JSON)")
-        json_box.grid(row=4, column=0, sticky="nsew")
-        json_box.columnconfigure(0, weight=1)
-        json_box.rowconfigure(0, weight=1)
-        self.style_text = tk.Text(json_box, wrap="none", undo=True, autoseparators=True, maxundo=2000)
-        self.style_text.grid(row=0, column=0, sticky="nsew", padx=(6, 0), pady=6)
-        json_scroll = ttk.Scrollbar(json_box, command=self.style_text.yview)
-        json_scroll.grid(row=0, column=1, sticky="ns", padx=(0, 6), pady=6)
-        self.style_text.configure(yscrollcommand=json_scroll.set)
-        self._set_style_text_from_payload()
-        self.style_text.bind("<KeyRelease>", self._on_style_text_changed)
-        self.bind("<Control-z>", self._on_undo_shortcut)
-        self.bind("<Control-y>", self._on_redo_shortcut)
-        self.bind("<Control-Z>", self._on_redo_shortcut)
-
-        right = ttk.Frame(parent, padding=6)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(1, weight=1)
-
-        preview_target = ttk.LabelFrame(right, text="プレビュー対象")
-        preview_target.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Label(preview_target, text="観測所").grid(row=0, column=0, padx=6, pady=6)
-        self.preview_station_combo = ttk.Combobox(
-            preview_target,
-            textvariable=self.preview_target_station,
-            state="readonly",
-            width=36,
-        )
-        self.preview_station_combo.grid(row=0, column=1, padx=6, pady=6)
-        ttk.Label(preview_target, text="基準日").grid(row=0, column=2, padx=6, pady=6)
-        self.preview_date_combo = ttk.Combobox(
-            preview_target,
-            textvariable=self.preview_target_date,
-            state="readonly",
-            width=12,
-        )
-        self.preview_date_combo.grid(row=0, column=3, padx=6, pady=6)
-        ttk.Label(preview_target, text="グラフ").grid(row=0, column=4, padx=6, pady=6)
-        self.preview_graph_combo = ttk.Combobox(
-            preview_target,
-            textvariable=self.preview_target_graph,
-            values=list(GRAPH_TYPES),
-            state="readonly",
-            width=24,
-        )
-        self.preview_graph_combo.grid(row=0, column=5, padx=6, pady=6)
-        self.preview_graph_combo.bind("<<ComboboxSelected>>", self._on_preview_graph_selected)
-        ttk.Button(preview_target, text="プレビュー更新", command=self._render_preview).grid(row=0, column=6, padx=6, pady=6)
-
-        preview_box = ttk.LabelFrame(right, text="プレビュー")
-        preview_box.grid(row=1, column=0, sticky="nsew")
-        preview_box.columnconfigure(0, weight=1)
-        preview_box.rowconfigure(0, weight=1)
-        self.preview_label = ttk.Label(preview_box, text="プレビュー未生成", anchor="center")
-        self.preview_label.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
-        ttk.Label(preview_box, textvariable=self.preview_message, foreground="#475569").grid(
-            row=1, column=0, sticky="w", padx=6, pady=(0, 6)
-        )
-        self._refresh_style_forms_from_payload()
+        build_style_tab(self, parent)
 
     def _activate_dev_dummy_mode(self) -> None:
         """開発者モード用のダミーカタログを有効化する。"""
