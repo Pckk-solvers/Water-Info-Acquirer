@@ -20,7 +20,7 @@ DoD:
 ## WP2: Parquet IO + 契約検証
 
 1. Parquet読込と列正規化を実装
-2. `parquet-contract.md` 準拠の検証（必須列/許容値/時刻）を実装
+2. `../current/parquet-contract.md` 準拠の検証（必須列/許容値/時刻）を実装
 3. 契約違反を対象単位で `contract_error` に変換
 
 DoD:
@@ -29,7 +29,7 @@ DoD:
 ## WP3: Threshold IO + 契約検証
 
 1. 基準線 CSV/JSON 読込を実装
-2. `threshold-contract.md` 準拠の検証を実装
+2. `../current/threshold-contract.md` 準拠の検証を実装
 3. `priority` 優先規則と `enabled=false` 除外を実装
 4. `source+station_key+graph_type` マッチングを実装
 
@@ -39,13 +39,13 @@ DoD:
 ## WP4: Style IO + 契約検証/正規化
 
 1. style JSON 読込を実装
-2. `style-contract.md` 準拠の検証（`schema_version=1.0`）を実装
-3. 任意項目の default 補完を実装
-4. 旧キー互換入力（読込時のみ）を実装
+2. `style-contract.md` 準拠の検証（`schema_version=2.0`）を実装
+3. 必須9キー（イベント3種×3日/5日 + 年最大3種）の検証を実装
+4. `common` / `variants` の拒否を実装
 5. 保存時に正規キーのみ出力する処理を実装
 
 DoD:
-- 旧キー入力は読めるが、保存ファイルは正規キーのみ
+- `schema_version=2.0` と必須9キーを満たさない入力は拒否される
 
 ## WP5: Service - Precheck（条件設定・実行タブ）
 
@@ -118,10 +118,11 @@ DoD:
 ### 結合
 
 1. タブ1の検証でNG対象が正しく除外される
-2. タブ2 style 検証NGでフォールバックまたは警告表示になる
+2. タブ2 style 検証NGで `style_error` が返る
 3. バッチ実行で部分成功継続する
 4. 停止要求で未着手のみ中止される
 5. 出力構成（`観測所/グラフ種別/基準日`）が守られる
+5. 出力構成（`<output_dir>/<station_key>/<graph_type>/<base|annual>/graph.png`）が守られる
 6. スタイル変更でプレビュー再描画される
 
 ## 実装順序

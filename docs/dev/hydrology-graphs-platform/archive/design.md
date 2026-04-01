@@ -19,8 +19,8 @@
 補足:
 - 既存 `river_meta.rainfall` からは独立させる。
 - 入力契約は以下を正本とする。
-  - Parquet: `parquet-contract.md`
-  - 基準線: `threshold-contract.md`
+  - Parquet: `../current/parquet-contract.md`
+  - 基準線: `../current/threshold-contract.md`
   - スタイル: `style-contract.md`
 
 ## 3. 層ごとの責務
@@ -68,7 +68,7 @@ PrecheckInput
 - parquet_dir: str
 - threshold_file_path: str | None
 - graph_types: list[str]
-- station_keys: list[str]
+- station_pairs: list[tuple[str, str]]   # (source, station_key)
 - base_dates: list[str]          # YYYY-MM-DD
 - event_window_days: 3 | 5
 ```
@@ -174,7 +174,7 @@ BatchRunItemResult
 
 ### 5.2 実行処理
 
-1. style JSON 契約検証（`schema_version=1.0`）
+1. style JSON 契約検証（`schema_version=2.0`）
 2. プレビュー対象の単体描画
 3. バッチ対象を順次実行（全体中断しない）
 4. 各対象の結果を即時蓄積
@@ -224,20 +224,20 @@ BatchRunItemResult
 - UI 制約:
   - `running` 中は入力変更禁止
   - タブ1の検証 NG 対象は実行対象から除外
-  - タブ2で style 検証 NG の場合は、実行時に保存済み正常スタイルまたはデフォルトへフォールバック
+  - タブ2で style 検証 NG の場合は、`style_error` として実行を拒否する
 
 ## 8. I/O仕様
 
 ### 8.1 入力
 
-- Parquet: `parquet-contract.md` に準拠
-- 基準線: `threshold-contract.md` に準拠
+- Parquet: `../current/parquet-contract.md` に準拠
+- 基準線: `../current/threshold-contract.md` に準拠
 - style: `style-contract.md` に準拠
 
 ### 8.2 出力
 
 - 形式: PNG
-- 出力先: `観測所/グラフ種別/基準日`
+- 出力先: `<output_dir>/<station_key>/<graph_type>/<base|annual>/graph.png`
 - 同名上書き: 有効
 
 ## 9. テスト設計
@@ -255,7 +255,7 @@ BatchRunItemResult
 ### 9.2 結合
 
 1. 条件設定・実行タブの検証で NG 対象が正しく表示される
-2. スタイル調整タブの style 検証 NG でフォールバック動作になる
+2. スタイル調整タブの style 検証 NG で `style_error` になる
 3. 観測所×基準日のバッチで部分成功継続
 4. 停止要求で未着手のみ中止される
 5. 出力パス規則が守られる

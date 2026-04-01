@@ -1,5 +1,8 @@
 # Hydrology Graphs Platform Style Contract
 
+Status: legacy
+Note: この文書は旧案（v1）。現行準拠は `style-contract.md`（v2.0）。
+
 ## 1. 目的
 
 - 本書は、スタイル JSON の入力/保存契約を固定する。

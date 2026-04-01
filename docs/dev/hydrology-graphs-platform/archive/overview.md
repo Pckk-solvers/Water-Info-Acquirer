@@ -38,7 +38,7 @@
 
 ## 4. データ前提（粗案）
 - 入力は共通時系列スキーマの Parquet を前提とする。
-- Parquet 仕様の詳細は `parquet-contract.md` を単一の参照元として扱う。
+- Parquet 仕様の詳細は `../current/parquet-contract.md` を単一の参照元として扱う。
 - イベント系グラフ（2.1 の3種）は 1時間間隔データが必須。
 - イベント系グラフの対象期間は「基準日を含む 3日または5日」を基本とする。
 - 経年系グラフ（2.2 の3種）は長期間データを前提にする（複数年〜数十年）。
@@ -59,8 +59,8 @@
 - 本タブでは実行機能を持たない（実行は条件設定・実行タブのみ）。
 
 ## 6. ランチャー統合方針（Overview）
-- 本機能は独立ツールとして、既存ランチャー（`src/water_info_acquirer/launcher.py`）から起動可能にする。
-- 起動導線は既存アプリと同じ方式（アプリ登録経由）で追加する前提とする。
+- 本機能は独立ツールとして、既存ランチャー（`src/water_info_acquirer/launcher.py`）から起動可能。
+- 起動導線は既存アプリと同じ方式（アプリ登録経由）で実装済み。
 
 ## 7. スタイル管理（JSON）
 - スタイル定義は JSON ファイルとして保存する。
@@ -84,6 +84,6 @@
 - requirements.md: 受け入れ条件と入力制約を固定する。
 - design.md: データ抽出・描画・JSON管理・GUI導線を具体化する。
 - layout.md: GUIレイアウト（画面構成・操作・状態遷移）を固定する。
-- threshold-contract.md: 基準線 CSV/JSON 契約を固定する。
+- ../current/threshold-contract.md: 基準線 CSV/JSON 契約の正本。
 - style-contract.md: スタイル JSON 契約を固定する。
 - task.md: 実装順とテスト観点を整理する。
