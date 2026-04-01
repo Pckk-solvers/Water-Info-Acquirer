@@ -272,16 +272,20 @@ class PeriodCsvExportTab(ttk.Frame):
                     "source": str(entry.source),
                     "station_key": str(entry.station_key),
                     "display_station_code": self._to_display_station_code(str(entry.source), str(entry.station_key)),
-                    "station_name": "",
+                    "station_name": str(getattr(entry, "station_name", "") or "").strip(),
                     "years": [],
                 },
             )
             row["years"].append(int(entry.year))
+            if not str(row.get("station_name", "")).strip():
+                row["station_name"] = str(getattr(entry, "station_name", "") or "").strip()
 
         for row in station_index.values():
             source = str(row["source"])
             station_code = str(row["display_station_code"])
             station_name = self._resolve_display_station_name(source, station_code)
+            if not station_name:
+                station_name = str(row.get("station_name", "") or "").strip()
             row["station_name"] = station_name
             source_label = "気象庁" if source == "jma" else "水文水質DB"
             years = sorted(set(int(year) for year in row["years"]))

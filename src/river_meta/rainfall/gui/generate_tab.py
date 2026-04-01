@@ -304,6 +304,8 @@ class GenerateTab(ttk.Frame):
             source_label = "気象庁" if entry.source == "jma" else "水文水質DB"
             station_code = self._to_display_station_code(entry.source, entry.station_key)
             station_name = self._resolve_display_station_name(entry.source, station_code)
+            if not station_name:
+                station_name = str(getattr(entry, "station_name", "") or "").strip()
             month_count = len(entry.months) if entry.months else ("—" if entry.source == "water_info" else "0")
             status = "✓" if entry.complete else "✗"
             if entry.complete:
