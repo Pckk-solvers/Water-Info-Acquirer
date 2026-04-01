@@ -148,6 +148,8 @@ class GraphTarget:
         """画面表示やログ出力で使う一意の識別子を返す。"""
 
         base = self.base_date.isoformat() if self.base_date else "annual"
+        if self.base_date and self.event_window_days in (3, 5):
+            return f"{self.source}:{self.station_key}:{self.graph_type}:{base}:{self.event_window_days}day"
         return f"{self.source}:{self.station_key}:{self.graph_type}:{base}"
 
 

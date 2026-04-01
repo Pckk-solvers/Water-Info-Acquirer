@@ -24,6 +24,17 @@ def parse_base_dates_text(text: str) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
+def selected_event_windows(*, use_3day: bool, use_5day: bool) -> list[int]:
+    """チェック状態からイベント窓リストを返す。"""
+
+    result: list[int] = []
+    if use_3day:
+        result.append(3)
+    if use_5day:
+        result.append(5)
+    return result
+
+
 def selected_station_pairs(
     catalog_stations: list[tuple[str, str, str]],
     selected_indices: list[int],
@@ -45,7 +56,6 @@ def selected_station_pairs(
 def graph_targets_from_precheck_items(
     *,
     items: list[PrecheckItem],
-    event_window_days: int,
 ) -> list[GraphTarget]:
     """Precheck結果から OK 対象の GraphTarget 一覧を構築する。"""
 
@@ -60,7 +70,7 @@ def graph_targets_from_precheck_items(
                 station_key=row.station_key,
                 graph_type=row.graph_type,  # type: ignore[arg-type]
                 base_date=base,
-                event_window_days=event_window_days if base else None,
+                event_window_days=row.event_window_days if base else None,
             )
         )
     return targets

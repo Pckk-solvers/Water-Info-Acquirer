@@ -37,6 +37,7 @@ def test_graph_targets_from_precheck_items_uses_ok_only():
             graph_type="hyetograph",
             base_datetime="2026-01-01",
             status="ok",
+            event_window_days=5,
         ),
         PrecheckItem(
             target_id="2",
@@ -47,7 +48,7 @@ def test_graph_targets_from_precheck_items_uses_ok_only():
             status="ng",
         ),
     ]
-    targets = graph_targets_from_precheck_items(items=items, event_window_days=5)
+    targets = graph_targets_from_precheck_items(items=items)
     assert len(targets) == 1
     assert targets[0].base_date == date(2026, 1, 1)
     assert targets[0].event_window_days == 5

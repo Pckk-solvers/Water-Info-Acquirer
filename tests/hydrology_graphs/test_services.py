@@ -241,7 +241,7 @@ def test_precheck_reports_insufficient_years(tmp_path):
             graph_types=["annual_max_rainfall"],
             station_keys=["111"],
             base_dates=[],
-            event_window_days=3,
+            event_window_days_list=[3],
             sources=["jma"],
         )
     )
@@ -289,7 +289,7 @@ def test_precheck_uses_station_pairs_without_cross_product(tmp_path):
             graph_types=["hyetograph"],
             station_pairs=[("jma", "111"), ("water_info", "222")],
             base_dates=["2025-01-02"],
-            event_window_days=3,
+            event_window_days_list=[3],
         )
     )
 
@@ -297,6 +297,29 @@ def test_precheck_uses_station_pairs_without_cross_product(tmp_path):
     assert result.summary.ok_targets == 2
     assert result.summary.ng_targets == 0
     assert sorted((item.source, item.station_key) for item in result.items) == [("jma", "111"), ("water_info", "222")]
+    assert sorted(item.event_window_days for item in result.items) == [3, 3]
+
+
+def test_precheck_expands_event_targets_for_multiple_windows(tmp_path):
+    _write_timeseries(tmp_path, hours=120)
+    result = precheck_graph_targets(
+        PrecheckInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            graph_types=["hyetograph"],
+            station_pairs=[("jma", "111")],
+            base_dates=["2025-01-03"],
+            event_window_days_list=[3, 5],
+        )
+    )
+
+    assert result.summary.total_targets == 2
+    assert result.summary.ok_targets == 2
+    assert sorted(item.event_window_days for item in result.items) == [3, 5]
+    assert sorted(item.target_id for item in result.items) == [
+        "jma:111:hyetograph:2025-01-03:3day",
+        "jma:111:hyetograph:2025-01-03:5day",
+    ]
 
 
 def test_run_graph_batch_writes_png(tmp_path):
@@ -327,4 +350,4 @@ def test_run_graph_batch_writes_png(tmp_path):
     assert result.summary.success == 1
     assert result.items[0].status == "success"
     assert result.items[0].output_path is not None
-    assert (output_dir / "111" / "hyetograph" / "2025-01-02" / "graph.png").exists()
+    assert (output_dir / "111" / "hyetograph" / "2025-01-02" / "3day" / "graph.png").exists()

@@ -41,11 +41,18 @@ def _handle_run_done(app, payload: object) -> None:
 
     result = payload
     for row in result.items:
-        app.batch_tree.insert(
-            "",
-            "end",
-            values=(row.target_id, row.status, row.reason_message or "", row.output_path or ""),
-        )
+        row_id = app._result_row_ids.get(row.target_id)
+        window = ""
+        if row.target_id.endswith(":3day"):
+            window = "3day"
+        elif row.target_id.endswith(":5day"):
+            window = "5day"
+        values = (row.target_id, window, row.status, row.reason_message or "", row.output_path or "")
+        if row_id is None:
+            row_id = app.result_tree.insert("", "end", values=values)
+            app._result_row_ids[row.target_id] = row_id
+        else:
+            app.result_tree.item(row_id, values=values)
     app.batch_status.set(
         f"完了: success={result.summary.success}, failed={result.summary.failed}, skipped={result.summary.skipped}"
     )

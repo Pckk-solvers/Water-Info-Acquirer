@@ -8,14 +8,25 @@ from hydrology_graphs.ui import event_handlers
 class _Tree:
     def __init__(self) -> None:
         self.rows: list[tuple] = []
+        self._rows_by_id: dict[str, tuple] = {}
+        self._id_seq = 0
 
     def insert(self, *_args, values):
+        self._id_seq += 1
+        row_id = f"row{self._id_seq}"
+        self.rows.append(values)
+        self._rows_by_id[row_id] = values
+        return row_id
+
+    def item(self, row_id, *, values):
+        self._rows_by_id[row_id] = values
         self.rows.append(values)
 
 
 def _dummy_app():
     app = SimpleNamespace()
-    app.batch_tree = _Tree()
+    app.result_tree = _Tree()
+    app._result_row_ids = {}
     app.batch_status = SimpleNamespace(value="")
     app.batch_status.set = lambda v: setattr(app.batch_status, "value", v)
     app.preview_message = SimpleNamespace(value="")
@@ -37,11 +48,11 @@ def _dummy_app():
 def test_handle_run_done_updates_rows_and_status():
     app = _dummy_app()
     result = SimpleNamespace(
-        items=[SimpleNamespace(target_id="t", status="success", reason_message="", output_path="a.png")],
+        items=[SimpleNamespace(target_id="t:3day", status="success", reason_message="", output_path="a.png")],
         summary=SimpleNamespace(success=1, failed=0, skipped=0),
     )
     event_handlers.handle_event(app, "run_done", result)
-    assert len(app.batch_tree.rows) == 1
+    assert len(app.result_tree.rows) == 1
     assert app.batch_status.value.startswith("完了:")
 
 

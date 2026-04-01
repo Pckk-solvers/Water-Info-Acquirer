@@ -22,7 +22,16 @@ from hydrology_graphs.services import HydrologyGraphService, PreviewInput
 from water_info_acquirer.app_meta import get_module_title
 from water_info_acquirer.navigation import build_navigation_menu
 from .event_handlers import handle_event
-from .execute_actions import refresh_preview_choices, run_precheck, start_batch_run
+from .execute_actions import (
+    add_base_date_from_candidate,
+    clear_base_dates,
+    export_base_dates_csv,
+    import_base_dates_csv,
+    refresh_preview_choices,
+    remove_selected_base_dates,
+    run_precheck,
+    start_batch_run,
+)
 from .preview_canvas import (
     current_preview_canvas_size,
     display_preview_image,
@@ -53,6 +62,11 @@ GRAPH_TYPE_LABELS = {
     "annual_max_rainfall": "年最大雨量",
     "annual_max_discharge": "年最大流量",
     "annual_max_water_level": "年最高水位",
+}
+
+SOURCE_LABELS = {
+    "jma": "気象庁",
+    "water_info": "水文水質DB",
 }
 
 STYLE_TARGET_LABELS: dict[str, str] = {
@@ -116,6 +130,7 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     GRAPH_TYPE_LABELS = GRAPH_TYPE_LABELS
     GRAPH_TYPES = GRAPH_TYPES
+    SOURCE_LABELS = SOURCE_LABELS
     STYLE_TARGET_LABELS = STYLE_TARGET_LABELS
     STYLE_TARGET_ORDER = STYLE_TARGET_ORDER
 
@@ -144,12 +159,16 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         self.parquet_dir = tk.StringVar(value="")
         self.threshold_path = tk.StringVar(value="")
-        self.event_window_days = tk.IntVar(value=3)
+        self.event_window_3 = tk.BooleanVar(value=True)
+        self.event_window_5 = tk.BooleanVar(value=False)
         self.batch_status = tk.StringVar(value="待機中")
         self.preview_message = tk.StringVar(value="")
         self.preview_target_station = tk.StringVar(value="")
         self.preview_target_date = tk.StringVar(value="")
         self.preview_target_graph = tk.StringVar(value=GRAPH_TYPES[0])
+        self.base_date_year = tk.StringVar(value="")
+        self.base_date_month = tk.StringVar(value="")
+        self.base_date_candidate = tk.StringVar(value="")
         self.style_target_display = tk.StringVar(value=STYLE_TARGET_LABELS[STYLE_TARGET_ORDER[0]])
         self._style_target_display_to_key: dict[str, str] = {}
         self._style_target_key_to_display: dict[str, str] = {}
@@ -167,6 +186,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._style_form_updating = False
         self._style_graph_controls: list[dict[str, Any]] = []
         self._style_field_tooltips: list[ToolTip] = []
+        self._execute_tooltips: list[ToolTip] = []
         self._style_history: list[dict[str, Any]] = [deepcopy(self._style_payload)]
         self._style_history_index: int = 0
         self._style_history_applying = False
@@ -179,8 +199,14 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._preview_last_image_hash: int | None = None
         self._catalog: ParquetCatalog | None = None
         self._catalog_stations: list[tuple[str, str, str]] = []
+        self._station_row_pairs: list[tuple[str, str]] = []
+        self._checked_station_pairs: set[tuple[str, str]] = set()
         self._base_dates: list[str] = []
+        self._base_date_year_to_months: dict[str, list[str]] = {}
+        self._base_date_year_month_to_days: dict[tuple[str, str], list[str]] = {}
+        self.selected_base_dates: list[str] = []
         self._precheck_ok_targets: list[GraphTarget] = []
+        self._result_row_ids: dict[str, str] = {}
         self._event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._running = False
         self._scan_running = False
@@ -190,7 +216,8 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._stop_event: threading.Event | None = None
         self._execution_disable_widgets: list[tk.Widget] = []
         self._graph_type_checkbuttons: list[ttk.Checkbutton] = []
-        self.event_window_days.trace_add("write", self._on_event_window_days_changed)
+        self.event_window_3.trace_add("write", self._on_event_window_days_changed)
+        self.event_window_5.trace_add("write", self._on_event_window_days_changed)
 
         self.config(
             menu=build_navigation_menu(
@@ -243,17 +270,36 @@ class HydrologyGraphsApp(tk.Toplevel):
         catalog = self._build_dev_dummy_catalog()
         self._catalog = catalog
         self._catalog_stations = catalog.stations
-        self._base_dates = catalog.base_dates
+        self._render_station_check_list()
+        self._select_all_stations()
+        self.selected_base_dates = [self._base_dates[2] if len(self._base_dates) > 2 else self._base_dates[0]] if self._base_dates else []
+        if hasattr(self, "base_date_list"):
+            self.base_date_list.delete(0, "end")
+            for value in self.selected_base_dates:
+                self.base_date_list.insert("end", value)
         self._precheck_ok_targets = []
         base_date = date(2024, 9, 1)
+        event_windows = self._current_event_window_days_list() or [3]
         for graph_type in GRAPH_TYPES:
+            if graph_type in {"hyetograph", "hydrograph_discharge", "hydrograph_water_level"}:
+                for window_days in event_windows:
+                    self._precheck_ok_targets.append(
+                        GraphTarget(
+                            source="water_info",
+                            station_key="DEV001",
+                            graph_type=graph_type,  # type: ignore[arg-type]
+                            base_date=base_date,
+                            event_window_days=window_days,
+                        )
+                    )
+                continue
             self._precheck_ok_targets.append(
                 GraphTarget(
                     source="water_info",
                     station_key="DEV001",
                     graph_type=graph_type,  # type: ignore[arg-type]
-                    base_date=base_date if graph_type in {"hyetograph", "hydrograph_discharge", "hydrograph_water_level"} else None,
-                    event_window_days=int(self.event_window_days.get()) if graph_type in {"hyetograph", "hydrograph_discharge", "hydrograph_water_level"} else None,
+                    base_date=None,
+                    event_window_days=None,
                 )
             )
         self._refresh_preview_choices()
@@ -372,12 +418,11 @@ class HydrologyGraphsApp(tk.Toplevel):
         # 新しいカタログが入ったら、以前の検証結果は破棄して整合性を保つ。
         self._catalog = catalog
         self._catalog_stations = catalog.stations
-        self._base_dates = catalog.base_dates
+        self._station_row_pairs = []
+        self._checked_station_pairs = set()
         self._reset_execution_state_for_new_scan()
-        self.station_list.delete(0, "end")
-        for source, station_key, station_name in self._catalog_stations:
-            label = f"{source}:{station_key} ({station_name})" if station_name else f"{source}:{station_key}"
-            self.station_list.insert("end", label)
+        self._render_station_check_list()
+        self._select_all_stations()
         self.precheck_summary.set(
             f"スキャン完了: stations={len(self._catalog_stations)} / dates={len(self._base_dates)} / invalid_files={len(catalog.invalid_files)}"
         )
@@ -389,11 +434,29 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _reset_execution_state_for_new_scan(self) -> None:
         # 元データが変わると検証済み対象も変わるので、結果表示を初期化する。
         self._precheck_ok_targets = []
+        self._result_row_ids = {}
         self._preview_pending = None
-        for item_id in self.precheck_tree.get_children():
-            self.precheck_tree.delete(item_id)
-        for item_id in self.batch_tree.get_children():
-            self.batch_tree.delete(item_id)
+        self.selected_base_dates = []
+        self._base_dates = []
+        self._base_date_year_to_months = {}
+        self._base_date_year_month_to_days = {}
+        self.base_date_year.set("")
+        self.base_date_month.set("")
+        self.base_date_candidate.set("")
+        combo = getattr(self, "base_date_candidate_combo", None)
+        if combo is not None:
+            combo.configure(values=())
+        year_combo = getattr(self, "base_date_year_combo", None)
+        if year_combo is not None:
+            year_combo.configure(values=())
+        month_combo = getattr(self, "base_date_month_combo", None)
+        if month_combo is not None:
+            month_combo.configure(values=())
+        if hasattr(self, "base_date_list"):
+            self.base_date_list.delete(0, "end")
+        if hasattr(self, "result_tree"):
+            for item_id in self.result_tree.get_children():
+                self.result_tree.delete(item_id)
         self._clear_preview_choices()
 
     def _clear_preview_choices(self) -> None:
@@ -435,6 +498,202 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _run_precheck(self) -> None:
         """選択条件に対して実行前検証を行う。"""
         run_precheck(self)
+
+    def _source_label(self, source: str) -> str:
+        """内部 source 値を画面表示用の日本語ラベルへ変換する。"""
+
+        return self.SOURCE_LABELS.get(source, source)
+
+    def _station_display_text(self, source: str, station_key: str, station_name: str, checked: bool) -> str:
+        """観測所チェック行の表示テキストを返す。"""
+
+        mark = "☑" if checked else "☐"
+        source_label = self._source_label(source)
+        suffix = f" ({station_name})" if station_name else ""
+        return f"{mark} {source_label}:{station_key}{suffix}"
+
+    def _render_station_check_list(self) -> None:
+        """観測所一覧をチェック表現で再描画する。"""
+
+        self.station_list.delete(0, "end")
+        self._station_row_pairs = []
+        for source, station_key, station_name in self._catalog_stations:
+            pair = (source, station_key)
+            checked = pair in self._checked_station_pairs
+            self.station_list.insert("end", self._station_display_text(source, station_key, station_name, checked))
+            self._station_row_pairs.append(pair)
+        self.station_list.selection_clear(0, "end")
+
+    def _selected_station_pairs_in_order(self) -> list[tuple[str, str]]:
+        """チェック済み観測所を表示順で返す。"""
+
+        return [pair for pair in self._station_row_pairs if pair in self._checked_station_pairs]
+
+    def _toggle_station_at_index(self, index: int) -> None:
+        """指定行の観測所チェックをトグルし、候補日を再計算する。"""
+
+        if index < 0 or index >= len(self._station_row_pairs):
+            return
+        pair = self._station_row_pairs[index]
+        if pair in self._checked_station_pairs:
+            self._checked_station_pairs.remove(pair)
+        else:
+            self._checked_station_pairs.add(pair)
+        self._render_station_check_list()
+        self._recompute_base_date_candidates_for_selected_stations()
+
+    def _on_station_list_click(self, event) -> str:
+        """観測所リストクリックでチェック状態を切り替える。"""
+
+        try:
+            index = int(self.station_list.nearest(event.y))
+        except Exception:  # noqa: BLE001
+            return "break"
+        self._toggle_station_at_index(index)
+        return "break"
+
+    def _select_all_stations(self) -> None:
+        """観測所を全選択する。"""
+
+        self._checked_station_pairs = {(source, key) for source, key, _name in self._catalog_stations}
+        self._render_station_check_list()
+        self._recompute_base_date_candidates_for_selected_stations()
+
+    def _clear_all_stations(self) -> None:
+        """観測所選択を全解除する。"""
+
+        self._checked_station_pairs.clear()
+        self._render_station_check_list()
+        self._recompute_base_date_candidates_for_selected_stations()
+
+    def _recompute_base_date_candidates_for_selected_stations(self) -> None:
+        """選択観測所（和集合）で基準日候補を更新する。"""
+
+        catalog = self._catalog
+        if catalog is None or catalog.data.empty:
+            self._base_dates = []
+        else:
+            selected_pairs = self._selected_station_pairs_in_order()
+            if not selected_pairs:
+                self._base_dates = []
+            else:
+                pair_df = pd.DataFrame(selected_pairs, columns=["source", "station_key"]).drop_duplicates()
+                base_df = catalog.data.loc[:, ["source", "station_key", "observed_at"]]
+                joined = base_df.merge(pair_df, how="inner", on=["source", "station_key"])
+                observed = pd.to_datetime(joined["observed_at"], errors="coerce")
+                self._base_dates = sorted({ts.date().isoformat() for ts in observed.dropna()})
+        self._refresh_base_date_ymd_controls()
+
+    def _refresh_base_date_ymd_controls(self) -> None:
+        """基準日候補を YYYY/MM/DD の3プルダウンへ反映する。"""
+
+        year_to_months: dict[str, set[str]] = {}
+        year_month_to_days: dict[tuple[str, str], set[str]] = {}
+        for iso_date in self._base_dates:
+            if len(iso_date) < 10:
+                continue
+            year = iso_date[0:4]
+            month = iso_date[5:7]
+            day = iso_date[8:10]
+            year_to_months.setdefault(year, set()).add(month)
+            year_month_to_days.setdefault((year, month), set()).add(day)
+
+        self._base_date_year_to_months = {k: sorted(v) for k, v in year_to_months.items()}
+        self._base_date_year_month_to_days = {k: sorted(v) for k, v in year_month_to_days.items()}
+
+        years = sorted(self._base_date_year_to_months.keys())
+        year_combo = getattr(self, "base_date_year_combo", None)
+        if year_combo is not None:
+            year_combo.configure(values=years)
+        selected_year = self.base_date_year.get().strip()
+        if selected_year not in years:
+            selected_year = years[0] if years else ""
+            self.base_date_year.set(selected_year)
+
+        months = self._base_date_year_to_months.get(selected_year, [])
+        month_combo = getattr(self, "base_date_month_combo", None)
+        if month_combo is not None:
+            month_combo.configure(values=months)
+        selected_month = self.base_date_month.get().strip()
+        if selected_month not in months:
+            selected_month = months[0] if months else ""
+            self.base_date_month.set(selected_month)
+
+        days = self._base_date_year_month_to_days.get((selected_year, selected_month), [])
+        day_combo = getattr(self, "base_date_candidate_combo", None)
+        if day_combo is not None:
+            day_combo.configure(values=days)
+        selected_day = self.base_date_candidate.get().strip()
+        if selected_day not in days:
+            selected_day = days[0] if days else ""
+            self.base_date_candidate.set(selected_day)
+
+    def _on_base_date_year_changed(self, _event=None) -> None:
+        """年変更時に月/日候補を更新する。"""
+
+        self.base_date_month.set("")
+        self.base_date_candidate.set("")
+        self._refresh_base_date_ymd_controls()
+
+    def _on_base_date_month_changed(self, _event=None) -> None:
+        """月変更時に日候補を更新する。"""
+
+        self.base_date_candidate.set("")
+        self._refresh_base_date_ymd_controls()
+
+    def _current_base_date_candidate_iso(self) -> str | None:
+        """現在選択の YYYY-MM-DD を返す。"""
+
+        year = self.base_date_year.get().strip()
+        month = self.base_date_month.get().strip()
+        day = self.base_date_candidate.get().strip()
+        if not (year and month and day):
+            return None
+        if (year not in self._base_date_year_to_months) or (month not in self._base_date_year_to_months.get(year, [])):
+            return None
+        if day not in self._base_date_year_month_to_days.get((year, month), []):
+            return None
+        return f"{year}-{month}-{day}"
+
+    def _add_base_date_from_candidate(self) -> None:
+        """基準日候補を追加する。"""
+        add_base_date_from_candidate(self)
+
+    def _remove_selected_base_dates(self) -> None:
+        """選択中の基準日を削除する。"""
+        remove_selected_base_dates(self)
+
+    def _clear_base_dates(self) -> None:
+        """基準日を全削除する。"""
+        clear_base_dates(self)
+
+    def _export_base_dates_csv(self) -> None:
+        """基準日リストをCSV保存する。"""
+        export_base_dates_csv(self)
+
+    def _import_base_dates_csv(self) -> None:
+        """基準日リストをCSV読込する。"""
+        import_base_dates_csv(self)
+
+    def _current_event_window_days_list(self) -> list[int]:
+        """グラフ表の選択状態から窓リストを返す。"""
+
+        matrix = getattr(self, "graph_cell_vars", {})
+        if isinstance(matrix, dict) and matrix:
+            days: list[int] = []
+            if any(bool(matrix.get(key).get()) for key in ("hyetograph:3day", "hydrograph_discharge:3day", "hydrograph_water_level:3day") if matrix.get(key) is not None):
+                days.append(3)
+            if any(bool(matrix.get(key).get()) for key in ("hyetograph:5day", "hydrograph_discharge:5day", "hydrograph_water_level:5day") if matrix.get(key) is not None):
+                days.append(5)
+            return days
+
+        # フォールバック（旧変数）
+        days: list[int] = []
+        if bool(self.event_window_3.get()):
+            days.append(3)
+        if bool(self.event_window_5.get()):
+            days.append(5)
+        return days
 
     def _refresh_preview_choices(self) -> None:
         """プレビューで選べる対象候補を更新する。"""

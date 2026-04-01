@@ -17,7 +17,8 @@ class PrecheckInput:
     threshold_file_path: str | None
     graph_types: list[str]
     base_dates: list[str]
-    event_window_days: int = 3
+    event_window_days_list: list[int] = field(default_factory=lambda: [3])
+    event_window_days_by_graph: dict[str, list[int]] = field(default_factory=dict)
     station_pairs: list[tuple[str, str]] | None = None
     station_keys: list[str] = field(default_factory=list)
     sources: list[str] | None = None
@@ -81,6 +82,7 @@ class PrecheckItem:
     graph_type: str
     base_datetime: str | None
     status: str
+    event_window_days: int | None = None
     reason_code: str | None = None
     reason_message: str | None = None
 

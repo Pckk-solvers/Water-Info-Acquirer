@@ -168,6 +168,7 @@ def precheck_graph_targets_with_catalog(
                         graph_type=graph_type,
                         base_datetime=None,
                         status="ng",
+                        event_window_days=None,
                         reason_code=REASON_CONTRACT_ERROR,
                         reason_message="未対応のgraph_typeです。",
                     )
@@ -176,7 +177,9 @@ def precheck_graph_targets_with_catalog(
 
             if is_event_graph(graph_type):
                 # イベント系は基準日ごとに独立した描画対象になる。
-                if not data.base_dates:
+                per_graph = data.event_window_days_by_graph.get(graph_type, [])
+                window_days_list = _normalized_event_window_days_list(per_graph or data.event_window_days_list)
+                if not window_days_list:
                     ng_targets += 1
                     items.append(
                         PrecheckItem(
@@ -186,59 +189,81 @@ def precheck_graph_targets_with_catalog(
                             graph_type=graph_type,
                             base_datetime=None,
                             status="ng",
-                            reason_code=REASON_MISSING_TIMESERIES,
-                            reason_message="基準日が未指定です。",
+                            event_window_days=None,
+                            reason_code=REASON_CONTRACT_ERROR,
+                            reason_message="イベント窓が未選択です。",
                         )
                     )
+                    continue
+                if not data.base_dates:
+                    for window_days in window_days_list:
+                        ng_targets += 1
+                        items.append(
+                            PrecheckItem(
+                                target_id=f"{source}:{station_key}:{graph_type}:none:{window_days}day",
+                                source=source,
+                                station_key=station_key,
+                                graph_type=graph_type,
+                                base_datetime=None,
+                                status="ng",
+                                event_window_days=window_days,
+                                reason_code=REASON_MISSING_TIMESERIES,
+                                reason_message="基準日が未指定です。",
+                            )
+                        )
                     continue
                 for base_date_text in data.base_dates:
                     parsed = _parse_date(base_date_text)
                     if parsed is None:
-                        ng_targets += 1
-                        items.append(
-                            PrecheckItem(
-                                target_id=f"{source}:{station_key}:{graph_type}:{base_date_text}",
+                        for window_days in window_days_list:
+                            ng_targets += 1
+                            items.append(
+                                PrecheckItem(
+                                    target_id=f"{source}:{station_key}:{graph_type}:{base_date_text}:{window_days}day",
+                                    source=source,
+                                    station_key=station_key,
+                                    graph_type=graph_type,
+                                    base_datetime=base_date_text,
+                                    status="ng",
+                                    event_window_days=window_days,
+                                    reason_code=REASON_CONTRACT_ERROR,
+                                    reason_message="基準日の形式は YYYY-MM-DD で指定してください。",
+                                )
+                            )
+                        continue
+                    for window_days in window_days_list:
+                        try:
+                            # 実データの有無、3日/5日窓の欠損、基準線の有無まで一気に評価する。
+                            status, reason_code, reason_message, _ = _evaluate_target(
+                                catalog.data,
                                 source=source,
                                 station_key=station_key,
                                 graph_type=graph_type,
-                                base_datetime=base_date_text,
-                                status="ng",
-                                reason_code=REASON_CONTRACT_ERROR,
-                                reason_message="基準日の形式は YYYY-MM-DD で指定してください。",
+                                base_datetime=parsed.isoformat(),
+                                event_window_days=window_days,
+                                threshold_result=threshold_result,
+                            )
+                        except UsecaseError as exc:
+                            status = "ng"
+                            reason_code = exc.reason_code
+                            reason_message = exc.message
+                        if status == "ok":
+                            ok_targets += 1
+                        else:
+                            ng_targets += 1
+                        items.append(
+                            PrecheckItem(
+                                target_id=f"{source}:{station_key}:{graph_type}:{parsed.isoformat()}:{window_days}day",
+                                source=source,
+                                station_key=station_key,
+                                graph_type=graph_type,
+                                base_datetime=parsed.isoformat(),
+                                status=status,
+                                event_window_days=window_days,
+                                reason_code=reason_code,
+                                reason_message=reason_message,
                             )
                         )
-                        continue
-                    try:
-                        # 実データの有無、3日/5日窓の欠損、基準線の有無まで一気に評価する。
-                        status, reason_code, reason_message, _ = _evaluate_target(
-                            catalog.data,
-                            source=source,
-                            station_key=station_key,
-                            graph_type=graph_type,
-                            base_datetime=parsed.isoformat(),
-                            event_window_days=data.event_window_days,
-                            threshold_result=threshold_result,
-                        )
-                    except UsecaseError as exc:
-                        status = "ng"
-                        reason_code = exc.reason_code
-                        reason_message = exc.message
-                    if status == "ok":
-                        ok_targets += 1
-                    else:
-                        ng_targets += 1
-                    items.append(
-                        PrecheckItem(
-                            target_id=f"{source}:{station_key}:{graph_type}:{parsed.isoformat()}",
-                            source=source,
-                            station_key=station_key,
-                            graph_type=graph_type,
-                            base_datetime=parsed.isoformat(),
-                            status=status,
-                            reason_code=reason_code,
-                            reason_message=reason_message,
-                        )
-                    )
             else:
                 # 年最大系は基準日を持たないため、station + graph_type 単位で判定する。
                 try:
@@ -267,6 +292,7 @@ def precheck_graph_targets_with_catalog(
                         graph_type=graph_type,
                         base_datetime=None,
                         status=status,
+                        event_window_days=None,
                         reason_code=reason_code,
                         reason_message=reason_message,
                     )
@@ -320,6 +346,19 @@ def _resolve_station_pairs(
     if not sources:
         sources = ["jma", "water_info"]
     return [(source, station_key) for source in sources for station_key in station_keys]
+
+
+def _normalized_event_window_days_list(raw: list[int]) -> list[int]:
+    """イベント窓の入力を 3/5 日の重複なし順序で正規化する。"""
+
+    ordered: list[int] = []
+    for day in raw:
+        if day not in (3, 5):
+            continue
+        if day in ordered:
+            continue
+        ordered.append(day)
+    return ordered
 
 
 def preview_graph_target(data: PreviewInput) -> PreviewResult:
@@ -603,6 +642,8 @@ def _build_output_path(output_dir: Path, target: BatchTarget) -> Path:
     """出力ファイルの配置パスを組み立てる。"""
 
     base = target.base_datetime or "annual"
+    if target.base_datetime and target.event_window_days in (3, 5):
+        return output_dir / target.station_key / target.graph_type / base / f"{target.event_window_days}day" / "graph.png"
     return output_dir / target.station_key / target.graph_type / base / "graph.png"
 
 
@@ -645,6 +686,8 @@ def _batch_target_id(target: BatchTarget) -> str:
     """バッチ対象の表示用 ID を返す。"""
 
     base = target.base_datetime or "annual"
+    if target.base_datetime and target.event_window_days in (3, 5):
+        return f"{target.source}:{target.station_key}:{target.graph_type}:{base}:{target.event_window_days}day"
     return f"{target.source}:{target.station_key}:{target.graph_type}:{base}"
 
 

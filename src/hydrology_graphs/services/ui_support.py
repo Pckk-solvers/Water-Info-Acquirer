@@ -8,12 +8,14 @@ from hydrology_graphs.ui.view_models import (  # noqa: F401
     build_preview_choices,
     graph_targets_from_precheck_items,
     parse_base_dates_text,
+    selected_event_windows,
     selected_station_pairs,
 )
 
 __all__ = [
     "PreviewChoices",
     "parse_base_dates_text",
+    "selected_event_windows",
     "selected_station_pairs",
     "graph_targets_from_precheck_items",
     "build_preview_choices",
