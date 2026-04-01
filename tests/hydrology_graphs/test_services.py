@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from io import BytesIO
 
 import pandas as pd
+from PIL import Image
 
 from hydrology_graphs.io.style_store import default_style
 from hydrology_graphs.services.dto import BatchRunInput, BatchTarget, PrecheckInput, PreviewInput
@@ -14,10 +16,10 @@ from hydrology_graphs.services.usecases import (
 )
 
 
-def _write_timeseries(parquet_dir, *, station_key="111") -> None:
+def _write_timeseries(parquet_dir, *, station_key="111", hours: int = 72) -> None:
     rows = []
     start = datetime(2025, 1, 1)
-    for i in range(72):
+    for i in range(hours):
         rows.append(
             {
                 "source": "jma",
@@ -80,6 +82,90 @@ def test_preview_graph_target_returns_png_bytes(tmp_path):
 
     assert result.status == "success"
     assert result.image_bytes_png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_preview_graph_target_succeeds_with_blank_title_and_axis_labels(tmp_path):
+    _write_timeseries(tmp_path)
+    threshold = tmp_path / "thresholds.csv"
+    threshold.write_text(
+        "\n".join(
+            [
+                "source,station_key,graph_type,line_name,value,unit,label",
+                "jma,111,hyetograph,基準線,10,mm,",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    style = default_style()
+    style["graph_styles"]["hyetograph:3day"]["title"]["template"] = " "
+    style["graph_styles"]["hyetograph:3day"]["axis"]["x_label"] = ""
+    style["graph_styles"]["hyetograph:3day"]["axis"]["y_label"] = " "
+
+    result = preview_graph_target(
+        PreviewInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=str(threshold),
+            style_json_path=None,
+            style_payload=style,
+            source="jma",
+            station_key="111",
+            graph_type="hyetograph",
+            base_datetime="2025-01-02",
+            event_window_days=3,
+        )
+    )
+
+    assert result.status == "success"
+    assert result.image_bytes_png is not None
+
+
+def test_preview_graph_target_applies_3day_5day_styles_to_figure_size(tmp_path):
+    _write_timeseries(tmp_path, hours=120)
+    style = default_style()
+    style["graph_styles"]["hyetograph:3day"]["dpi"] = 100
+    style["graph_styles"]["hyetograph:5day"]["dpi"] = 100
+    style["graph_styles"]["hyetograph:3day"]["figure_width"] = 5
+    style["graph_styles"]["hyetograph:3day"]["figure_height"] = 2
+    style["graph_styles"]["hyetograph:5day"]["figure_width"] = 7
+    style["graph_styles"]["hyetograph:5day"]["figure_height"] = 2
+
+    res3 = preview_graph_target(
+        PreviewInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            style_json_path=None,
+            style_payload=style,
+            source="jma",
+            station_key="111",
+            graph_type="hyetograph",
+            base_datetime="2025-01-03",
+            event_window_days=3,
+        )
+    )
+    res5 = preview_graph_target(
+        PreviewInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            style_json_path=None,
+            style_payload=style,
+            source="jma",
+            station_key="111",
+            graph_type="hyetograph",
+            base_datetime="2025-01-03",
+            event_window_days=5,
+        )
+    )
+
+    assert res3.status == "success"
+    assert res5.status == "success"
+    assert res3.image_bytes_png is not None
+    assert res5.image_bytes_png is not None
+    width3, height3 = Image.open(BytesIO(res3.image_bytes_png)).size
+    width5, height5 = Image.open(BytesIO(res5.image_bytes_png)).size
+    assert width3 == 500
+    assert height3 == 200
+    assert width5 == 700
+    assert height5 == 200
 
 
 def test_preview_graph_target_returns_threshold_not_found(tmp_path):

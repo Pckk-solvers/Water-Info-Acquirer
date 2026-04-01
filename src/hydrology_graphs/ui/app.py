@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import queue
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from copy import deepcopy
 from datetime import date, datetime
 from pathlib import Path
@@ -16,13 +16,28 @@ import pandas as pd
 from hydrology_graphs.domain.constants import GRAPH_TYPES
 from hydrology_graphs.domain.models import GraphTarget
 from hydrology_graphs.io.parquet_store import ParquetCatalog
-from hydrology_graphs.io.style_store import default_style, save_style
-from hydrology_graphs.io.threshold_store import ThresholdLoadResult, load_thresholds
-from hydrology_graphs.services import BatchRunInput, BatchTarget, HydrologyGraphService, PrecheckInput, PreviewInput
+from hydrology_graphs.io.style_store import STYLE_GRAPH_KEYS, default_style, save_style
+from hydrology_graphs.io.threshold_store import ThresholdCacheState, ThresholdLoadResult, load_thresholds_with_cache
+from hydrology_graphs.services import HydrologyGraphService, PreviewInput
 from water_info_acquirer.app_meta import get_module_title
 from water_info_acquirer.navigation import build_navigation_menu
+from .event_handlers import handle_event
+from .execute_actions import refresh_preview_choices, run_precheck, start_batch_run
+from .preview_canvas import (
+    current_preview_canvas_size,
+    display_preview_image,
+    draw_preview_photo,
+    on_preview_area_resized,
+    show_preview_placeholder,
+)
+from .preview_actions import export_preview_sample, render_preview
+from .style_payload import (
+    nested_value,
+    set_nested_value,
+)
 from .tabs_execute import build_execute_tab
 from .tabs_style import build_style_tab
+from .tooltip import ToolTip
 
 """水文グラフ生成 GUI の本体。
 
@@ -40,31 +55,53 @@ GRAPH_TYPE_LABELS = {
     "annual_max_water_level": "年最高水位",
 }
 
-COMMON_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
-    {"path": "font_family", "label": "フォント", "kind": "str"},
-    {"path": "font_size", "label": "基本フォントサイズ", "kind": "int"},
-    {"path": "figure_width", "label": "図幅(inch)", "kind": "float"},
-    {"path": "figure_height", "label": "図高(inch)", "kind": "float"},
-    {"path": "dpi", "label": "DPI", "kind": "int"},
-    {"path": "background_color", "label": "背景色(#RRGGBB)", "kind": "str"},
-    {"path": "legend.enabled", "label": "凡例表示", "kind": "bool"},
-    {"path": "grid.enabled", "label": "グリッド表示", "kind": "bool"},
+STYLE_TARGET_LABELS: dict[str, str] = {
+    "hyetograph:3day": "ハイエトグラフ（雨量） 3日",
+    "hyetograph:5day": "ハイエトグラフ（雨量） 5日",
+    "hydrograph_discharge:3day": "ハイドログラフ（流量） 3日",
+    "hydrograph_discharge:5day": "ハイドログラフ（流量） 5日",
+    "hydrograph_water_level:3day": "ハイドログラフ（水位） 3日",
+    "hydrograph_water_level:5day": "ハイドログラフ（水位） 5日",
+    "annual_max_rainfall": "年最大雨量",
+    "annual_max_discharge": "年最大流量",
+    "annual_max_water_level": "年最高水位",
+}
+
+STYLE_TARGET_ORDER: tuple[str, ...] = (
+    "hyetograph:3day",
+    "hyetograph:5day",
+    "hydrograph_discharge:3day",
+    "hydrograph_discharge:5day",
+    "hydrograph_water_level:3day",
+    "hydrograph_water_level:5day",
+    "annual_max_rainfall",
+    "annual_max_discharge",
+    "annual_max_water_level",
 )
 
 BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
+    {"path": "figure_width", "label": "図幅(inch)", "kind": "float", "tooltip": "出力画像の横幅（inch）。画像サイズの基準になります。"},
+    {"path": "figure_height", "label": "図高(inch)", "kind": "float", "tooltip": "出力画像の縦幅（inch）。画像サイズの基準になります。"},
+    {"path": "dpi", "label": "DPI", "kind": "int", "tooltip": "解像度（密度）。値を上げると同じ図幅・図高でも高精細になります。"},
+    {"path": "font_family", "label": "フォント", "kind": "str"},
+    {"path": "font_size", "label": "基本フォントサイズ", "kind": "int"},
+    {"path": "background_color", "label": "背景色(#RRGGBB)", "kind": "str"},
+    {"path": "legend.enabled", "label": "凡例表示", "kind": "bool", "tooltip": "系列名・基準線ラベルの凡例を表示/非表示にします。"},
+    {"path": "grid.enabled", "label": "グリッド表示", "kind": "bool"},
     {"path": "title.template", "label": "タイトルテンプレート", "kind": "str"},
     {"path": "axis.x_label", "label": "X軸ラベル", "kind": "str"},
     {"path": "axis.y_label", "label": "Y軸ラベル", "kind": "str"},
     {"path": "series_color", "label": "系列色", "kind": "str"},
-    {"path": "series_width", "label": "系列幅", "kind": "float"},
+    {"path": "series_width", "label": "系列幅", "kind": "float", "tooltip": "折れ線/系列の太さです。"},
     {
         "path": "series_style",
         "label": "系列線種",
         "kind": "choice",
         "values": ("solid", "dashed", "dashdot", "dotted"),
+        "tooltip": "折れ線の線種です。",
     },
     {"path": "x_axis.tick_rotation", "label": "X軸角度", "kind": "float"},
-    {"path": "y_axis.tick_count", "label": "Y軸目盛数", "kind": "int"},
+    {"path": "y_axis.tick_count", "label": "Y軸目盛数", "kind": "int", "tooltip": "Y軸の目盛り分割数の目安です。"},
     {
         "path": "y_axis.number_format",
         "label": "Y軸数値形式",
@@ -79,7 +116,8 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     GRAPH_TYPE_LABELS = GRAPH_TYPE_LABELS
     GRAPH_TYPES = GRAPH_TYPES
-    COMMON_STYLE_FIELDS = COMMON_STYLE_FIELDS
+    STYLE_TARGET_LABELS = STYLE_TARGET_LABELS
+    STYLE_TARGET_ORDER = STYLE_TARGET_ORDER
 
     def __init__(
         self,
@@ -112,6 +150,14 @@ class HydrologyGraphsApp(tk.Toplevel):
         self.preview_target_station = tk.StringVar(value="")
         self.preview_target_date = tk.StringVar(value="")
         self.preview_target_graph = tk.StringVar(value=GRAPH_TYPES[0])
+        self.style_target_display = tk.StringVar(value=STYLE_TARGET_LABELS[STYLE_TARGET_ORDER[0]])
+        self._style_target_display_to_key: dict[str, str] = {}
+        self._style_target_key_to_display: dict[str, str] = {}
+        self._preview_station_display_to_pair: dict[str, tuple[str, str]] = {}
+        self._preview_graph_display_to_key: dict[str, str] = {}
+        self._preview_graph_key_to_display: dict[str, str] = {
+            key: GRAPH_TYPE_LABELS.get(key, key) for key in GRAPH_TYPES
+        }
 
         # 画面全体で共有する状態はここで初期化する。
         self._style_json_path: str | None = None
@@ -119,12 +165,18 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._style_debounce_id: str | None = None
         self._style_text_syncing = False
         self._style_form_updating = False
-        self._style_common_controls: list[dict[str, Any]] = []
         self._style_graph_controls: list[dict[str, Any]] = []
+        self._style_field_tooltips: list[ToolTip] = []
         self._style_history: list[dict[str, Any]] = [deepcopy(self._style_payload)]
         self._style_history_index: int = 0
         self._style_history_applying = False
         self._preview_photo: tk.PhotoImage | None = None
+        self._preview_image_bytes: bytes | None = None
+        self._preview_canvas_image_id: int | None = None
+        self._preview_placeholder_id: int | None = None
+        self._preview_last_canvas_size: tuple[int, int] | None = None
+        self._preview_last_fit_size: tuple[int, int] | None = None
+        self._preview_last_image_hash: int | None = None
         self._catalog: ParquetCatalog | None = None
         self._catalog_stations: list[tuple[str, str, str]] = []
         self._base_dates: list[str] = []
@@ -134,12 +186,11 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._scan_running = False
         self._preview_running = False
         self._preview_pending: dict[str, Any] | None = None
-        self._threshold_cache_path: str | None = None
-        self._threshold_cache_mtime_ns: int | None = None
-        self._threshold_cache_result: ThresholdLoadResult | None = None
+        self._threshold_cache = ThresholdCacheState()
         self._stop_event: threading.Event | None = None
         self._execution_disable_widgets: list[tk.Widget] = []
         self._graph_type_checkbuttons: list[ttk.Checkbutton] = []
+        self.event_window_days.trace_add("write", self._on_event_window_days_changed)
 
         self.config(
             menu=build_navigation_menu(
@@ -150,6 +201,7 @@ class HydrologyGraphsApp(tk.Toplevel):
             )
         )
         self._build_ui()
+        show_preview_placeholder(self, "プレビュー未生成")
         if self.developer_mode:
             self._activate_dev_dummy_mode()
         self.after(120, self._poll_events)
@@ -346,15 +398,24 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _clear_preview_choices(self) -> None:
         # プレビュー候補は前回の選択を残さない。
+        self._preview_station_display_to_pair = {}
+        self._preview_graph_display_to_key = {}
         self.preview_station_combo.configure(values=())
         self.preview_date_combo.configure(values=())
-        self.preview_graph_combo.configure(values=())
         self.preview_target_station.set("")
         self.preview_target_date.set("")
-        self.preview_target_graph.set(GRAPH_TYPES[0])
+        combo = getattr(self, "preview_graph_combo", None)
+        if combo is not None:
+            combo.configure(values=())
+            self.preview_target_graph.set("")
         self.preview_message.set("")
         self._preview_photo = None
-        self.preview_label.configure(image="", text="プレビュー未生成")
+        self._preview_image_bytes = None
+        self._preview_canvas_image_id = None
+        self._preview_placeholder_id = None
+        self._preview_last_fit_size = None
+        self._preview_last_image_hash = None
+        self._show_preview_placeholder("プレビュー未生成")
         self._refresh_style_forms_from_payload()
 
     def _set_scan_state(self, running: bool) -> None:
@@ -373,105 +434,26 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _run_precheck(self) -> None:
         """選択条件に対して実行前検証を行う。"""
-
-        if self._scan_running:
-            messagebox.showwarning("スキャン中", "スキャン完了後に実行前検証を行ってください。")
-            return
-        graph_types = [g for g, var in self.graph_type_vars.items() if var.get()]
-        if not graph_types:
-            messagebox.showerror("入力エラー", "グラフ種別を1つ以上選択してください。")
-            return
-        selected_indices = self.station_list.curselection()
-        if not selected_indices:
-            messagebox.showerror("入力エラー", "観測所を1つ以上選択してください。")
-            return
-        station_pairs: list[tuple[str, str]] = []
-        seen_pairs: set[tuple[str, str]] = set()
-        for idx in selected_indices:
-            source, station_key, _name = self._catalog_stations[int(idx)]
-            pair = (source, station_key)
-            if pair in seen_pairs:
-                continue
-            seen_pairs.add(pair)
-            station_pairs.append(pair)
-
-        # 表示上は source と station_key を組にして、同名観測所や別ソースの衝突を避ける。
-        base_dates = [line.strip() for line in self.base_dates_text.get("1.0", "end").splitlines() if line.strip()]
-        precheck_input = PrecheckInput(
-            parquet_dir=self.parquet_dir.get().strip(),
-            threshold_file_path=self.threshold_path.get().strip() or None,
-            graph_types=graph_types,
-            station_pairs=station_pairs,
-            base_dates=base_dates,
-            event_window_days=int(self.event_window_days.get()),
-        )
-        self._append_log(
-            f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)}"
-        )
-        threshold_file = self.threshold_path.get().strip() or None
-        threshold_result = self._load_thresholds_cached(threshold_file)
-        if self._catalog is not None:
-            result = self.service.precheck_with_catalog(
-                catalog=self._catalog,
-                data=precheck_input,
-                threshold_result=threshold_result,
-            )
-        else:
-            result = self.service.precheck(precheck_input)
-
-        self._precheck_ok_targets = []
-        for item_id in self.precheck_tree.get_children():
-            self.precheck_tree.delete(item_id)
-        for row in result.items:
-            reason = row.reason_message or ""
-            self.precheck_tree.insert("", "end", values=(row.target_id, row.status, reason))
-            if row.status == "ok":
-                base = date.fromisoformat(row.base_datetime) if row.base_datetime else None
-                self._precheck_ok_targets.append(
-                    GraphTarget(
-                        source=row.source,
-                        station_key=row.station_key,
-                        graph_type=row.graph_type,
-                        base_date=base,
-                        event_window_days=int(self.event_window_days.get()) if base else None,
-                    )
-                )
-        self.precheck_summary.set(
-            f"対象数: {result.summary.total_targets} / OK: {result.summary.ok_targets} / NG: {result.summary.ng_targets}"
-        )
-        self._append_log(
-            f"[PRECHECK] done total={result.summary.total_targets} ok={result.summary.ok_targets} ng={result.summary.ng_targets}"
-        )
-        self._refresh_preview_choices()
+        run_precheck(self)
 
     def _refresh_preview_choices(self) -> None:
         """プレビューで選べる対象候補を更新する。"""
+        refresh_preview_choices(self)
 
-        if not self._precheck_ok_targets:
-            self._clear_preview_choices()
-            return
-        # 実行前検証を通過した対象だけを候補に出すと、プレビュー失敗を減らせる。
-        station_values = sorted({f"{t.source}:{t.station_key}" for t in self._precheck_ok_targets})
-        date_values = sorted({t.base_date.isoformat() for t in self._precheck_ok_targets if t.base_date is not None})
-        graph_values = sorted({t.graph_type for t in self._precheck_ok_targets})
-        self.preview_station_combo.configure(values=station_values)
-        self.preview_date_combo.configure(values=date_values)
-        self.preview_graph_combo.configure(values=graph_values)
-        if not self.preview_target_station.get() and station_values:
-            self.preview_target_station.set(station_values[0])
-        if not self.preview_target_date.get() and date_values:
-            self.preview_target_date.set(date_values[0])
-        if self.preview_target_graph.get() not in graph_values and graph_values:
-            self.preview_target_graph.set(graph_values[0])
-        self._refresh_style_forms_from_payload()
-
-    def _create_style_control(self, parent: ttk.Frame, *, row: int, field: dict[str, Any]) -> dict[str, Any]:
+    def _create_style_control(
+        self,
+        parent: ttk.Frame,
+        *,
+        row: int,
+        field: dict[str, Any],
+    ) -> dict[str, Any]:
         """スタイルフォームの 1 項目を構築して制御情報を返す。"""
 
         kind = str(field.get("kind", "str"))
         label = str(field.get("label", ""))
         path = str(field.get("path", ""))
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=3)
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=6, pady=3)
 
         if kind == "bool":
             var: tk.Variable = tk.BooleanVar(value=False)
@@ -495,57 +477,119 @@ class HydrologyGraphsApp(tk.Toplevel):
             widget.grid(row=row, column=1, sticky="ew", padx=6, pady=3)
             widget.bind("<Return>", self._on_style_form_commit_event)
 
-        return {"path": path, "label": label, "kind": kind, "var": var, "widget": widget}
+        return {
+            "path": path,
+            "label": label,
+            "kind": kind,
+            "var": var,
+            "label_widget": label_widget,
+            "widget": widget,
+            "tooltip": str(field.get("tooltip", "")).strip(),
+        }
 
-    def _current_style_graph_type(self) -> str:
-        """スタイル編集対象のグラフ種別を返す。"""
+    def _current_style_graph_key(self) -> str:
+        """スタイル編集対象キー(9種)を返す。"""
 
-        graph_type = self.preview_target_graph.get().strip()
-        if graph_type in GRAPH_TYPES:
-            return graph_type
-        return GRAPH_TYPES[0]
+        display = self.style_target_display.get().strip()
+        key = self._style_target_display_to_key.get(display, display)
+        if key in STYLE_GRAPH_KEYS:
+            return key
+        return STYLE_TARGET_ORDER[0]
 
     def _graph_style_fields_for(self, graph_style: dict[str, Any]) -> list[dict[str, Any]]:
         """対象グラフに応じた編集項目定義を返す。"""
 
         fields = [dict(field) for field in BASE_GRAPH_STYLE_FIELDS]
-        if self._nested_value(graph_style, "x_axis.tick_interval_hours", None) is not None:
-            fields.append({"path": "x_axis.tick_interval_hours", "label": "X軸間隔(時間)", "kind": "int"})
-        if self._nested_value(graph_style, "bar_color", None) is not None:
+        if nested_value(graph_style, "x_axis.tick_interval_hours", None) is not None:
+            fields.append(
+                {
+                    "path": "x_axis.tick_interval_hours",
+                    "label": "X軸間隔(時間)",
+                    "kind": "int",
+                    "tooltip": "X軸の時刻目盛りを何時間間隔で表示するかを指定します。",
+                }
+            )
+        if nested_value(graph_style, "bar_color", None) is not None:
             fields.append({"path": "bar_color", "label": "棒色", "kind": "str"})
-        if self._nested_value(graph_style, "bar.width", None) is not None:
-            fields.append({"path": "bar.width", "label": "棒幅", "kind": "float"})
-        if self._nested_value(graph_style, "invert_y_axis", None) is not None:
+        if nested_value(graph_style, "bar.width", None) is not None:
+            fields.append({"path": "bar.width", "label": "棒幅", "kind": "float", "tooltip": "棒グラフの幅です。"})
+        if nested_value(graph_style, "invert_y_axis", None) is not None:
             fields.append({"path": "invert_y_axis", "label": "Y軸反転", "kind": "bool"})
-        if self._nested_value(graph_style, "threshold.label_enabled", None) is not None:
-            fields.append({"path": "threshold.label_enabled", "label": "基準線ラベル表示", "kind": "bool"})
+        if nested_value(graph_style, "threshold.label_enabled", None) is not None:
+            fields.append(
+                {
+                    "path": "threshold.label_enabled",
+                    "label": "基準線ラベル表示",
+                    "kind": "bool",
+                    "tooltip": "基準線のラベル文字をグラフ上に表示します。",
+                }
+            )
+        if nested_value(graph_style, "threshold.label_offset", None) is not None:
+            fields.append(
+                {
+                    "path": "threshold.label_offset",
+                    "label": "基準線ラベルオフセット",
+                    "kind": "float",
+                    "tooltip": "基準線ラベルの上下オフセット量です。重なり回避に使います。",
+                }
+            )
         return fields
+
+    def _style_label_column_minsize(self, fields: list[dict[str, Any]]) -> int:
+        """スタイルフォームのラベル列最小幅を返す。"""
+
+        try:
+            font = tkfont.nametofont("TkDefaultFont")
+        except Exception:  # noqa: BLE001
+            return 120
+        max_px = 0
+        for field in fields:
+            label = str(field.get("label", "")).strip()
+            max_px = max(max_px, int(font.measure(label)))
+        # 左右のpadding(6+6)と余白を加える。
+        return max(120, max_px + 18)
 
     def _refresh_style_forms_from_payload(self) -> None:
         """現在のスタイル payload からフォーム表示を更新する。"""
 
         self._style_form_updating = True
         try:
-            common = self._style_payload.get("common", {})
-            for control in self._style_common_controls:
-                value = self._nested_value(common, control["path"], None)
-                self._set_control_var(control, value)
-
-            graph_type = self._current_style_graph_type()
+            graph_key = self._current_style_graph_key()
             graph_styles = self._style_payload.setdefault("graph_styles", {})
-            graph_style = graph_styles.get(graph_type)
+            graph_style = graph_styles.get(graph_key)
             if not isinstance(graph_style, dict):
                 graph_style = {}
-                graph_styles[graph_type] = graph_style
-            self.graph_style_box.configure(text=f"グラフ別設定 ({GRAPH_TYPE_LABELS.get(graph_type, graph_type)})")
+                graph_styles[graph_key] = graph_style
+            self.graph_style_box.configure(
+                text=f"グラフ別設定 ({STYLE_TARGET_LABELS.get(graph_key, graph_key)})"
+            )
             for child in self.graph_style_box.winfo_children():
                 child.destroy()
+            fields = self._graph_style_fields_for(graph_style)
+            label_col_minsize = self._style_label_column_minsize(fields)
+            self.graph_style_box.columnconfigure(0, minsize=label_col_minsize)
             self.graph_style_box.columnconfigure(1, weight=1)
+            style_target_box = getattr(self, "style_target_box", None)
+            if style_target_box is not None:
+                style_target_box.columnconfigure(0, minsize=label_col_minsize)
             self._style_graph_controls = []
-            for row, field in enumerate(self._graph_style_fields_for(graph_style)):
-                control = self._create_style_control(self.graph_style_box, row=row, field=field)
-                value = self._nested_value(graph_style, control["path"], None)
+            self._style_field_tooltips = []
+            for row, field in enumerate(fields):
+                control = self._create_style_control(
+                    self.graph_style_box,
+                    row=row,
+                    field=field,
+                )
+                value = nested_value(graph_style, control["path"], None)
                 self._set_control_var(control, value)
+                tip = str(control.get("tooltip", "")).strip()
+                if tip:
+                    label_widget = control.get("label_widget")
+                    widget = control.get("widget")
+                    if label_widget is not None:
+                        self._style_field_tooltips.append(ToolTip(label_widget, tip))
+                    if widget is not None:
+                        self._style_field_tooltips.append(ToolTip(widget, tip))
                 self._style_graph_controls.append(control)
         finally:
             self._style_form_updating = False
@@ -576,7 +620,21 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _on_preview_graph_selected(self, _event=None) -> None:
         """プレビュー対象グラフの変更に合わせて編集フォームを切り替える。"""
 
+        self._schedule_preview_refresh()
+
+    def _on_style_target_selected(self, _event=None) -> None:
+        """スタイル編集対象(9種)を切り替える。"""
+
+        selected = self.style_target_display.get().strip()
+        key = self._style_target_display_to_key.get(selected)
+        if key is not None:
+            self.style_target_display.set(self._style_target_key_to_display.get(key, key))
         self._refresh_style_forms_from_payload()
+        self._schedule_preview_refresh()
+
+    def _on_event_window_days_changed(self, *_args) -> None:
+        """3日/5日の切替時にプレビューを更新する。"""
+
         self._schedule_preview_refresh()
 
     def _on_style_text_changed(self, _event=None) -> None:
@@ -615,28 +673,19 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _apply_style_form_values(self) -> bool:
         """フォームの値を payload に反映する。"""
 
-        common = self._style_payload.setdefault("common", {})
-        for control in self._style_common_controls:
-            current_value = self._nested_value(common, control["path"], None)
-            value, error = self._coerce_control_value(control, current_value)
-            if error:
-                self.preview_message.set(error)
-                return False
-            self._set_nested_value(common, control["path"], value)
-
-        graph_type = self._current_style_graph_type()
+        graph_key = self._current_style_graph_key()
         graph_styles = self._style_payload.setdefault("graph_styles", {})
-        graph_style = graph_styles.get(graph_type)
+        graph_style = graph_styles.get(graph_key)
         if not isinstance(graph_style, dict):
             graph_style = {}
-            graph_styles[graph_type] = graph_style
+            graph_styles[graph_key] = graph_style
         for control in self._style_graph_controls:
-            current_value = self._nested_value(graph_style, control["path"], None)
+            current_value = nested_value(graph_style, control["path"], None)
             value, error = self._coerce_control_value(control, current_value)
             if error:
                 self.preview_message.set(error)
                 return False
-            self._set_nested_value(graph_style, control["path"], value)
+            set_nested_value(graph_style, control["path"], value)
         return True
 
     def _coerce_control_value(self, control: dict[str, Any], current_value: Any) -> tuple[Any, str | None]:
@@ -736,29 +785,6 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._redo_style_change()
         return "break"
 
-    def _nested_value(self, root: dict[str, Any], path: str, default: Any) -> Any:
-        """ドット区切りパスから値を取得する。"""
-
-        node: Any = root
-        for key in path.split("."):
-            if not isinstance(node, dict) or key not in node:
-                return default
-            node = node[key]
-        return node
-
-    def _set_nested_value(self, root: dict[str, Any], path: str, value: Any) -> None:
-        """ドット区切りパスへ値を書き込む。"""
-
-        parts = path.split(".")
-        node: dict[str, Any] = root
-        for key in parts[:-1]:
-            child = node.get(key)
-            if not isinstance(child, dict):
-                child = {}
-                node[key] = child
-            node = child
-        node[parts[-1]] = value
-
     def _load_style_from_file(self) -> None:
         """スタイル JSON を読込む。"""
 
@@ -834,51 +860,16 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _render_preview(self, *, silent_json_error: bool = False) -> None:
         """プレビュー画像を再生成して表示する。"""
+        render_preview(self, silent_json_error=silent_json_error)
 
-        if self._scan_running:
-            return
-        if self._catalog is None:
-            self.preview_message.set("先にParquetをスキャンしてください。")
-            return
-        station_token = self.preview_target_station.get().strip()
-        graph_type = self.preview_target_graph.get().strip()
-        if not station_token or not graph_type:
-            return
-        try:
-            source, station_key = station_token.split(":", 1)
-        except ValueError:
-            self.preview_message.set("観測所の指定が不正です。")
-            return
-        base_date = self.preview_target_date.get().strip() or None
-        payload = self._style_from_editor(silent=silent_json_error)
-        if payload is None:
-            return
-        self._style_payload = payload
-        preview_payload = self._build_preview_style_payload(payload)
-        threshold_file = self.threshold_path.get().strip() or None
-        preview_input = PreviewInput(
-            parquet_dir=self.parquet_dir.get().strip(),
-            threshold_file_path=threshold_file,
-            style_json_path=self._style_json_path,
-            style_payload=preview_payload,
-            source=source,
-            station_key=station_key,
-            graph_type=graph_type,
-            base_datetime=base_date,
-            event_window_days=int(self.event_window_days.get()) if base_date else None,
-        )
-        self._preview_pending = {"input": preview_input, "threshold_file": threshold_file}
-        self.preview_message.set("プレビュー更新中...")
-        self._start_preview_worker_if_needed()
+    def _export_preview_sample(self) -> None:
+        """現在プレビュー対象のサンプル画像を出力する。"""
+        export_preview_sample(self)
 
     def _build_preview_style_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """プレビュー用にスタイルを調整して返す。"""
 
-        preview_payload = deepcopy(payload)
-        common = preview_payload.setdefault("common", {})
-        # DPIは出力品質にのみ効かせ、プレビュー表示サイズは幅・高さの変更を主軸にする。
-        common["dpi"] = 120
-        return preview_payload
+        return deepcopy(payload)
 
     def _start_preview_worker_if_needed(self) -> None:
         """最新のプレビュー要求だけをバックグラウンドで実行する。"""
@@ -909,84 +900,33 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _on_preview_area_resized(self, _event=None) -> None:
+        """プレビュー領域サイズ変更時に画像を再フィットする。"""
+        on_preview_area_resized(self, _event=_event)
+
+    def _display_preview_image(self, image_bytes: bytes, *, force: bool = False) -> None:
+        """プレビュー領域に収まるよう縮小して中央表示する。"""
+        display_preview_image(self, image_bytes, force=force)
+
+    def _current_preview_canvas_size(self) -> tuple[int, int] | None:
+        """プレビューCanvasの有効表示サイズを返す。"""
+        return current_preview_canvas_size(self)
+
+    def _draw_preview_photo(self, photo: tk.PhotoImage) -> None:
+        """Canvas中央にプレビュー画像を描画する。"""
+        draw_preview_photo(self, photo)
+
+    def _show_preview_placeholder(self, text: str) -> None:
+        """画像未表示時のプレースホルダを描画する。"""
+        show_preview_placeholder(self, text)
+
     def _load_thresholds_cached(self, threshold_file_path: str | None) -> ThresholdLoadResult | None:
         """しきい値ファイルの読込結果をキャッシュして使い回す。"""
-
-        if not threshold_file_path:
-            return None
-        path = Path(threshold_file_path)
-        try:
-            mtime_ns = path.stat().st_mtime_ns
-        except OSError:
-            return load_thresholds(threshold_file_path)
-        if (
-            self._threshold_cache_path == str(path)
-            and self._threshold_cache_mtime_ns == mtime_ns
-            and self._threshold_cache_result is not None
-        ):
-            return self._threshold_cache_result
-        result = load_thresholds(threshold_file_path)
-        self._threshold_cache_path = str(path)
-        self._threshold_cache_mtime_ns = mtime_ns
-        self._threshold_cache_result = result
-        return result
+        return load_thresholds_with_cache(threshold_file_path, cache=self._threshold_cache)
 
     def _start_batch_run(self) -> None:
         """バッチ実行を開始する。"""
-
-        if self._running:
-            return
-        if self._scan_running:
-            messagebox.showwarning("スキャン中", "スキャン完了後にバッチ実行してください。")
-            return
-        if not self._precheck_ok_targets:
-            messagebox.showwarning("未検証", "実行前検証でOK対象を作成してください。")
-            return
-        out_dir = filedialog.askdirectory(title="出力先フォルダを選択")
-        if not out_dir:
-            return
-        payload = self._style_from_editor()
-        if payload is None:
-            return
-        self._style_payload = payload
-        # 検証済み対象だけを BatchTarget に落とし込む。
-        batch_targets = [
-            BatchTarget(
-                source=t.source,
-                station_key=t.station_key,
-                graph_type=t.graph_type,
-                base_datetime=t.base_date.isoformat() if t.base_date else None,
-                event_window_days=t.event_window_days,
-            )
-            for t in self._precheck_ok_targets
-        ]
-        run_input = BatchRunInput(
-            parquet_dir=self.parquet_dir.get().strip(),
-            output_dir=out_dir,
-            threshold_file_path=self.threshold_path.get().strip() or None,
-            style_json_path=self._style_json_path,
-            style_payload=payload,
-            targets=batch_targets,
-            should_stop=self._stop_event.is_set if self._stop_event else None,
-        )
-        for item_id in self.batch_tree.get_children():
-            self.batch_tree.delete(item_id)
-        self._stop_event = threading.Event()
-        self._set_running_state(True)
-        self.batch_status.set("実行中...")
-        self._append_log(f"[RUN] start targets={len(batch_targets)} out={out_dir}")
-
-        def worker() -> None:
-            try:
-                result = self.service.run_batch(
-                    run_input,
-                    stop_requested=self._stop_event.is_set if self._stop_event else None,
-                )
-                self._event_queue.put(("run_done", result))
-            except Exception as exc:  # noqa: BLE001
-                self._event_queue.put(("run_error", str(exc)))
-
-        threading.Thread(target=worker, daemon=True).start()
+        start_batch_run(self)
 
     def _request_stop(self) -> None:
         """バッチ停止を要求する。"""
@@ -1022,51 +962,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         try:
             while True:
                 event, payload = self._event_queue.get_nowait()
-                if event == "scan_done":
-                    self._set_scan_state(False)
-                    self._apply_scan_result(payload)
-                elif event == "scan_error":
-                    self._set_scan_state(False)
-                    self.batch_status.set("待機中")
-                    self.precheck_summary.set("対象数: 0 / NG: 0")
-                    self._append_log(f"[SCAN] error {payload}")
-                    messagebox.showerror("読込エラー", str(payload))
-                elif event == "run_done":
-                    result = payload
-                    # バッチの結果は 1 件ずつ表に積み上げて、途中経過を追いやすくする。
-                    for row in result.items:
-                        self.batch_tree.insert(
-                            "",
-                            "end",
-                            values=(row.target_id, row.status, row.reason_message or "", row.output_path or ""),
-                        )
-                    self.batch_status.set(
-                        f"完了: success={result.summary.success}, failed={result.summary.failed}, skipped={result.summary.skipped}"
-                    )
-                    self._append_log(
-                        f"[RUN] done success={result.summary.success} failed={result.summary.failed} skipped={result.summary.skipped}"
-                    )
-                    self._set_running_state(False)
-                elif event == "run_error":
-                    self.batch_status.set("エラー")
-                    self._append_log(f"[RUN] error {payload}")
-                    messagebox.showerror("バッチ実行エラー", str(payload))
-                    self._set_running_state(False)
-                elif event == "preview_done":
-                    result = payload
-                    self._preview_running = False
-                    if result.status != "success" or result.image_bytes_png is None:
-                        self.preview_message.set(result.reason_message or "プレビュー生成に失敗しました。")
-                    else:
-                        encoded = base64.b64encode(result.image_bytes_png).decode("ascii")
-                        self._preview_photo = tk.PhotoImage(data=encoded)
-                        self.preview_label.configure(image=self._preview_photo, text="")
-                        self.preview_message.set("プレビュー更新完了")
-                    self._start_preview_worker_if_needed()
-                elif event == "preview_error":
-                    self._preview_running = False
-                    self.preview_message.set(str(payload))
-                    self._start_preview_worker_if_needed()
+                handle_event(self, event, payload)
         except queue.Empty:
             pass
         self.after(120, self._poll_events)

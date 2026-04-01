@@ -12,4 +12,4 @@ build
 *.csv
 cache
 site
-outputs/charts
+outputs/*

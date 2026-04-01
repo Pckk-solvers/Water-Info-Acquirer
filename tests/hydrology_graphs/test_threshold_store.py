@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from hydrology_graphs.io.threshold_store import group_thresholds, load_thresholds
+from hydrology_graphs.io.threshold_store import (
+    ThresholdCacheState,
+    group_thresholds,
+    load_thresholds,
+    load_thresholds_with_cache,
+)
 
 
 def test_load_thresholds_sorts_by_priority_and_excludes_disabled(tmp_path):
@@ -42,3 +47,20 @@ def test_load_thresholds_json(tmp_path):
 
     assert len(result.lines) == 1
     assert result.lines[0].graph_type == "annual_max_rainfall"
+
+
+def test_load_thresholds_with_cache_reuses_loaded_result(tmp_path):
+    csv_text = (
+        "source,station_key,graph_type,line_name,value,unit\n"
+        "jma,111,hyetograph,low,10,mm\n"
+    )
+    path = tmp_path / "thresholds.csv"
+    path.write_text(csv_text, encoding="utf-8")
+    cache = ThresholdCacheState()
+
+    first = load_thresholds_with_cache(path, cache=cache)
+    second = load_thresholds_with_cache(path, cache=cache)
+
+    assert first is second
+    assert first is not None
+    assert len(first.lines) == 1

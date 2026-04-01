@@ -22,7 +22,7 @@ from ..domain.logic import (
 from ..domain.models import GraphTarget, ThresholdRecord
 from ..io.parquet_store import ParquetCatalog, scan_parquet_catalog
 from ..io.png_writer import write_png
-from ..io.style_store import StyleLoadResult, default_style, load_style
+from ..io.style_store import StyleLoadResult, load_style, style_key_for_target
 from ..io.threshold_store import ThresholdLoadResult, load_thresholds, thresholds_for_key
 from ..render.plotter import render_graph_png
 from .dto import (
@@ -571,13 +571,22 @@ def _render_target_bytes(
         target.graph_type,
     )
     station_name = _resolve_station_name(catalog, target.station_key)
+    style_key = style_key_for_target(target.graph_type, target.event_window_days)
+    if style_key is None:
+        raise UsecaseError(REASON_CONTRACT_ERROR, "スタイル対象キーを解決できません。")
+    graph_styles = style.get("graph_styles")
+    if not isinstance(graph_styles, dict):
+        raise UsecaseError(REASON_STYLE_ERROR, "style.graph_styles が不正です。")
+    graph_style = graph_styles.get(style_key)
+    if not isinstance(graph_style, dict):
+        raise UsecaseError(REASON_STYLE_ERROR, f"style.graph_styles.{style_key} が見つかりません。")
     try:
         # render 層には描画だけを渡し、保存や I/O は外側で分離する。
         return render_graph_png(
             graph_type=target.graph_type,
             station_name=station_name,
             df=draw_df,
-            style=style,
+            graph_style=graph_style,
             thresholds=thresholds,
         )
     except Exception as exc:  # noqa: BLE001

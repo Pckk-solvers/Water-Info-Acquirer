@@ -23,6 +23,7 @@ dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.0",
     "pyinstaller>=6.16.0",
+    "pyright>=1.1.408",
     "pytest>=9.0.1",
     "ruff>=0.15.0",
 ]

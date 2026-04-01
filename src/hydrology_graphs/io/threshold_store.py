@@ -25,6 +25,15 @@ class ThresholdLoadResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class ThresholdCacheState:
+    """しきい値読込結果のキャッシュ状態。"""
+
+    path: str | None = None
+    mtime_ns: int | None = None
+    result: ThresholdLoadResult | None = None
+
+
 def load_thresholds(path: str | Path | None) -> ThresholdLoadResult:
     """基準線ファイルを読み込んで正規化する。"""
 
@@ -61,6 +70,29 @@ def load_thresholds(path: str | Path | None) -> ThresholdLoadResult:
         warnings.append("threshold_all_rows_invalid")
     lines = _resolve_priority(parsed)
     return ThresholdLoadResult(lines=lines, warnings=warnings)
+
+
+def load_thresholds_with_cache(
+    path: str | Path | None,
+    *,
+    cache: ThresholdCacheState,
+) -> ThresholdLoadResult | None:
+    """しきい値ファイルをキャッシュ利用で読み込む。"""
+
+    if path is None or not str(path).strip():
+        return None
+    file_path = Path(path)
+    try:
+        mtime_ns = file_path.stat().st_mtime_ns
+    except OSError:
+        return load_thresholds(path)
+    if cache.path == str(file_path) and cache.mtime_ns == mtime_ns and cache.result is not None:
+        return cache.result
+    result = load_thresholds(path)
+    cache.path = str(file_path)
+    cache.mtime_ns = mtime_ns
+    cache.result = result
+    return result
 
 
 def group_thresholds(lines: list[ThresholdRecord]) -> dict[str, list[ThresholdRecord]]:

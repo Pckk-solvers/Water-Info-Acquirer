@@ -47,7 +47,7 @@ from ..domain.constants import (
 from ..domain.logic import annual_max_by_year
 from ..domain.models import ThresholdRecord
 
-_LINESTYLE_MAP = {"solid": "-", "dashed": "--", "dotted": ":"}
+_LINESTYLE_MAP = {"solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-."}
 
 
 def render_graph_png(
@@ -55,20 +55,21 @@ def render_graph_png(
     graph_type: str,
     station_name: str,
     df: pd.DataFrame,
-    style: dict[str, Any],
+    graph_style: dict[str, Any],
     thresholds: list[ThresholdRecord],
 ) -> bytes:
     """描画対象とスタイルから PNG バイト列を生成する。"""
 
-    common = style["common"]
-    graph_style = style["graph_styles"][graph_type]
+    figure_width = float(graph_style.get("figure_width", 12))
+    figure_height = float(graph_style.get("figure_height", 6))
+    dpi = int(graph_style.get("dpi", 120))
     fig, ax = plt.subplots(
-        figsize=(float(common["figure_width"]), float(common["figure_height"])),
-        dpi=int(common.get("dpi", 120)),
+        figsize=(figure_width, figure_height),
+        dpi=dpi,
     )
-    fig.patch.set_facecolor(common.get("background_color", "#FFFFFF"))
-    ax.set_facecolor(common.get("background_color", "#FFFFFF"))
-    _apply_common_axes_style(ax, common, graph_style)
+    fig.patch.set_facecolor(graph_style.get("background_color", "#FFFFFF"))
+    ax.set_facecolor(graph_style.get("background_color", "#FFFFFF"))
+    _apply_common_axes_style(ax, graph_style)
 
     # グラフ種別ごとに描画方法を切り替える。イベント系は折れ線/棒、年最大系は年次棒。
     if graph_type == GRAPH_HYETOGRAPH:
@@ -85,17 +86,22 @@ def render_graph_png(
     _apply_title_axis_labels(ax, graph_style, station_name)
     _apply_axis_details(ax, graph_style)
 
-    legend_cfg = common.get("legend", {})
+    legend_cfg = graph_style.get("legend", {})
     if legend_cfg.get("enabled", True):
         loc = str(legend_cfg.get("position", "upper right"))
         anchor = legend_cfg.get("fixed_anchor")
+        handles, labels = ax.get_legend_handles_labels()
+        filtered = [(h, l) for h, l in zip(handles, labels, strict=False) if _legend_label_visible(l)]
+        handles = [h for h, _ in filtered]
+        labels = [l for _, l in filtered]
         # 位置を固定したい場合は bbox_to_anchor を使い、通常は標準位置を使う。
         if isinstance(anchor, dict) and "x" in anchor and "y" in anchor:
-            ax.legend(loc=loc, bbox_to_anchor=(float(anchor["x"]), float(anchor["y"])))
-        elif ax.get_legend_handles_labels()[0]:
-            ax.legend(loc=loc)
+            if handles:
+                ax.legend(handles, labels, loc=loc, bbox_to_anchor=(float(anchor["x"]), float(anchor["y"])))
+        elif handles:
+            ax.legend(handles, labels, loc=loc)
 
-    margin = common.get("margin", {})
+    margin = graph_style.get("margin", {})
     fig.subplots_adjust(
         left=float(margin.get("left", 0.08)),
         right=1.0 - float(margin.get("right", 0.04)),
@@ -107,19 +113,19 @@ def render_graph_png(
     fig.savefig(
         buf,
         format="png",
-        transparent=bool(common.get("export", {}).get("transparent_background", False)),
+        transparent=bool(graph_style.get("export", {}).get("transparent_background", False)),
     )
     plt.close(fig)
     return buf.getvalue()
 
 
-def _apply_common_axes_style(ax, common: dict[str, Any], graph_style: dict[str, Any]) -> None:
+def _apply_common_axes_style(ax, graph_style: dict[str, Any]) -> None:
     """全グラフ共通の軸スタイルを当てる。"""
 
-    font = common.get("font", {})
-    tick_size = float(font.get("tick_size", common.get("font_size", 11)))
+    font = graph_style.get("font", {})
+    tick_size = float(font.get("tick_size", graph_style.get("font_size", 11)))
     ax.tick_params(labelsize=tick_size)
-    grid = common.get("grid", {})
+    grid = graph_style.get("grid", {})
     if grid.get("enabled", True):
         ax.grid(
             True,
@@ -198,22 +204,24 @@ def _plot_thresholds(ax, thresholds: list[ThresholdRecord], graph_style: dict[st
         # 線ごとに属性が違うので 1 本ずつ描画する。
         color = line.line_color or "#DC2626"
         linestyle = _line_style(line.line_style)
+        legend_label = _coerce_text(line.label) or _coerce_text(line.line_name)
         ax.axhline(
             y=line.value,
             color=color,
             linestyle=linestyle,
             linewidth=float(line.line_width or 1.2),
             zorder=zorder,
-            label=line.label or line.line_name,
+            label=legend_label or "_nolegend_",
         )
-        if label_enabled:
+        inline_label = _coerce_text(line.label)
+        if label_enabled and inline_label:
             # ラベルは左寄せで重ならない位置に置く。
             ymax = ax.get_ylim()[1]
             offset = (abs(ymax) if ymax != 0 else 1.0) * label_offset
             ax.text(
                 0.01,
                 line.value + offset,
-                line.label or line.line_name,
+                inline_label,
                 transform=ax.get_yaxis_transform(),
                 color=color,
                 fontsize=label_size,
@@ -224,11 +232,18 @@ def _apply_title_axis_labels(ax, graph_style: dict[str, Any], station_name: str)
     """タイトルと軸ラベルを反映する。"""
 
     title_cfg = graph_style.get("title", {})
-    title_tpl = str(title_cfg.get("template", "{station_name}"))
-    ax.set_title(title_tpl.format(station_name=station_name or ""))
+    title_tpl = _coerce_text(title_cfg.get("template", "{station_name}"))
+    if title_tpl:
+        title_text = _coerce_text(title_tpl.format(station_name=station_name or ""))
+        if title_text:
+            ax.set_title(title_text)
     axis = graph_style.get("axis", {})
-    ax.set_xlabel(str(axis.get("x_label", "")))
-    ax.set_ylabel(str(axis.get("y_label", "")))
+    x_label = _coerce_text(axis.get("x_label", ""))
+    y_label = _coerce_text(axis.get("y_label", ""))
+    if x_label:
+        ax.set_xlabel(x_label)
+    if y_label:
+        ax.set_ylabel(y_label)
 
 
 def _apply_axis_details(ax, graph_style: dict[str, Any]) -> None:
@@ -271,3 +286,16 @@ def _line_style(name: str | None) -> str:
     """スタイル名を Matplotlib 用の線種へ変換する。"""
 
     return _LINESTYLE_MAP.get(str(name or "solid"), "-")
+
+
+def _coerce_text(value: object) -> str:
+    """文字列をstripして返す。"""
+
+    return str(value or "").strip()
+
+
+def _legend_label_visible(label: object) -> bool:
+    """凡例に表示すべきラベルかを判定する。"""
+
+    text = _coerce_text(label)
+    return bool(text) and text != "_nolegend_"

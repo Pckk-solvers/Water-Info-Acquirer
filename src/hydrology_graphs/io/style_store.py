@@ -6,33 +6,38 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..domain.constants import GRAPH_TYPES
+from ..domain.constants import EVENT_GRAPH_TYPES, GRAPH_TYPES
 
-"""描画スタイル JSON の読込・保存・正規化。
-
-GUI の編集内容をそのまま保存せず、保存前に契約へ寄せる。
-"""
+"""描画スタイル JSON の読込・保存・正規化。"""
 
 
-DEFAULT_STYLE: dict[str, Any] = {
-    "schema_version": "1.0",
-    "common": {
+EVENT_STYLE_KEYS: tuple[str, ...] = tuple(f"{graph_type}:{days}day" for graph_type in EVENT_GRAPH_TYPES for days in (3, 5))
+ANNUAL_STYLE_KEYS: tuple[str, ...] = tuple(
+    graph_type for graph_type in GRAPH_TYPES if graph_type not in EVENT_GRAPH_TYPES
+)
+STYLE_GRAPH_KEYS: tuple[str, ...] = EVENT_STYLE_KEYS + ANNUAL_STYLE_KEYS
+
+
+def _base_style() -> dict[str, Any]:
+    return {
         "font_family": "Yu Gothic UI",
         "font_size": 11,
         "figure_width": 12,
         "figure_height": 6,
         "margin": {"top": 0.08, "right": 0.04, "bottom": 0.12, "left": 0.08},
         "legend": {"enabled": True, "position": "upper right"},
-        "aspect_mode": "fixed",
         "dpi": 120,
         "grid": {"enabled": True, "color": "#CBD5E1", "style": "--", "alpha": 0.7},
         "background_color": "#FFFFFF",
-        "padding": {"outer": {"top": 0.08, "right": 0.04, "bottom": 0.12, "left": 0.08}},
         "font": {"title_size": 14, "label_size": 12, "tick_size": 10},
         "export": {"transparent_background": False},
-    },
-    "graph_styles": {
-        "hyetograph": {
+    }
+
+
+def _style_hyetograph() -> dict[str, Any]:
+    style = _base_style()
+    style.update(
+        {
             "series_color": "#2563EB",
             "series_width": 1.2,
             "series_style": "solid",
@@ -56,12 +61,19 @@ DEFAULT_STYLE: dict[str, Any] = {
                 "zorder": 3,
             },
             "series": {"zorder": 2},
-        },
-        "hydrograph_discharge": {
+        }
+    )
+    return style
+
+
+def _style_hydro_discharge() -> dict[str, Any]:
+    style = _base_style()
+    style.update(
+        {
             "series_color": "#0F766E",
             "series_width": 1.5,
             "series_style": "solid",
-            "axis": {"x_label": "時刻", "y_label": "流量 (m3/s)"},
+            "axis": {"x_label": "時刻", "y_label": "流量 (m³/s)"},
             "title": {"template": "{station_name} ハイドログラフ（流量）"},
             "x_axis": {
                 "date_format": "%m/%d %H:%M",
@@ -77,13 +89,20 @@ DEFAULT_STYLE: dict[str, Any] = {
                 "zorder": 3,
             },
             "series": {"zorder": 2},
-        },
-        "hydrograph_water_level": {
+        }
+    )
+    return style
+
+
+def _style_hydro_water_level() -> dict[str, Any]:
+    style = _base_style()
+    style.update(
+        {
             "series_color": "#7C3AED",
             "series_width": 1.5,
             "series_style": "solid",
             "axis": {"x_label": "時刻", "y_label": "水位 (m)"},
-            "title": {"template": "{station_name} 水位波形"},
+            "title": {"template": "{station_name} ハイドログラフ（水位）"},
             "x_axis": {
                 "date_format": "%m/%d %H:%M",
                 "tick_rotation": 45,
@@ -98,8 +117,15 @@ DEFAULT_STYLE: dict[str, Any] = {
                 "zorder": 3,
             },
             "series": {"zorder": 2},
-        },
-        "annual_max_rainfall": {
+        }
+    )
+    return style
+
+
+def _style_annual_rainfall() -> dict[str, Any]:
+    style = _base_style()
+    style.update(
+        {
             "series_color": "#1D4ED8",
             "series_width": 1.2,
             "series_style": "solid",
@@ -110,8 +136,15 @@ DEFAULT_STYLE: dict[str, Any] = {
             "y_axis": {"number_format": "plain", "tick_count": 8},
             "bar": {"width": 0.8},
             "series": {"zorder": 2},
-        },
-        "annual_max_discharge": {
+        }
+    )
+    return style
+
+
+def _style_annual_discharge() -> dict[str, Any]:
+    style = _base_style()
+    style.update(
+        {
             "series_color": "#0F766E",
             "series_width": 1.2,
             "series_style": "solid",
@@ -122,8 +155,15 @@ DEFAULT_STYLE: dict[str, Any] = {
             "y_axis": {"number_format": "comma", "tick_count": 8},
             "bar": {"width": 0.8},
             "series": {"zorder": 2},
-        },
-        "annual_max_water_level": {
+        }
+    )
+    return style
+
+
+def _style_annual_water_level() -> dict[str, Any]:
+    style = _base_style()
+    style.update(
+        {
             "series_color": "#6D28D9",
             "series_width": 1.2,
             "series_style": "solid",
@@ -134,37 +174,58 @@ DEFAULT_STYLE: dict[str, Any] = {
             "y_axis": {"number_format": "plain", "tick_count": 8},
             "bar": {"width": 0.8},
             "series": {"zorder": 2},
-        },
-    },
+        }
+    )
+    return style
+
+
+def _default_graph_styles() -> dict[str, dict[str, Any]]:
+    return {
+        "hyetograph:3day": _style_hyetograph(),
+        "hyetograph:5day": _style_hyetograph(),
+        "hydrograph_discharge:3day": _style_hydro_discharge(),
+        "hydrograph_discharge:5day": _style_hydro_discharge(),
+        "hydrograph_water_level:3day": _style_hydro_water_level(),
+        "hydrograph_water_level:5day": _style_hydro_water_level(),
+        "annual_max_rainfall": _style_annual_rainfall(),
+        "annual_max_discharge": _style_annual_discharge(),
+        "annual_max_water_level": _style_annual_water_level(),
+    }
+
+
+DEFAULT_STYLE: dict[str, Any] = {
+    "schema_version": "2.0",
+    "graph_styles": _default_graph_styles(),
 }
 
 
 @dataclass(slots=True)
 class StyleLoadResult:
-    """正規化後スタイルと警告のセット。"""
-
     style: dict[str, Any]
     warnings: list[str]
 
     @property
     def is_valid(self) -> bool:
-        """致命的なエラーがないかを返す。"""
-
         return not any(msg.startswith("error:") for msg in self.warnings)
 
 
 def default_style() -> dict[str, Any]:
-    """既定のスタイル設定を複製して返す。"""
-
     return deepcopy(DEFAULT_STYLE)
 
 
-def load_style(path: str | Path | None = None, *, payload: dict | None = None) -> StyleLoadResult:
-    """ファイルまたはメモリ上の payload からスタイルを読み込む。"""
+def style_key_for_target(graph_type: str, event_window_days: int | None) -> str | None:
+    if graph_type in EVENT_GRAPH_TYPES:
+        if event_window_days not in (3, 5):
+            return None
+        return f"{graph_type}:{event_window_days}day"
+    if graph_type in GRAPH_TYPES:
+        return graph_type
+    return None
 
+
+def load_style(path: str | Path | None = None, *, payload: dict | None = None) -> StyleLoadResult:
     warnings: list[str] = []
     if payload is not None:
-        # GUI の編集中 JSON をそのまま渡す経路。
         raw = deepcopy(payload)
     elif path and str(path).strip():
         file_path = Path(path)
@@ -180,8 +241,6 @@ def load_style(path: str | Path | None = None, *, payload: dict | None = None) -
 
 
 def save_style(path: str | Path, style: dict) -> None:
-    """スタイルを正規化した上で JSON として保存する。"""
-
     normalized, warnings = _normalize_style(style)
     hard_errors = [warning for warning in warnings if warning.startswith("error:")]
     if hard_errors:
@@ -192,31 +251,24 @@ def save_style(path: str | Path, style: dict) -> None:
 
 
 def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
-    """入力されたスタイルを既定構造へ寄せる。"""
-
     warnings: list[str] = []
     if not isinstance(raw, dict):
         return default_style(), ["error:style_root_must_be_object"]
 
-    # schema_version は保存互換の基準なので、ここで必ず確認する。
     schema_version = str(raw.get("schema_version", "")).strip()
-    if schema_version != "1.0":
+    if schema_version != "2.0":
         return default_style(), [f"error:unsupported_schema_version:{schema_version}"]
+    if "common" in raw:
+        return default_style(), ["error:common_removed_in_schema_2_0"]
+    if "variants" in raw:
+        return default_style(), ["error:variants_removed_in_schema_2_0"]
 
-    common_raw = raw.get("common")
     graph_styles_raw = raw.get("graph_styles")
-    if not isinstance(common_raw, dict):
-        return default_style(), ["error:common_must_be_object"]
     if not isinstance(graph_styles_raw, dict):
         return default_style(), ["error:graph_styles_must_be_object"]
 
-    required_common_keys = ("font_family", "font_size", "figure_width", "figure_height", "margin", "legend")
-    missing_common = [key for key in required_common_keys if key not in common_raw]
-    if missing_common:
-        return default_style(), [f"error:missing_common_keys:{', '.join(missing_common)}"]
-
     required_graph_keys = ("series_color", "series_width", "series_style", "axis")
-    for key in GRAPH_TYPES:
+    for key in STYLE_GRAPH_KEYS:
         raw_graph = graph_styles_raw.get(key)
         if not isinstance(raw_graph, dict):
             return default_style(), [f"error:missing_graph_style:{key}"]
@@ -226,29 +278,19 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
 
     merged = default_style()
     _deep_merge(merged, raw)
-
     graph_styles = merged["graph_styles"]
     for key in list(graph_styles.keys()):
-        if key not in GRAPH_TYPES:
-            # 未知キーは警告に落とし、保存形からは外す。
+        if key not in STYLE_GRAPH_KEYS:
             warnings.append(f"unknown_graph_style_key:{key}")
             graph_styles.pop(key, None)
-    for key in GRAPH_TYPES:
-        if key not in graph_styles:
-            # 個別設定が欠けていても、既定値で補える範囲は補う。
-            warnings.append(f"missing_graph_style_key:{key}")
-            graph_styles[key] = deepcopy(DEFAULT_STYLE["graph_styles"][key])
+    for key in STYLE_GRAPH_KEYS:
         _normalize_graph_style(graph_styles[key], warnings, raw_graph=graph_styles_raw[key])
         _validate_graph_style(graph_styles[key], key, warnings)
-
-    _validate_common_block(merged["common"], warnings)
 
     return merged, warnings
 
 
 def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict) -> None:
-    """個別グラフ設定の古いキーや不足キーを補う。"""
-
     if not isinstance(style, dict):
         warnings.append("error:graph_style_must_be_object")
         return
@@ -258,7 +300,6 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
         elif "template" not in raw_graph.get("title", {}):
             style["title"]["template"] = raw_graph["title_template"]
     style.pop("title_template", None)
-
     if "title" not in style or not isinstance(style["title"], dict):
         style["title"] = {"template": "{station_name}"}
     style["title"].setdefault("template", "{station_name}")
@@ -268,67 +309,60 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
     style["axis"].setdefault("y_label", "")
 
 
-def _validate_common_block(common: dict, warnings: list[str]) -> None:
-    """共通設定ブロックの値を検証する。"""
+def _validate_graph_style(style: dict, style_key: str, warnings: list[str]) -> None:
+    if not _is_hex_color(style.get("series_color")):
+        warnings.append(f"error:{style_key}_series_color_must_be_hex")
+    if not _is_positive_number(style.get("series_width")):
+        warnings.append(f"error:{style_key}_series_width_must_be_positive")
+    if style.get("series_style") not in {"solid", "dashed", "dotted", "dashdot"}:
+        warnings.append(f"error:{style_key}_series_style_invalid")
+    for key in ("font_size", "figure_width", "figure_height", "dpi"):
+        if key in style and style[key] is not None and not _is_positive_number(style[key]):
+            warnings.append(f"error:{style_key}_{key}_must_be_positive")
 
-    for key in ("font_size", "figure_width", "figure_height"):
-        value = common.get(key)
-        if not _is_positive_number(value):
-            warnings.append(f"error:common_{key}_must_be_positive")
-    margin = common.get("margin", {})
-    if isinstance(margin, dict):
+    margin = style.get("margin", {})
+    if not isinstance(margin, dict):
+        warnings.append(f"error:{style_key}_margin_must_be_object")
+    else:
         for key in ("top", "right", "bottom", "left"):
             if not _is_non_negative_number(margin.get(key)):
-                warnings.append(f"error:common_margin_{key}_must_be_non_negative")
-    else:
-        warnings.append("error:common_margin_must_be_object")
-
-
-def _validate_graph_style(style: dict, graph_type: str, warnings: list[str]) -> None:
-    """個別グラフ設定の必須項目と値の妥当性を確認する。"""
-
-    if not _is_hex_color(style.get("series_color")):
-        warnings.append(f"error:{graph_type}_series_color_must_be_hex")
-    if not _is_positive_number(style.get("series_width")):
-        warnings.append(f"error:{graph_type}_series_width_must_be_positive")
-    if style.get("series_style") not in {"solid", "dashed", "dotted"}:
-        warnings.append(f"error:{graph_type}_series_style_invalid")
+                warnings.append(f"error:{style_key}_margin_{key}_must_be_non_negative")
 
     axis = style.get("axis", {})
-    if not isinstance(axis, dict) or not axis.get("x_label") or not axis.get("y_label"):
-        warnings.append(f"error:{graph_type}_axis_invalid")
+    if not isinstance(axis, dict):
+        warnings.append(f"error:{style_key}_axis_invalid")
 
+    if "background_color" in style and not _is_hex_color(style.get("background_color")):
+        warnings.append(f"error:{style_key}_background_color_must_be_hex")
     if "bar_color" in style and style["bar_color"] is not None and not _is_hex_color(style["bar_color"]):
-        warnings.append(f"error:{graph_type}_bar_color_must_be_hex")
+        warnings.append(f"error:{style_key}_bar_color_must_be_hex")
     if (
         "secondary_series_color" in style
         and style["secondary_series_color"] is not None
         and not _is_hex_color(style["secondary_series_color"])
     ):
-        warnings.append(f"error:{graph_type}_secondary_series_color_must_be_hex")
+        warnings.append(f"error:{style_key}_secondary_series_color_must_be_hex")
 
     x_axis = style.get("x_axis", {})
     if isinstance(x_axis, dict) and x_axis.get("tick_interval_hours") is not None:
         if not _is_positive_number(x_axis.get("tick_interval_hours")):
-            warnings.append(f"error:{graph_type}_x_axis_tick_interval_hours_must_be_positive")
+            warnings.append(f"error:{style_key}_x_axis_tick_interval_hours_must_be_positive")
     bar = style.get("bar", {})
     if isinstance(bar, dict) and bar.get("width") is not None and not _is_positive_number(bar.get("width")):
-        warnings.append(f"error:{graph_type}_bar_width_must_be_positive")
+        warnings.append(f"error:{style_key}_bar_width_must_be_positive")
     y_axis = style.get("y_axis", {})
     if isinstance(y_axis, dict):
         if y_axis.get("tick_step") is not None and not _is_positive_number(y_axis.get("tick_step")):
-            warnings.append(f"error:{graph_type}_y_axis_tick_step_must_be_positive")
+            warnings.append(f"error:{style_key}_y_axis_tick_step_must_be_positive")
         if y_axis.get("tick_count") is not None and (not isinstance(y_axis.get("tick_count"), int) or y_axis.get("tick_count") <= 0):
-            warnings.append(f"error:{graph_type}_y_axis_tick_count_must_be_positive_int")
+            warnings.append(f"error:{style_key}_y_axis_tick_count_must_be_positive_int")
     threshold = style.get("threshold", {})
     if isinstance(threshold, dict) and threshold.get("label_font_size") is not None:
         if not _is_positive_number(threshold.get("label_font_size")):
-            warnings.append(f"error:{graph_type}_threshold_label_font_size_must_be_positive")
+            warnings.append(f"error:{style_key}_threshold_label_font_size_must_be_positive")
 
 
 def _is_hex_color(value: Any) -> bool:
-    """16進カラー文字列かを判定する。"""
-
     if not isinstance(value, str) or not value.startswith("#"):
         return False
     hex_part = value[1:]
@@ -336,8 +370,6 @@ def _is_hex_color(value: Any) -> bool:
 
 
 def _is_positive_number(value: Any) -> bool:
-    """正の数かを判定する。"""
-
     try:
         return float(value) > 0
     except Exception:  # noqa: BLE001
@@ -345,8 +377,6 @@ def _is_positive_number(value: Any) -> bool:
 
 
 def _is_non_negative_number(value: Any) -> bool:
-    """0以上の数かを判定する。"""
-
     try:
         return float(value) >= 0
     except Exception:  # noqa: BLE001
@@ -354,8 +384,6 @@ def _is_non_negative_number(value: Any) -> bool:
 
 
 def _deep_merge(base: dict, incoming: dict) -> None:
-    """辞書を深くマージする。"""
-
     for key, value in incoming.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
             _deep_merge(base[key], value)
