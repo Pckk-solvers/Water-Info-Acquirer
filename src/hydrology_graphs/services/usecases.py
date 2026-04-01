@@ -20,7 +20,7 @@ from ..domain.logic import (
     validate_event_series_complete,
 )
 from ..domain.models import GraphTarget, ThresholdRecord
-from ..io.parquet_store import ParquetCatalog, scan_parquet_catalog
+from ..io.parquet_store import ParquetCatalog, scan_parquet_catalog, scan_parquet_station_index
 from ..io.png_writer import write_png
 from ..io.style_store import StyleLoadResult, load_style, style_key_for_target
 from ..io.threshold_store import ThresholdLoadResult, load_thresholds, thresholds_for_key
@@ -68,6 +68,11 @@ class HydrologyGraphService:
         """Parquet ディレクトリを走査する。"""
 
         return scan_parquet_catalog(parquet_dir)
+
+    def scan_station_index(self, parquet_dir: str | Path) -> ParquetCatalog:
+        """観測所一覧表示向けに軽量走査する。"""
+
+        return scan_parquet_station_index(parquet_dir)
 
     def precheck(self, data: PrecheckInput) -> PrecheckResult:
         return precheck_graph_targets(data)
@@ -231,22 +236,18 @@ def precheck_graph_targets_with_catalog(
                                 )
                             )
                         continue
+                    # 3/5日が同時選択のときは、5日結果を可能な範囲で再利用して重複計算を減らす。
+                    evaluated_by_window = _evaluate_event_windows(
+                        frame=catalog.data,
+                        source=source,
+                        station_key=station_key,
+                        graph_type=graph_type,
+                        base_datetime=parsed.isoformat(),
+                        window_days_list=window_days_list,
+                        threshold_result=threshold_result,
+                    )
                     for window_days in window_days_list:
-                        try:
-                            # 実データの有無、3日/5日窓の欠損、基準線の有無まで一気に評価する。
-                            status, reason_code, reason_message, _ = _evaluate_target(
-                                catalog.data,
-                                source=source,
-                                station_key=station_key,
-                                graph_type=graph_type,
-                                base_datetime=parsed.isoformat(),
-                                event_window_days=window_days,
-                                threshold_result=threshold_result,
-                            )
-                        except UsecaseError as exc:
-                            status = "ng"
-                            reason_code = exc.reason_code
-                            reason_message = exc.message
+                        status, reason_code, reason_message, _ = evaluated_by_window[window_days]
                         if status == "ok":
                             ok_targets += 1
                         else:
@@ -575,6 +576,67 @@ def _evaluate_target(
     if threshold_result is not None and not thresholds:
         return "ng", REASON_THRESHOLD_NOT_FOUND, "対応する基準線が見つかりません。", None
     return "ok", None, None, annual_df.reset_index(drop=True)
+
+
+def _evaluate_event_windows(
+    *,
+    frame: pd.DataFrame,
+    source: str,
+    station_key: str,
+    graph_type: str,
+    base_datetime: str,
+    window_days_list: list[int],
+    threshold_result: ThresholdLoadResult | None,
+) -> dict[int, tuple[str, str | None, str | None, pd.DataFrame | None]]:
+    """イベント窓(3/5)の評価を行い、可能な範囲で5日結果を再利用する。"""
+
+    ordered = _normalized_event_window_days_list(window_days_list)
+    results: dict[int, tuple[str, str | None, str | None, pd.DataFrame | None]] = {}
+    if not ordered:
+        return results
+
+    def _safe_eval(window_days: int) -> tuple[str, str | None, str | None, pd.DataFrame | None]:
+        try:
+            return _evaluate_target(
+                frame,
+                source=source,
+                station_key=station_key,
+                graph_type=graph_type,
+                base_datetime=base_datetime,
+                event_window_days=window_days,
+                threshold_result=threshold_result,
+            )
+        except UsecaseError as exc:
+            return "ng", exc.reason_code, exc.message, None
+
+    # 3日・5日同時選択時は5日を先に評価し、OKなら中心3日を再利用する。
+    if 3 in ordered and 5 in ordered:
+        result_5 = _safe_eval(5)
+        results[5] = result_5
+        status_5, _rc_5, _rm_5, draw_df_5 = result_5
+        if status_5 == "ok" and draw_df_5 is not None:
+            parsed = _parse_date(base_datetime)
+            if parsed is not None:
+                start_3, end_3 = event_window_bounds(parsed, 3)
+                observed = pd.to_datetime(draw_df_5["observed_at"], errors="coerce")
+                mask = (observed >= pd.Timestamp(start_3)) & (observed <= pd.Timestamp(end_3))
+                draw_df_3 = draw_df_5.loc[mask].copy()
+                ok_3, reason_3 = validate_event_series_complete(draw_df_3, parsed, 3)
+                if ok_3:
+                    results[3] = "ok", None, None, draw_df_3.reset_index(drop=True)
+                else:
+                    results[3] = _safe_eval(3)
+            else:
+                results[3] = _safe_eval(3)
+        else:
+            # 5日がNGでも3日は成立する可能性があるため、3日は独立評価する。
+            results[3] = _safe_eval(3)
+
+    for day in ordered:
+        if day in results:
+            continue
+        results[day] = _safe_eval(day)
+    return results
 
 
 def _render_target_bytes(

@@ -77,11 +77,14 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     base_date_add_remove = ttk.Frame(base_date_box)
     base_date_add_remove.grid(row=0, column=0, sticky="ew", padx=4, pady=(6, 4))
     base_date_add_remove.columnconfigure(0, weight=1)
-    base_date_add_remove.columnconfigure(1, weight=1)
+    base_date_add_remove.columnconfigure(1, weight=0)
+    base_date_add_remove.columnconfigure(2, weight=0)
+    app.btn_apply_station_checks = ttk.Button(base_date_add_remove, text="チェック反映", command=app._apply_station_checks)
+    app.btn_apply_station_checks.grid(row=0, column=0, sticky="w")
     app.btn_add_base_date = ttk.Button(base_date_add_remove, text="追加", command=app._add_base_date_from_candidate)
-    app.btn_add_base_date.grid(row=0, column=0, sticky="w")
+    app.btn_add_base_date.grid(row=0, column=1, sticky="e", padx=(0, 4))
     app.btn_remove_base_date = ttk.Button(base_date_add_remove, text="削除", command=app._remove_selected_base_dates)
-    app.btn_remove_base_date.grid(row=0, column=1, sticky="e")
+    app.btn_remove_base_date.grid(row=0, column=2, sticky="e")
 
     base_date_input = ttk.Frame(base_date_box)
     base_date_input.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
@@ -141,6 +144,24 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     col_annual = ttk.Label(graph_box, text="年最大")
     col_annual.grid(row=0, column=3, sticky="w", padx=6, pady=(4, 2))
     app._execute_tooltips = [
+        ToolTip(app.parquet_entry, "入力Parquetディレクトリです。スキャンで観測所一覧を更新します。"),
+        ToolTip(app.btn_browse_parquet, "Parquetディレクトリを選択します。"),
+        ToolTip(app.btn_scan, "軽量スキャンを実行し、観測所一覧を更新します。"),
+        ToolTip(app.threshold_entry, "基準線定義ファイル（CSV/JSON）のパスです。未指定でも実行できます。"),
+        ToolTip(app.btn_browse_threshold, "基準線定義ファイルを選択します。"),
+        ToolTip(app.station_list, "先頭の☐/☑をクリックして観測所を選択します。"),
+        ToolTip(app.btn_station_select_all, "観測所をすべて選択状態にします。"),
+        ToolTip(app.btn_station_clear_all, "観測所の選択をすべて解除します。"),
+        ToolTip(app.btn_apply_station_checks, "現在の観測所チェックを基準日候補へ反映します。"),
+        ToolTip(app.base_date_year_combo, "基準日の年を選択します。"),
+        ToolTip(app.base_date_month_combo, "基準日の月を選択します。"),
+        ToolTip(app.base_date_candidate_combo, "基準日の日を選択します。"),
+        ToolTip(app.btn_add_base_date, "選択中の候補日を基準日リストへ追加します。"),
+        ToolTip(app.btn_remove_base_date, "基準日リストの選択項目を削除します。"),
+        ToolTip(app.base_date_list, "実行前検証・バッチ実行で使う基準日一覧です。"),
+        ToolTip(app.btn_clear_base_date, "基準日リストをすべて削除します。"),
+        ToolTip(app.btn_import_base_date_csv, "base_date列を持つCSVから基準日を読み込みます。"),
+        ToolTip(app.btn_export_base_date_csv, "基準日リストをCSV（base_date列）で保存します。"),
         ToolTip(col_item, "雨量・流量・水位の系統を表します。"),
         ToolTip(col_3day, "基準日の前後1日を含む3日間（基準日-1日〜+1日）を対象にします。"),
         ToolTip(col_5day, "基準日の前後2日を含む5日間（基準日-2日〜+2日）を対象にします。"),
@@ -193,14 +214,13 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     app.precheck_summary = tk.StringVar(value="対象数: 0 / NG: 0")
     ttk.Label(result_box, textvariable=app.precheck_summary).grid(row=0, column=0, sticky="w", padx=6, pady=(6, 4))
 
-    cols = ("target", "window", "status", "reason", "path")
+    cols = ("target", "window", "status", "reason")
     app.result_tree = ttk.Treeview(result_box, columns=cols, show="headings")
     for key, text, width in (
         ("target", "対象", 230),
         ("window", "窓", 60),
         ("status", "状態", 80),
         ("reason", "理由", 180),
-        ("path", "出力先", 230),
     ):
         app.result_tree.heading(key, text=text)
         app.result_tree.column(
@@ -208,9 +228,10 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
             width=width,
             minwidth=48 if key in ("window", "status") else 120,
             stretch=True,
-            anchor="w" if key in ("target", "reason", "path") else "center",
+            anchor="w" if key in ("target", "reason") else "center",
         )
     app.result_tree.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+    app.result_tree.bind("<Double-1>", app._on_result_row_double_click)
     result_scroll = ttk.Scrollbar(result_box, command=app.result_tree.yview)
     result_scroll.grid(row=1, column=1, sticky="ns", pady=(0, 6))
     app.result_tree.configure(yscrollcommand=result_scroll.set)
@@ -225,6 +246,16 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     log_scroll.grid(row=0, column=1, sticky="ns")
     app.log_text.configure(yscrollcommand=log_scroll.set)
 
+    app._execute_tooltips.extend(
+        [
+            ToolTip(app.btn_precheck, "選択条件で実行可否を検証し、READY/NGを結果表に表示します。"),
+            ToolTip(app.run_btn, "READY対象をまとめてバッチ実行します。"),
+            ToolTip(app.stop_btn, "実行中のバッチ処理に停止要求を送ります。"),
+            ToolTip(app.result_tree, "結果行をダブルクリックすると、その出力先フルパスを表示します。"),
+            ToolTip(app.log_text, "スキャン・検証・実行のログを表示します。"),
+        ]
+    )
+
     app._execution_disable_widgets = [
         app.parquet_entry,
         app.threshold_entry,
@@ -237,6 +268,7 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
         app.base_date_year_combo,
         app.base_date_month_combo,
         app.base_date_candidate_combo,
+        app.btn_apply_station_checks,
         app.btn_add_base_date,
         app.base_date_list,
         app.btn_remove_base_date,

@@ -322,6 +322,24 @@ def test_precheck_expands_event_targets_for_multiple_windows(tmp_path):
     ]
 
 
+def test_precheck_allows_3day_when_5day_is_missing(tmp_path):
+    _write_timeseries(tmp_path, hours=72)
+    result = precheck_graph_targets(
+        PrecheckInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            graph_types=["hyetograph"],
+            station_pairs=[("jma", "111")],
+            base_dates=["2025-01-02"],
+            event_window_days_list=[3, 5],
+        )
+    )
+
+    by_window = {item.event_window_days: item for item in result.items}
+    assert by_window[3].status == "ok"
+    assert by_window[5].status == "ng"
+
+
 def test_run_graph_batch_writes_png(tmp_path):
     _write_timeseries(tmp_path)
     threshold_path = tmp_path / "thresholds.csv"

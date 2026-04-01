@@ -4,8 +4,7 @@ Status: target
 
 次フェーズで実装予定の要件・改善計画を配置する。
 
-現在のアクティブ target:
-- `default-style-confirmation-requirements.md`: デフォルトスタイル実行前確認の要件定義
+現在、アクティブな target 文書はなし。
 
 運用ルール:
 - 実装前検討が必要なときだけ `target/` に文書を作成する。

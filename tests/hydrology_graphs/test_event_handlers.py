@@ -27,6 +27,7 @@ def _dummy_app():
     app = SimpleNamespace()
     app.result_tree = _Tree()
     app._result_row_ids = {}
+    app._result_output_paths = {}
     app.batch_status = SimpleNamespace(value="")
     app.batch_status.set = lambda v: setattr(app.batch_status, "value", v)
     app.preview_message = SimpleNamespace(value="")

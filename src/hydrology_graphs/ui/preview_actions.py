@@ -11,7 +11,7 @@ def render_preview(app, *, silent_json_error: bool = False) -> None:
 
     if app._scan_running:
         return
-    if app._catalog is None:
+    if app._catalog is None and not app._ensure_full_catalog_loaded():
         app.preview_message.set("先にParquetをスキャンしてください。")
         return
     built = _build_preview_input(app, silent_json_error=silent_json_error)
@@ -29,7 +29,7 @@ def export_preview_sample(app) -> None:
     if not getattr(app, "developer_mode", False):
         app.preview_message.set("開発者モード専用機能です。")
         return
-    if app._catalog is None:
+    if app._catalog is None and not app._ensure_full_catalog_loaded():
         app.preview_message.set("先にParquetをスキャンしてください。")
         return
     built = _build_preview_input(app, silent_json_error=False, for_export=True)

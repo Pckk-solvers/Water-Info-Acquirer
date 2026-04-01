@@ -16,7 +16,7 @@ import pandas as pd
 from hydrology_graphs.domain.constants import GRAPH_TYPES
 from hydrology_graphs.domain.models import GraphTarget
 from hydrology_graphs.io.parquet_store import ParquetCatalog
-from hydrology_graphs.io.style_store import STYLE_GRAPH_KEYS, default_style, save_style
+from hydrology_graphs.io.style_store import STYLE_GRAPH_KEYS, default_style, load_style, save_style
 from hydrology_graphs.io.threshold_store import ThresholdCacheState, ThresholdLoadResult, load_thresholds_with_cache
 from hydrology_graphs.services import HydrologyGraphService, PreviewInput
 from water_info_acquirer.app_meta import get_module_title
@@ -199,14 +199,16 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._preview_last_image_hash: int | None = None
         self._catalog: ParquetCatalog | None = None
         self._catalog_stations: list[tuple[str, str, str]] = []
-        self._station_row_pairs: list[tuple[str, str]] = []
+        self._station_row_pairs: list[tuple[str, str] | None] = []
         self._checked_station_pairs: set[tuple[str, str]] = set()
+        self._station_selection_dirty = False
         self._base_dates: list[str] = []
         self._base_date_year_to_months: dict[str, list[str]] = {}
         self._base_date_year_month_to_days: dict[tuple[str, str], list[str]] = {}
         self.selected_base_dates: list[str] = []
         self._precheck_ok_targets: list[GraphTarget] = []
         self._result_row_ids: dict[str, str] = {}
+        self._result_output_paths: dict[str, str] = {}
         self._event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._running = False
         self._scan_running = False
@@ -407,7 +409,7 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         def worker() -> None:
             try:
-                catalog = self.service.scan_catalog(parquet_dir)
+                catalog = self.service.scan_station_index(parquet_dir)
                 self._event_queue.put(("scan_done", catalog))
             except Exception as exc:  # noqa: BLE001
                 self._event_queue.put(("scan_error", str(exc)))
@@ -416,19 +418,21 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _apply_scan_result(self, catalog: ParquetCatalog) -> None:
         # 新しいカタログが入ったら、以前の検証結果は破棄して整合性を保つ。
-        self._catalog = catalog
+        self._catalog = None
         self._catalog_stations = catalog.stations
         self._station_row_pairs = []
         self._checked_station_pairs = set()
+        self._station_selection_dirty = False
         self._reset_execution_state_for_new_scan()
         self._render_station_check_list()
-        self._select_all_stations()
+        # スキャン直後は軽量情報のみ確定し、候補日探索は明示操作まで遅延させる。
+        self._recompute_base_date_candidates_for_selected_stations()
         self.precheck_summary.set(
-            f"スキャン完了: stations={len(self._catalog_stations)} / dates={len(self._base_dates)} / invalid_files={len(catalog.invalid_files)}"
+            f"軽量スキャン完了: stations={len(self._catalog_stations)} / invalid_files={len(catalog.invalid_files)}"
         )
         self.batch_status.set("待機中")
         self._append_log(
-            f"[SCAN] done stations={len(self._catalog_stations)} dates={len(self._base_dates)} invalid_files={len(catalog.invalid_files)}"
+            f"[SCAN] lightweight done stations={len(self._catalog_stations)} invalid_files={len(catalog.invalid_files)}"
         )
 
     def _reset_execution_state_for_new_scan(self) -> None:
@@ -517,17 +521,22 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         self.station_list.delete(0, "end")
         self._station_row_pairs = []
-        for source, station_key, station_name in self._catalog_stations:
+        total = len(self._catalog_stations)
+        for idx, (source, station_key, station_name) in enumerate(self._catalog_stations):
             pair = (source, station_key)
             checked = pair in self._checked_station_pairs
             self.station_list.insert("end", self._station_display_text(source, station_key, station_name, checked))
             self._station_row_pairs.append(pair)
+            # Listbox は行間調整 API が薄いため、空行スペーサーを挟んで視認性を上げる。
+            if idx < total - 1:
+                self.station_list.insert("end", " ")
+                self._station_row_pairs.append(None)
         self.station_list.selection_clear(0, "end")
 
     def _selected_station_pairs_in_order(self) -> list[tuple[str, str]]:
         """チェック済み観測所を表示順で返す。"""
 
-        return [pair for pair in self._station_row_pairs if pair in self._checked_station_pairs]
+        return [pair for pair in self._station_row_pairs if pair is not None and pair in self._checked_station_pairs]
 
     def _toggle_station_at_index(self, index: int) -> None:
         """指定行の観測所チェックをトグルし、候補日を再計算する。"""
@@ -535,12 +544,24 @@ class HydrologyGraphsApp(tk.Toplevel):
         if index < 0 or index >= len(self._station_row_pairs):
             return
         pair = self._station_row_pairs[index]
+        if pair is None:
+            return
         if pair in self._checked_station_pairs:
             self._checked_station_pairs.remove(pair)
         else:
             self._checked_station_pairs.add(pair)
+        self._station_selection_dirty = True
         self._render_station_check_list()
-        self._recompute_base_date_candidates_for_selected_stations()
+
+    def _station_checkbox_hit_width(self) -> int:
+        """チェック記号として有効に扱うクリック幅(px)を返す。"""
+
+        try:
+            font = tkfont.nametofont(str(self.station_list.cget("font")))
+            # "☐ " ぶんの描画幅 + 余裕を当たり判定に使う。
+            return max(18, int(font.measure("☐ ")) + 6)
+        except Exception:  # noqa: BLE001
+            return 24
 
     def _on_station_list_click(self, event) -> str:
         """観測所リストクリックでチェック状態を切り替える。"""
@@ -549,6 +570,16 @@ class HydrologyGraphsApp(tk.Toplevel):
             index = int(self.station_list.nearest(event.y))
         except Exception:  # noqa: BLE001
             return "break"
+        bbox = self.station_list.bbox(index)
+        if not bbox:
+            return "break"
+        pair = self._station_row_pairs[index] if 0 <= index < len(self._station_row_pairs) else None
+        if pair is None:
+            return "break"
+        x, _y, _w, _h = bbox
+        if int(getattr(event, "x", 0)) > x + self._station_checkbox_hit_width():
+            # ラベル領域クリックではトグルせず、チェック記号だけを当たり判定にする。
+            return "break"
         self._toggle_station_at_index(index)
         return "break"
 
@@ -556,15 +587,26 @@ class HydrologyGraphsApp(tk.Toplevel):
         """観測所を全選択する。"""
 
         self._checked_station_pairs = {(source, key) for source, key, _name in self._catalog_stations}
+        self._station_selection_dirty = True
         self._render_station_check_list()
-        self._recompute_base_date_candidates_for_selected_stations()
 
     def _clear_all_stations(self) -> None:
         """観測所選択を全解除する。"""
 
         self._checked_station_pairs.clear()
+        self._station_selection_dirty = True
         self._render_station_check_list()
+
+    def _apply_station_checks(self) -> None:
+        """観測所チェックを基準日候補へ反映する。"""
+
+        selected_pairs = self._selected_station_pairs_in_order()
+        if selected_pairs:
+            if not self._ensure_full_catalog_loaded():
+                return
         self._recompute_base_date_candidates_for_selected_stations()
+        self._station_selection_dirty = False
+        self._append_log(f"[STATION] apply checks selected={len(selected_pairs)} dates={len(self._base_dates)}")
 
     def _recompute_base_date_candidates_for_selected_stations(self) -> None:
         """選択観測所（和集合）で基準日候補を更新する。"""
@@ -583,6 +625,27 @@ class HydrologyGraphsApp(tk.Toplevel):
                 observed = pd.to_datetime(joined["observed_at"], errors="coerce")
                 self._base_dates = sorted({ts.date().isoformat() for ts in observed.dropna()})
         self._refresh_base_date_ymd_controls()
+
+    def _ensure_full_catalog_loaded(self) -> bool:
+        """詳細読込が必要な処理向けにフルカタログを確保する。"""
+
+        if self._catalog is not None and not self._catalog.data.empty:
+            return True
+        parquet_dir = self.parquet_dir.get().strip()
+        if not parquet_dir:
+            messagebox.showerror("入力エラー", "Parquet ディレクトリを指定してください。")
+            return False
+        try:
+            self._append_log(f"[SCAN] detailed load start {parquet_dir}")
+            catalog = self.service.scan_catalog(parquet_dir)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("読込エラー", str(exc))
+            return False
+        self._catalog = catalog
+        self._append_log(
+            f"[SCAN] detailed load done rows={len(catalog.data)} invalid_files={len(catalog.invalid_files)}"
+        )
+        return True
 
     def _refresh_base_date_ymd_controls(self) -> None:
         """基準日候補を YYYY/MM/DD の3プルダウンへ反映する。"""
@@ -1195,6 +1258,36 @@ class HydrologyGraphsApp(tk.Toplevel):
             self.batch_status.set("停止要求中...")
             self._append_log("[RUN] stop requested")
 
+    def _is_effective_default_style(self, payload: dict[str, Any]) -> bool:
+        """現在スタイルが実質デフォルトかを判定する。"""
+
+        current = load_style(payload=payload)
+        baseline = load_style(payload=default_style())
+        if any(msg.startswith("error:") for msg in current.warnings):
+            return False
+        return current.style == baseline.style
+
+    def _confirm_default_style_before_run(self, payload: dict[str, Any]) -> bool:
+        """デフォルトスタイル実行時の確認ダイアログ。"""
+
+        if not self._is_effective_default_style(payload):
+            return True
+        response = messagebox.askyesnocancel(
+            "スタイル確認",
+            "スタイルが初期値のままです。スタイル調整しますか？\n\n"
+            "はい: スタイル調整へ移動\n"
+            "いいえ: そのまま実行\n"
+            "キャンセル: 実行中止",
+            icon="warning",
+        )
+        if response is None:
+            return False
+        if response is True:
+            self.notebook.select(self.style_tab)
+            self.preview_message.set("スタイル調整タブへ移動しました。")
+            return False
+        return True
+
     def _set_running_state(self, running: bool) -> None:
         """実行中かどうかに応じて UI をロック/解除する。"""
 
@@ -1231,6 +1324,23 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         self.log_text.insert("end", message.rstrip() + "\n")
         self.log_text.see("end")
+
+    def _on_result_row_double_click(self, event) -> str:
+        """結果行ダブルクリック時に出力先フルパスを表示する。"""
+
+        item_id = self.result_tree.identify_row(event.y)
+        if not item_id:
+            return "break"
+        values = self.result_tree.item(item_id, "values")
+        if not values:
+            return "break"
+        target_id = str(values[0])
+        output_path = self._result_output_paths.get(target_id, "").strip()
+        if output_path:
+            messagebox.showinfo("出力先", output_path)
+        else:
+            messagebox.showinfo("出力先", "この行の出力先はまだありません。")
+        return "break"
 
     def _open_other(self, app_key: str) -> None:
         """別アプリへ遷移する。"""

@@ -22,6 +22,9 @@ def run_precheck(app) -> None:
     if app._scan_running:
         messagebox.showwarning("スキャン中", "スキャン完了後に実行前検証を行ってください。")
         return
+    if getattr(app, "_station_selection_dirty", False):
+        messagebox.showwarning("未反映", "観測所チェックが未反映です。先に「チェック反映」を押してください。")
+        return
     graph_types, event_windows_by_graph = _selected_graph_matrix(app)
     if not graph_types:
         messagebox.showerror("入力エラー", "グラフ種別を1つ以上選択してください。")
@@ -51,16 +54,15 @@ def run_precheck(app) -> None:
     app._append_log(
         f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)} windows={event_windows}"
     )
+    if not app._ensure_full_catalog_loaded():
+        return
     threshold_file = app.threshold_path.get().strip() or None
     threshold_result = load_thresholds_with_cache(threshold_file, cache=app._threshold_cache)
-    if app._catalog is not None:
-        result = app.service.precheck_with_catalog(
-            catalog=app._catalog,
-            data=precheck_input,
-            threshold_result=threshold_result,
-        )
-    else:
-        result = app.service.precheck(precheck_input)
+    result = app.service.precheck_with_catalog(
+        catalog=app._catalog,
+        data=precheck_input,
+        threshold_result=threshold_result,
+    )
 
     app._precheck_ok_targets = graph_targets_from_precheck_items(items=result.items)
     _clear_result_rows(app)
@@ -153,11 +155,15 @@ def start_batch_run(app) -> None:
     if not app._precheck_ok_targets:
         messagebox.showwarning("未検証", "実行前検証でREADY対象を作成してください。")
         return
-    out_dir = filedialog.askdirectory(title="出力先フォルダを選択")
-    if not out_dir:
-        return
     payload = app._style_from_editor()
     if payload is None:
+        return
+    if not app._confirm_default_style_before_run(payload):
+        return
+    if not app._ensure_full_catalog_loaded():
+        return
+    out_dir = filedialog.askdirectory(title="出力先フォルダを選択")
+    if not out_dir:
         return
     app._style_payload = payload
     batch_targets = build_batch_targets(app._precheck_ok_targets)
@@ -314,6 +320,7 @@ def _row_id_for_target_id(target_id: str) -> str:
 
 def _clear_result_rows(app) -> None:
     app._result_row_ids = {}
+    app._result_output_paths = {}
     for item_id in app.result_tree.get_children():
         app.result_tree.delete(item_id)
 
@@ -334,10 +341,14 @@ def _upsert_result_row(
     output_path: str,
 ) -> None:
     row_key = _row_id_for_target_id(target_id)
-    values = (target_id, _window_text(window_days), status, reason, output_path)
+    values = (target_id, _window_text(window_days), status, reason)
     row_id = app._result_row_ids.get(row_key)
     if row_id is None:
         row_id = app.result_tree.insert("", "end", values=values)
         app._result_row_ids[row_key] = row_id
     else:
         app.result_tree.item(row_id, values=values)
+    if output_path:
+        app._result_output_paths[row_key] = output_path
+    else:
+        app._result_output_paths.pop(row_key, None)

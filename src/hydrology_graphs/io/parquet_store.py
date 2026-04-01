@@ -70,6 +70,7 @@ class _FileScanResult:
 
 
 _CATALOG_CACHE: dict[str, _CatalogCacheEntry] = {}
+_STATION_INDEX_CACHE: dict[str, _CatalogCacheEntry] = {}
 _CATALOG_CACHE_LOCK = threading.Lock()
 
 
@@ -87,6 +88,9 @@ class ParquetCatalog:
 
         if self.data.empty:
             return []
+        required = {"source", "station_key", "station_name"}
+        if not required.issubset(set(self.data.columns)):
+            return []
         rows = (
             self.data[["source", "station_key", "station_name"]]
             .drop_duplicates()
@@ -100,6 +104,8 @@ class ParquetCatalog:
         """データ内に含まれる日付一覧を ISO 文字列で返す。"""
 
         if self.data.empty:
+            return []
+        if "observed_at" not in self.data.columns:
             return []
         observed = _to_datetime_series(self.data["observed_at"]).dropna()
         if observed.empty:
@@ -135,30 +141,14 @@ class ParquetCatalog:
 def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
     """ディレクトリ配下の Parquet を走査してカタログ化する。"""
 
-    root = Path(parquet_dir)
-    if not root.exists():
-        raise FileNotFoundError(f"Parquet directory not found: {root}")
-
-    files = sorted(root.rglob("*.parquet"))
-    file_infos: list[tuple[Path, int, int]] = []
-    stat_errors: dict[str, list[str]] = {}
-    for path in files:
-        try:
-            stat = path.stat()
-        except OSError as exc:
-            stat_errors[str(path)] = [f"stat_error: {type(exc).__name__}: {exc}"]
-            continue
-        file_infos.append((path, int(stat.st_size), int(stat.st_mtime_ns)))
-
-    fingerprint = tuple((str(path), size, mtime_ns) for path, size, mtime_ns in file_infos)
-    cache_key = str(root.resolve())
+    root, file_infos, stat_errors, fingerprint, cache_key = _prepare_scan(parquet_dir)
     if not stat_errors:
         with _CATALOG_CACHE_LOCK:
             cached = _CATALOG_CACHE.get(cache_key)
         if cached and cached.fingerprint == fingerprint:
             return cached.catalog
 
-    scan_results = _scan_files_parallel([path for path, _, _ in file_infos])
+    scan_results = _scan_files_parallel([path for path, _, _ in file_infos], columns=None)
     frames: list[pd.DataFrame] = []
     warnings: list[str] = []
     invalid_files: dict[str, list[str]] = dict(stat_errors)
@@ -178,31 +168,93 @@ def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
     return catalog
 
 
-def _scan_files_parallel(paths: list[Path]) -> list[_FileScanResult]:
+def scan_parquet_station_index(parquet_dir: str | Path) -> ParquetCatalog:
+    """観測所一覧表示向けに最小列だけを軽量走査する。"""
+
+    root, file_infos, stat_errors, fingerprint, cache_key = _prepare_scan(parquet_dir)
+    if not stat_errors:
+        with _CATALOG_CACHE_LOCK:
+            cached = _STATION_INDEX_CACHE.get(cache_key)
+        if cached and cached.fingerprint == fingerprint:
+            return cached.catalog
+
+    station_columns = ["source", "station_key", "station_name"]
+    scan_results = _scan_files_parallel([path for path, _, _ in file_infos], columns=station_columns)
+    frames: list[pd.DataFrame] = []
+    warnings: list[str] = []
+    invalid_files: dict[str, list[str]] = dict(stat_errors)
+    for result in scan_results:
+        if result.errors:
+            invalid_files[result.path] = result.errors
+        if not result.frame.empty:
+            frames.append(result.frame)
+        elif result.warning:
+            warnings.append(result.warning)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=station_columns)
+    # 軽量走査は一覧表示が目的のため、最小限の型整形のみ行う。
+    if not merged.empty:
+        merged["source"] = merged["source"].astype(str)
+        merged["station_key"] = merged["station_key"].astype(str)
+        merged["station_name"] = merged["station_name"].fillna("").astype(str)
+        merged = merged.loc[merged["source"].isin(_ALLOWED_SOURCES)].copy()
+    catalog = ParquetCatalog(data=merged, invalid_files=invalid_files, warnings=warnings)
+    if not stat_errors:
+        with _CATALOG_CACHE_LOCK:
+            _STATION_INDEX_CACHE[cache_key] = _CatalogCacheEntry(fingerprint=fingerprint, catalog=catalog)
+    return catalog
+
+
+def _prepare_scan(
+    parquet_dir: str | Path,
+) -> tuple[Path, list[tuple[Path, int, int]], dict[str, list[str]], tuple[tuple[str, int, int], ...], str]:
+    """走査対象のファイル情報とフィンガープリントを組み立てる。"""
+
+    root = Path(parquet_dir)
+    if not root.exists():
+        raise FileNotFoundError(f"Parquet directory not found: {root}")
+
+    files = sorted(root.rglob("*.parquet"))
+    file_infos: list[tuple[Path, int, int]] = []
+    stat_errors: dict[str, list[str]] = {}
+    for path in files:
+        try:
+            stat = path.stat()
+        except OSError as exc:
+            stat_errors[str(path)] = [f"stat_error: {type(exc).__name__}: {exc}"]
+            continue
+        file_infos.append((path, int(stat.st_size), int(stat.st_mtime_ns)))
+
+    fingerprint = tuple((str(path), size, mtime_ns) for path, size, mtime_ns in file_infos)
+    cache_key = str(root.resolve())
+    return root, file_infos, stat_errors, fingerprint, cache_key
+
+
+def _scan_files_parallel(paths: list[Path], *, columns: list[str] | None) -> list[_FileScanResult]:
     """複数Parquetを並列に走査する。"""
 
     if not paths:
         return []
     if len(paths) == 1:
-        return [_scan_single_file(paths[0])]
+        return [_scan_single_file(paths[0], columns=columns)]
 
     max_workers = min(8, max(2, os.cpu_count() or 4))
     results: list[_FileScanResult] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_scan_single_file, path) for path in paths]
+        futures = [executor.submit(_scan_single_file, path, columns=columns) for path in paths]
         for future in as_completed(futures):
             results.append(future.result())
     results.sort(key=lambda item: item.path)
     return results
 
 
-def _scan_single_file(path: Path) -> _FileScanResult:
+def _scan_single_file(path: Path, *, columns: list[str] | None) -> _FileScanResult:
     """1ファイルを読み込み、スキーマ検証後の結果を返す。"""
 
     path_str = str(path)
     try:
         # ファイル単位で読み込み、壊れた 1 件が全体を止めないようにする。
-        raw = pd.read_parquet(path, engine="pyarrow")
+        raw = pd.read_parquet(path, engine="pyarrow", columns=columns)
     except Exception as exc:  # noqa: BLE001
         return _FileScanResult(
             path=path_str,
@@ -210,7 +262,10 @@ def _scan_single_file(path: Path) -> _FileScanResult:
             errors=[f"read_error: {type(exc).__name__}: {exc}"],
         )
 
-    validated, errors = _validate_and_normalize(raw)
+    if columns is not None:
+        validated, errors = _validate_station_columns(raw)
+    else:
+        validated, errors = _validate_and_normalize(raw)
     if validated.empty and not errors:
         return _FileScanResult(
             path=path_str,
@@ -219,6 +274,24 @@ def _scan_single_file(path: Path) -> _FileScanResult:
             warning=f"empty_parquet: {path}",
         )
     return _FileScanResult(path=path_str, frame=validated, errors=errors)
+
+
+def _validate_station_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """軽量走査用: 観測所一覧に必要な列だけを検証して返す。"""
+
+    required = ("source", "station_key", "station_name")
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        return pd.DataFrame(columns=list(required)), [f"missing_columns: {', '.join(missing)}"]
+    work = df[list(required)].copy()
+    work["source"] = work["source"].astype(str)
+    work["station_key"] = work["station_key"].astype(str)
+    work["station_name"] = work["station_name"].fillna("").astype(str)
+    bad_source = ~work["source"].isin(_ALLOWED_SOURCES)
+    if bad_source.any():
+        work = work.loc[~bad_source].copy()
+        return work, ["invalid_source"]
+    return work, []
 
 
 def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
