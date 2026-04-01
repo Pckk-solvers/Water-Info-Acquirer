@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 """互換レイヤー: 旧 services.ui_support は ui.view_models に移動済み。"""
 
-from hydrology_graphs.ui.view_models import (  # noqa: F401
+from __future__ import annotations
+
+from hydrology_graphs.ui.view_models import (
     PreviewChoices,
     build_batch_targets,
     build_preview_choices,

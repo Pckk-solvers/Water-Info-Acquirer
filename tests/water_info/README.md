@@ -13,7 +13,7 @@
   - 生成されるURLの `KIND` / `Dsp*Data` / パラメータ整合性を確認
 
 - `test_dataframe_logic.py`
-  - `display_dt` の+1hシフト、`sheet_year` 判定、空データ時例外を確認
+  - `period_end_at` の+1hシフト、`sheet_year` 判定、空データ時例外を確認
   - Excel出力の最低限スモーク（シート名）も確認
 
 - `test_domain_validation.py`

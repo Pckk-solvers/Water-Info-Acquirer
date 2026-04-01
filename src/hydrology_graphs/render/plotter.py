@@ -1,3 +1,8 @@
+"""水文グラフの Matplotlib 描画処理。
+
+このモジュールは、グラフ種別ごとの見た目と基準線の重畳を担当する。
+"""
+
 from __future__ import annotations
 
 from io import BytesIO
@@ -8,9 +13,25 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import japanize_matplotlib  # noqa: F401  # Matplotlib の日本語フォント設定を有効化する
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import pandas as pd
+
+from ..domain.constants import (
+    GRAPH_ANNUAL_DISCHARGE,
+    GRAPH_ANNUAL_RAINFALL,
+    GRAPH_ANNUAL_WATER_LEVEL,
+    GRAPH_HYDRO_DISCHARGE,
+    GRAPH_HYDRO_WATER_LEVEL,
+    GRAPH_HYETOGRAPH,
+)
+from ..domain.logic import annual_max_by_year
+from ..domain.models import ThresholdRecord
+
+_LINESTYLE_MAP = {"solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-."}
+
 warnings.filterwarnings(
     "ignore",
     message=r".*distutils Version classes are deprecated.*",
@@ -28,26 +49,6 @@ warnings.filterwarnings(
     message=r".*distutils Version classes are deprecated.*",
     category=DeprecationWarning,
 )
-import japanize_matplotlib  # noqa: F401  # Matplotlib の日本語フォント設定を有効化する
-import pandas as pd
-
-"""水文グラフの Matplotlib 描画処理。
-
-このモジュールは、グラフ種別ごとの見た目と基準線の重畳を担当する。
-"""
-
-from ..domain.constants import (
-    GRAPH_ANNUAL_DISCHARGE,
-    GRAPH_ANNUAL_RAINFALL,
-    GRAPH_ANNUAL_WATER_LEVEL,
-    GRAPH_HYDRO_DISCHARGE,
-    GRAPH_HYDRO_WATER_LEVEL,
-    GRAPH_HYETOGRAPH,
-)
-from ..domain.logic import annual_max_by_year
-from ..domain.models import ThresholdRecord
-
-_LINESTYLE_MAP = {"solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-."}
 
 
 def render_graph_png(
@@ -91,9 +92,9 @@ def render_graph_png(
         loc = str(legend_cfg.get("position", "upper right"))
         anchor = legend_cfg.get("fixed_anchor")
         handles, labels = ax.get_legend_handles_labels()
-        filtered = [(h, l) for h, l in zip(handles, labels, strict=False) if _legend_label_visible(l)]
+        filtered = [(h, label) for h, label in zip(handles, labels, strict=False) if _legend_label_visible(label)]
         handles = [h for h, _ in filtered]
-        labels = [l for _, l in filtered]
+        labels = [label for _, label in filtered]
         # 位置を固定したい場合は bbox_to_anchor を使い、通常は標準位置を使う。
         if isinstance(anchor, dict) and "x" in anchor and "y" in anchor:
             if handles:
@@ -141,14 +142,15 @@ def _apply_common_axes_style(ax, graph_style: dict[str, Any]) -> None:
 def _plot_hyetograph(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     """ハイエトグラフを描く。"""
 
-    data = df.sort_values("observed_at").copy()
-    data["observed_at"] = pd.to_datetime(data["observed_at"], errors="coerce")
+    time_col = "period_end_at" if "period_end_at" in df.columns else "observed_at"
+    data = df.sort_values(time_col).copy()
+    data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
     data["value"] = pd.to_numeric(data["value"], errors="coerce").fillna(0.0)
     bar_cfg = graph_style.get("bar", {})
     width_hours = float(graph_style.get("x_axis", {}).get("tick_interval_hours", 1))
     width = float(bar_cfg.get("width", 0.8)) / max(width_hours, 1.0)
     ax.bar(
-        data["observed_at"],
+        data[time_col],
         data["value"],
         width=width,
         color=graph_style.get("bar_color", "#60A5FA"),
@@ -160,10 +162,11 @@ def _plot_hyetograph(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
 def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     """流量・水位の折れ線グラフを描く。"""
 
-    data = df.sort_values("observed_at").copy()
-    data["observed_at"] = pd.to_datetime(data["observed_at"], errors="coerce")
+    time_col = "period_end_at" if "period_end_at" in df.columns else "observed_at"
+    data = df.sort_values(time_col).copy()
+    data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
     ax.plot(
-        data["observed_at"],
+        data[time_col],
         pd.to_numeric(data["value"], errors="coerce"),
         color=graph_style.get("series_color", "#0F766E"),
         linewidth=float(graph_style.get("series_width", 1.5)),

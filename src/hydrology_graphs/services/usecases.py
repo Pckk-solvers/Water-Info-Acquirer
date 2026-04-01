@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Callable
 
 import pandas as pd
-
-from ..domain.constants import EVENT_GRAPH_TYPES
 from ..domain.logic import (
     annual_max_by_year,
     annual_max_series,
@@ -618,8 +616,9 @@ def _evaluate_event_windows(
             parsed = _parse_date(base_datetime)
             if parsed is not None:
                 start_3, end_3 = event_window_bounds(parsed, 3)
-                observed = pd.to_datetime(draw_df_5["observed_at"], errors="coerce")
-                mask = (observed >= pd.Timestamp(start_3)) & (observed <= pd.Timestamp(end_3))
+                time_col = "period_end_at" if "period_end_at" in draw_df_5.columns else "observed_at"
+                observed = pd.to_datetime(draw_df_5[time_col], errors="coerce")
+                mask = (observed >= pd.Timestamp(start_3)) & (observed < pd.Timestamp(end_3))
                 draw_df_3 = draw_df_5.loc[mask].copy()
                 ok_3, reason_3 = validate_event_series_complete(draw_df_3, parsed, 3)
                 if ok_3:

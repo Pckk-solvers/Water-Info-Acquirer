@@ -66,7 +66,7 @@ def test_scan_parquet_catalog_normalizes_legacy_jma_hourly_timestamps(tmp_path):
     observed = pd.to_datetime(catalog.data["observed_at"]).dt.strftime("%Y-%m-%d %H:%M:%S").tolist()
 
     assert observed == [
-        "2026-02-02 00:00:00",
         "2026-02-02 01:00:00",
-        "2026-02-02 23:00:00",
+        "2026-02-02 02:00:00",
+        "2026-02-03 00:00:00",
     ]

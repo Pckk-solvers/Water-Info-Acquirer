@@ -10,7 +10,7 @@ from jma_rainfall_pipeline.logger.app_logger import set_runtime_log_options, set
 from jma_rainfall_pipeline.parser import parse_html
 
 from ...domain.models import JMAStationInput, RainfallQuery, RainfallRecord
-from ...domain.normalizer import infer_quality, normalize_observed_at, normalize_rainfall_value
+from ...domain.normalizer import infer_quality, normalize_period, normalize_rainfall_value
 
 _NO_DATA_MARKERS = (
     "データは存在しません",
@@ -147,9 +147,8 @@ def fetch_jma_rainfall(
             observed_at = _extract_datetime(row, sample_dt, query.interval)
             if observed_at is None:
                 continue
-            observed_at = normalize_observed_at(observed_at, interval=query.interval)
-            observed_at = _align_hourly_timestamp_to_waterinfo(observed_at, interval=query.interval)
-            if observed_at < query.start_at or observed_at > query.end_at:
+            period_start_at, period_end_at = normalize_period(observed_at, interval=query.interval)
+            if period_start_at < query.start_at or period_end_at > query.end_at:
                 continue
 
             rainfall_mm = normalize_rainfall_value(row.get("precipitation"))
@@ -161,21 +160,22 @@ def fetch_jma_rainfall(
                     source="jma",
                     station_key=station_key,
                     station_name=station_name,
-                    observed_at=observed_at,
+                    observed_at=period_end_at,
                     interval=query.interval,
                     rainfall_mm=rainfall_mm,
+                    period_start_at=period_start_at,
+                    period_end_at=period_end_at,
                     quality=infer_quality(rainfall_mm),
                     raw=dict(row) if include_raw else {},
                 )
             )
 
-    records.sort(key=lambda item: (item.station_key, item.observed_at))
+    records.sort(key=lambda item: (item.station_key, item.period_end_at or item.observed_at))
     return records
 
 
 def _align_hourly_timestamp_to_waterinfo(observed_at: datetime, *, interval: str) -> datetime:
-    if interval == "1hour":
-        return observed_at - timedelta(hours=1)
+    # Deprecated: 時刻補正は normalize_period() 側へ集約済み。
     return observed_at
 
 

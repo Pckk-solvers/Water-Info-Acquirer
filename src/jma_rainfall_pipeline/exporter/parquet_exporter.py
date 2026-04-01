@@ -12,6 +12,8 @@ _UNIFIED_COLUMNS = [
     "source",
     "station_key",
     "station_name",
+    "period_start_at",
+    "period_end_at",
     "observed_at",
     "metric",
     "value",
@@ -28,6 +30,8 @@ def _save_unified_records_parquet(records: list[dict[str, Any]], output_path: Pa
     df = pd.DataFrame(records, columns=_UNIFIED_COLUMNS)
     if df.empty:
         df = pd.DataFrame(columns=_UNIFIED_COLUMNS)
+    df["period_start_at"] = pd.to_datetime(df.get("period_start_at"), errors="coerce")
+    df["period_end_at"] = pd.to_datetime(df.get("period_end_at"), errors="coerce")
     df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, engine="pyarrow", index=False)
@@ -75,11 +79,9 @@ def _extract_observed_at(row: dict[str, Any], interval_label: str) -> pd.Timesta
         ts = pd.to_datetime(row.get("datetime"), errors="coerce")
         if not pd.isna(ts):
             if interval_label == "hourly":
-                # 旧データの 23:59:59.999999 は 24:00 相当として扱い、Hydro時刻へ寄せる。
+                # 旧データの 23:59:59.999999 は 24:00 相当として扱う。
                 if ts.hour == 23 and ts.minute == 59 and ts.second == 59 and ts.microsecond >= 999000:
                     ts = ts + pd.Timedelta(microseconds=1)
-                # Hydro時刻ルール: 1時→00:00, 24時(翌日00:00)→23:00。
-                ts = ts - pd.Timedelta(hours=1)
             elif interval_label == "10min":
                 # 旧データ互換: 23:59:59.999999 を翌日 00:00 にそろえる。
                 if ts.hour == 23 and ts.minute == 59 and ts.second == 59 and ts.microsecond >= 999000:
@@ -89,7 +91,7 @@ def _extract_observed_at(row: dict[str, Any], interval_label: str) -> pd.Timesta
         ts = pd.to_datetime(row.get("date"), errors="coerce")
         if pd.isna(ts):
             return None
-        return ts.replace(hour=0, minute=0, second=0, microsecond=0)
+        return ts.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=1)
     if "date" in row and "time" in row:
         ts = pd.to_datetime(f"{row.get('date')} {row.get('time')}", errors="coerce")
         if not pd.isna(ts):
@@ -134,10 +136,12 @@ def export_weather_parquet(
 
     value_col = "precipitation_total" if interval_label == "daily" else "precipitation"
     rows: list[dict[str, Any]] = []
+    interval_hours = {"hourly": 1.0, "daily": 24.0, "10min": 10.0 / 60.0}[interval_label]
     for row in df.to_dict(orient="records"):
-        observed_at = _extract_observed_at(row, interval_label)
-        if observed_at is None or pd.isna(observed_at):
+        period_end_at = _extract_observed_at(row, interval_label)
+        if period_end_at is None or pd.isna(period_end_at):
             continue
+        period_start_at = period_end_at - pd.to_timedelta(interval_hours, unit="h")
         value = pd.to_numeric(row.get(value_col), errors="coerce")
         value_float = None if pd.isna(value) else float(value)
         rows.append(
@@ -145,7 +149,9 @@ def export_weather_parquet(
                 "source": "jma",
                 "station_key": station_key,
                 "station_name": station_name,
-                "observed_at": observed_at.to_pydatetime(),
+                "period_start_at": period_start_at.to_pydatetime(),
+                "period_end_at": period_end_at.to_pydatetime(),
+                "observed_at": period_end_at.to_pydatetime(),
                 "metric": "rainfall",
                 "value": value_float,
                 "unit": "mm",

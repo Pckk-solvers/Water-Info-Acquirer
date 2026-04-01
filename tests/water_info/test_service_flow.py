@@ -35,7 +35,7 @@ def test_fetch_hourly_dataframe_for_code_builds_df_and_path(monkeypatch, tmp_pat
 def test_write_hourly_excel_creates_file(tmp_path):
     df = pd.DataFrame(
         {
-            "display_dt": pd.date_range("2024-01-01", periods=3, freq="h"),
+            "period_end_at": pd.date_range("2024-01-01", periods=3, freq="h"),
             "水位": [1.0, 2.0, 3.0],
             "sheet_year": [2024, 2024, 2024],
         }

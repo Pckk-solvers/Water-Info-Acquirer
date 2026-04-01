@@ -17,6 +17,8 @@ _REQUIRED_COLUMNS = (
     "source",
     "station_key",
     "station_name",
+    "period_start_at",
+    "period_end_at",
     "observed_at",
     "metric",
     "value",
@@ -49,6 +51,14 @@ def _to_datetime_series(values: pd.Series) -> pd.Series:
         return pd.to_datetime(values, errors="coerce", format="mixed")
     except TypeError:
         return pd.to_datetime(values, errors="coerce")
+
+
+def _interval_hours(interval: str) -> float:
+    if interval == "1day":
+        return 24.0
+    if interval == "1hour":
+        return 1.0
+    return 10.0 / 60.0
 
 
 @dataclass(slots=True)
@@ -105,9 +115,10 @@ class ParquetCatalog:
 
         if self.data.empty:
             return []
-        if "observed_at" not in self.data.columns:
+        time_col = "period_end_at" if "period_end_at" in self.data.columns else "observed_at"
+        if time_col not in self.data.columns:
             return []
-        observed = _to_datetime_series(self.data["observed_at"]).dropna()
+        observed = _to_datetime_series(self.data[time_col]).dropna()
         if observed.empty:
             return []
         return sorted({ts.date().isoformat() for ts in observed})
@@ -132,10 +143,15 @@ class ParquetCatalog:
         selected = self.data.loc[mask].copy()
         if selected.empty:
             return selected
-        selected["observed_at"] = _to_datetime_series(selected["observed_at"])
+        if "period_end_at" in selected.columns:
+            selected["period_end_at"] = _to_datetime_series(selected["period_end_at"])
+            selected["observed_at"] = selected["period_end_at"]
+        else:
+            selected["observed_at"] = _to_datetime_series(selected["observed_at"])
         selected["value"] = pd.to_numeric(selected["value"], errors="coerce")
         selected = selected.dropna(subset=["observed_at"])
-        return selected.sort_values("observed_at").reset_index(drop=True)
+        sort_col = "period_end_at" if "period_end_at" in selected.columns else "observed_at"
+        return selected.sort_values(sort_col).reset_index(drop=True)
 
 
 def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
@@ -312,9 +328,13 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     work["unit"] = work["unit"].fillna("").astype(str)
     work["interval"] = work["interval"].astype(str)
     work["quality"] = work["quality"].astype(str)
+    work["period_start_at"] = _to_datetime_series(work["period_start_at"])
+    work["period_end_at"] = _to_datetime_series(work["period_end_at"])
     work["observed_at"] = _to_datetime_series(work["observed_at"])
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
     work = _normalize_legacy_jma_hourly_observed_at(work)
+    work = _fill_period_columns_from_legacy(work)
+    work.loc[work["period_end_at"].notna(), "observed_at"] = work.loc[work["period_end_at"].notna(), "period_end_at"]
 
     bad_source = ~work["source"].isin(_ALLOWED_SOURCES)
     bad_metric = ~work["metric"].isin(_ALLOWED_METRICS)
@@ -356,7 +376,7 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
 
 def _normalize_legacy_jma_hourly_observed_at(df: pd.DataFrame) -> pd.DataFrame:
-    """旧JMA hourly時刻（23:59:59.999999 + 1-24時系）をHydro時刻へ寄せる。"""
+    """旧JMA hourly時刻の 23:59:59.999999 を翌日 00:00 へ揃える。"""
 
     if df.empty:
         return df
@@ -381,9 +401,26 @@ def _normalize_legacy_jma_hourly_observed_at(df: pd.DataFrame) -> pd.DataFrame:
 
         normalized = observed.copy()
         normalized.loc[legacy_midnight_mask] = normalized.loc[legacy_midnight_mask] + pd.Timedelta(microseconds=1)
-        normalized = normalized - pd.Timedelta(hours=1)
         work.loc[idx, "observed_at"] = normalized
 
+    return work
+
+
+def _fill_period_columns_from_legacy(df: pd.DataFrame) -> pd.DataFrame:
+    """period列が欠落した旧スキーマを契約スキーマへ補完する。"""
+
+    if df.empty:
+        return df
+    work = df.copy()
+    missing_end = work["period_end_at"].isna() & work["observed_at"].notna()
+    if missing_end.any():
+        # hydrology_graphs 互換: 旧 observed_at は終端時刻として扱う。
+        work.loc[missing_end, "period_end_at"] = work.loc[missing_end, "observed_at"]
+    missing_start = work["period_start_at"].isna() & work["period_end_at"].notna()
+    if missing_start.any():
+        work.loc[missing_start, "period_start_at"] = work.loc[missing_start, "period_end_at"] - pd.to_timedelta(
+            work.loc[missing_start, "interval"].map(_interval_hours), unit="h"
+        )
     return work
 
 
@@ -396,6 +433,10 @@ def _expand_legacy_schema(df: pd.DataFrame) -> pd.DataFrame:
         if "quality" not in work.columns:
             value_series = pd.to_numeric(work["value"], errors="coerce")
             work["quality"] = value_series.apply(lambda v: "missing" if pd.isna(v) else "normal")
+        if "period_start_at" not in work.columns:
+            work["period_start_at"] = pd.NaT
+        if "period_end_at" not in work.columns:
+            work["period_end_at"] = pd.NaT
         return work
 
     for column, metric, unit in _LEGACY_VALUE_COLUMNS:
@@ -411,5 +452,9 @@ def _expand_legacy_schema(df: pd.DataFrame) -> pd.DataFrame:
         if "quality" not in work.columns:
             value_series = pd.to_numeric(work["value"], errors="coerce")
             work["quality"] = value_series.apply(lambda v: "missing" if pd.isna(v) else "normal")
+        if "period_start_at" not in work.columns:
+            work["period_start_at"] = pd.NaT
+        if "period_end_at" not in work.columns:
+            work["period_end_at"] = pd.NaT
         break
     return work

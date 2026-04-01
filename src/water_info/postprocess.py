@@ -28,14 +28,14 @@ def load_hourly(path: str | Path) -> pd.DataFrame:
             raise ValueError(f"シートが見つかりません: {file_path}")
         sheet = candidates
     df = pd.read_excel(file_path, sheet_name=sheet, usecols=[0, 1], header=0)
-    df.columns = ["display_dt", "value"]
-    df["display_dt"] = pd.to_datetime(df["display_dt"], errors="coerce")
+    df.columns = ["period_end_at", "value"]
+    df["period_end_at"] = pd.to_datetime(df["period_end_at"], errors="coerce")
     df["value"] = pd.to_numeric(df["value"], errors="coerce").apply(
         lambda x: float(Decimal(str(x)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
         if pd.notna(x)
         else math.nan
     )
-    df["hydro_date"] = (df["display_dt"] - pd.Timedelta(hours=1)).dt.date
+    df["hydro_date"] = (df["period_end_at"] - pd.Timedelta(hours=1)).dt.date
     # 1日あたりの件数が1件以下なら日データを渡している可能性が高いので検知
     counts = df.groupby("hydro_date").size()
     if not counts.empty and counts.max() <= 1:
@@ -298,7 +298,7 @@ def build_peaks(df_hour_raw: pd.DataFrame) -> pd.DataFrame:
             {
                 "hydro_date": hydro_date,
                 "peak_max_value": rec["value"],
-                "peak_max_time": rec["display_dt"],
+                "peak_max_time": rec["period_end_at"],
             }
         )
     df = pd.DataFrame(records)
@@ -384,8 +384,8 @@ def build_year_summary(
                 ser_ikyo = g[col_name] if col_name in g.columns else pd.Series(dtype=float)
                 val = ser_ikyo.dropna().iloc[0] if not ser_ikyo.dropna().empty else math.nan
                 rec[col_name] = val
-        # 時間データから最大/最小とその時刻（display_dt）を取得
-        g_hour = df_hour_raw[df_hour_raw["display_dt"].dt.year == year]
+        # 時間データから最大/最小とその時刻（period_end_at）を取得
+        g_hour = df_hour_raw[df_hour_raw["period_end_at"].dt.year == year]
         if g_hour.dropna(subset=["value"]).empty:
             rec["max_hourly_value"] = math.nan
             rec["max_hourly_time"] = pd.NaT
@@ -394,10 +394,10 @@ def build_year_summary(
         else:
             idx_max = g_hour["value"].idxmax()
             rec["max_hourly_value"] = _round_half_up_scalar(g_hour.loc[idx_max, "value"], ndigits=2)
-            rec["max_hourly_time"] = g_hour.loc[idx_max, "display_dt"]
+            rec["max_hourly_time"] = g_hour.loc[idx_max, "period_end_at"]
             idx_min = g_hour["value"].idxmin()
             rec["min_hourly_value"] = _round_half_up_scalar(g_hour.loc[idx_min, "value"], ndigits=2)
-            rec["min_hourly_time"] = g_hour.loc[idx_min, "display_dt"]
+            rec["min_hourly_time"] = g_hour.loc[idx_min, "period_end_at"]
         # 位況で採用した順位を記録
         for col in target_cols:
             suffix = suffix_map[col]

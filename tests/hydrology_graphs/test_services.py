@@ -9,7 +9,6 @@ from PIL import Image
 from hydrology_graphs.io.style_store import default_style
 from hydrology_graphs.services.dto import BatchRunInput, BatchTarget, PrecheckInput, PreviewInput
 from hydrology_graphs.services.usecases import (
-    HydrologyGraphService,
     precheck_graph_targets,
     preview_graph_target,
     run_graph_batch,

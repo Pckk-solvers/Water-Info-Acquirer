@@ -33,8 +33,10 @@ def test_export_weather_parquet_sets_station_name(monkeypatch, tmp_path):
     saved = pd.read_parquet(out, engine="pyarrow")
     assert out.exists()
     assert set(saved["station_name"].unique()) == {"さいたま"}
-    assert pd.Timestamp(saved.loc[0, "observed_at"]) == pd.Timestamp("2024-01-01 00:00:00")
-    assert pd.Timestamp(saved.loc[1, "observed_at"]) == pd.Timestamp("2024-01-01 01:00:00")
+    assert pd.Timestamp(saved.loc[0, "observed_at"]) == pd.Timestamp("2024-01-01 01:00:00")
+    assert pd.Timestamp(saved.loc[1, "observed_at"]) == pd.Timestamp("2024-01-01 02:00:00")
+    assert pd.Timestamp(saved.loc[0, "period_start_at"]) == pd.Timestamp("2024-01-01 00:00:00")
+    assert pd.Timestamp(saved.loc[0, "period_end_at"]) == pd.Timestamp("2024-01-01 01:00:00")
 
 
 def test_export_weather_parquet_normalizes_legacy_midnight(monkeypatch, tmp_path):
@@ -64,4 +66,5 @@ def test_export_weather_parquet_normalizes_legacy_midnight(monkeypatch, tmp_path
 
     saved = pd.read_parquet(out, engine="pyarrow")
     assert out.exists()
-    assert pd.Timestamp(saved.loc[0, "observed_at"]) == pd.Timestamp("2026-02-01 23:00:00")
+    assert pd.Timestamp(saved.loc[0, "observed_at"]) == pd.Timestamp("2026-02-02 00:00:00")
+    assert pd.Timestamp(saved.loc[0, "period_start_at"]) == pd.Timestamp("2026-02-01 23:00:00")

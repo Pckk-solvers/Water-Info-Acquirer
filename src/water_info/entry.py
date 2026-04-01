@@ -22,6 +22,8 @@ _UNIFIED_COLUMNS = [
     "source",
     "station_key",
     "station_name",
+    "period_start_at",
+    "period_end_at",
     "observed_at",
     "metric",
     "value",
@@ -35,6 +37,8 @@ def _save_unified_records_parquet(records: list[dict], output_path: Path) -> Pat
     df = pd.DataFrame(records, columns=_UNIFIED_COLUMNS)
     if df.empty:
         df = pd.DataFrame(columns=_UNIFIED_COLUMNS)
+    df["period_start_at"] = pd.to_datetime(df.get("period_start_at"), errors="coerce")
+    df["period_end_at"] = pd.to_datetime(df.get("period_end_at"), errors="coerce")
     df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, engine="pyarrow", index=False)
@@ -122,12 +126,16 @@ def _export_water_info_parquet(
                 continue
             value = pd.to_numeric(value_raw, errors="coerce")
             value_float = None if pd.isna(value) else float(value)
+            period_start_at = observed_at.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_end_at = period_start_at + pd.Timedelta(days=1)
             rows.append(
                 {
                     "source": "water_info",
                     "station_key": station_key,
                     "station_name": station_name or "",
-                    "observed_at": observed_at.to_pydatetime(),
+                    "period_start_at": period_start_at.to_pydatetime(),
+                    "period_end_at": period_end_at.to_pydatetime(),
+                    "observed_at": period_end_at.to_pydatetime(),
                     "metric": metric,
                     "value": value_float,
                     "unit": unit,
@@ -136,15 +144,15 @@ def _export_water_info_parquet(
                 }
             )
     else:
-        # 共通スキーマの observed_at は Hydro時刻(00..23)で保持する。
-        # water_info の display_dt は表示用に +1h されているため、保存時は datetime を優先する。
+        # 時刻契約は datetime 列を正とする。
         datetime_col = df.get("datetime")
         datetimes = pd.to_datetime(datetime_col, errors="coerce") if datetime_col is not None else None
-        if datetimes is None or datetimes.isna().all():
-            datetimes = pd.to_datetime(df.get("display_dt"), errors="coerce") - pd.Timedelta(hours=1)
-        for observed_at, value_raw in zip(datetimes, df[value_col]):
-            if pd.isna(observed_at):
+        if datetimes is None:
+            datetimes = pd.Series(dtype="datetime64[ns]")
+        for period_start_at, value_raw in zip(datetimes, df[value_col]):
+            if pd.isna(period_start_at):
                 continue
+            period_end_at = period_start_at + pd.Timedelta(hours=1)
             value = pd.to_numeric(value_raw, errors="coerce")
             value_float = None if pd.isna(value) else float(value)
             rows.append(
@@ -152,7 +160,9 @@ def _export_water_info_parquet(
                     "source": "water_info",
                     "station_key": station_key,
                     "station_name": station_name or "",
-                    "observed_at": observed_at.to_pydatetime(),
+                    "period_start_at": period_start_at.to_pydatetime(),
+                    "period_end_at": period_end_at.to_pydatetime(),
+                    "observed_at": period_end_at.to_pydatetime(),
                     "metric": metric,
                     "value": value_float,
                     "unit": unit,

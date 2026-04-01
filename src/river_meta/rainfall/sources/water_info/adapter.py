@@ -9,7 +9,7 @@ from water_info.infra.http_client import HEADERS, throttled_get
 from water_info.service.flow_fetch import fetch_daily_dataframe_for_code, fetch_hourly_dataframe_for_code
 
 from ...domain.models import RainfallQuery, RainfallRecord, WaterInfoStationInput
-from ...domain.normalizer import infer_quality, normalize_observed_at, normalize_rainfall_value
+from ...domain.normalizer import infer_quality, normalize_period, normalize_rainfall_value
 
 LogFn = Callable[[str], None]
 CancelFn = Callable[[], bool]
@@ -98,8 +98,11 @@ def fetch_waterinfo_rainfall(
                 observed_at = pd.to_datetime(row.get("datetime"), errors="coerce")
                 if pd.isna(observed_at):
                     continue
-                observed = normalize_observed_at(observed_at.to_pydatetime(), interval=query.interval)
-                if observed < query.start_at or observed > query.end_at:
+                period_start_at, period_end_at = normalize_period(
+                    observed_at.to_pydatetime(),
+                    interval=query.interval,
+                )
+                if period_start_at < query.start_at or period_end_at > query.end_at:
                     continue
                 rainfall_mm = normalize_rainfall_value(row.get(value_col))
                 records.append(
@@ -107,9 +110,11 @@ def fetch_waterinfo_rainfall(
                         source="water_info",
                         station_key=station.station_key,
                         station_name=station_name,
-                        observed_at=observed,
+                        observed_at=period_end_at,
                         interval=query.interval,
                         rainfall_mm=rainfall_mm,
+                        period_start_at=period_start_at,
+                        period_end_at=period_end_at,
                         quality=infer_quality(rainfall_mm),
                         raw=dict(row) if include_raw else {},
                     )
@@ -139,8 +144,11 @@ def fetch_waterinfo_rainfall(
             observed_at = pd.to_datetime(row.get("date"), errors="coerce")
             if pd.isna(observed_at):
                 continue
-            observed = normalize_observed_at(observed_at.to_pydatetime(), interval=query.interval)
-            if observed < query.start_at or observed > query.end_at:
+            period_start_at, period_end_at = normalize_period(
+                observed_at.to_pydatetime(),
+                interval=query.interval,
+            )
+            if period_start_at < query.start_at or period_end_at > query.end_at:
                 continue
             rainfall_mm = normalize_rainfall_value(row.get(data_label))
             records.append(
@@ -148,9 +156,11 @@ def fetch_waterinfo_rainfall(
                     source="water_info",
                     station_key=station.station_key,
                     station_name=station_name,
-                    observed_at=observed,
+                    observed_at=period_end_at,
                     interval=query.interval,
                     rainfall_mm=rainfall_mm,
+                    period_start_at=period_start_at,
+                    period_end_at=period_end_at,
                     quality=infer_quality(rainfall_mm),
                     raw=dict(row) if include_raw else {},
                 )
@@ -158,7 +168,7 @@ def fetch_waterinfo_rainfall(
 
     if not records:
         warn("water_info adapter returned no rainfall records")
-    records.sort(key=lambda item: (item.station_key, item.observed_at))
+    records.sort(key=lambda item: (item.station_key, item.period_end_at or item.observed_at))
     return records
 
 

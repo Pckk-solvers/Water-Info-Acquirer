@@ -60,8 +60,19 @@ def infer_quality(rainfall_mm: float | None) -> str:
 
 
 def normalize_observed_at(observed_at: datetime, *, interval: RainfallInterval) -> datetime:
+    """互換API: 新契約では period_end_at 正規化として扱う。"""
+
+    return normalize_period_end(observed_at, interval=interval)
+
+
+def normalize_period_end(observed_at: datetime, *, interval: RainfallInterval) -> datetime:
+    """生時刻を契約上の period_end_at へ正規化する。"""
+
     if interval == "1day":
-        return datetime(observed_at.year, observed_at.month, observed_at.day)
+        day_head = datetime(observed_at.year, observed_at.month, observed_at.day)
+        if observed_at.time() == day_head.time():
+            return day_head + timedelta(days=1)
+        return day_head + timedelta(days=1)
 
     if (
         observed_at.hour == 23
@@ -73,3 +84,21 @@ def normalize_observed_at(observed_at: datetime, *, interval: RainfallInterval) 
         return next_second.replace(second=0, microsecond=0)
 
     return observed_at
+
+
+def derive_period_start(period_end_at: datetime, *, interval: RainfallInterval) -> datetime:
+    """period_end_at から period_start_at を導出する。"""
+
+    if interval == "1day":
+        return period_end_at - timedelta(days=1)
+    if interval == "1hour":
+        return period_end_at - timedelta(hours=1)
+    return period_end_at - timedelta(minutes=10)
+
+
+def normalize_period(observed_at: datetime, *, interval: RainfallInterval) -> tuple[datetime, datetime]:
+    """生時刻から (period_start_at, period_end_at) を返す。"""
+
+    period_end_at = normalize_period_end(observed_at, interval=interval)
+    period_start_at = derive_period_start(period_end_at, interval=interval)
+    return period_start_at, period_end_at

@@ -36,7 +36,7 @@ def test_process_period_date_display_for_code_empty_data_raises(fake_bs4, fake_s
         )
 
 
-def test_process_data_for_code_display_dt_and_sheet_year(fake_bs4, fake_station_payload, make_values_payload, fake_throttled_get_factory, monkeypatch, tmp_path):
+def test_process_data_for_code_period_end_at_and_sheet_year(fake_bs4, fake_station_payload, make_values_payload, fake_throttled_get_factory, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     values = [str(i) for i in range(1, 24 * 31 + 1)]
     payloads = [fake_station_payload, make_values_payload(values)]
@@ -58,11 +58,11 @@ def test_process_data_for_code_display_dt_and_sheet_year(fake_bs4, fake_station_
     assert "全期間" in xls.sheet_names
 
     df = pd.read_excel(file_path, sheet_name="2024年", usecols=[0, 1])
-    df.columns = ["display_dt", "value"]
-    df["display_dt"] = pd.to_datetime(df["display_dt"], errors="coerce")
+    df.columns = ["period_end_at", "value"]
+    df["period_end_at"] = pd.to_datetime(df["period_end_at"], errors="coerce")
 
-    assert df.loc[0, "display_dt"] == pd.Timestamp("2024-12-01 01:00")
-    assert df.loc[df.index.max(), "display_dt"] == pd.Timestamp("2025-01-01 00:00")
+    assert df.loc[0, "period_end_at"] == pd.Timestamp("2024-12-01 01:00")
+    assert df.loc[df.index.max(), "period_end_at"] == pd.Timestamp("2025-01-01 00:00")
 
 
 def test_process_period_date_display_for_code_excel_smoke(fake_bs4, fake_station_payload, make_values_payload, fake_throttled_get_factory, monkeypatch, tmp_path):
@@ -91,7 +91,6 @@ def test_export_water_info_parquet_hourly_uses_datetime_for_observed_at(tmp_path
     df = pd.DataFrame(
         {
             "datetime": pd.date_range("2025-01-01 00:00:00", periods=3, freq="h"),
-            "display_dt": pd.date_range("2025-01-01 01:00:00", periods=3, freq="h"),
             "雨量": [1.0, 2.0, 3.0],
         }
     )
@@ -112,17 +111,19 @@ def test_export_water_info_parquet_hourly_uses_datetime_for_observed_at(tmp_path
     saved = pd.read_parquet(path, engine="pyarrow")
     observed = pd.to_datetime(saved["observed_at"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S").tolist()
     assert observed == [
-        "2025-01-01 00:00:00",
         "2025-01-01 01:00:00",
         "2025-01-01 02:00:00",
+        "2025-01-01 03:00:00",
     ]
+    starts = pd.to_datetime(saved["period_start_at"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S").tolist()
+    assert starts[0] == "2025-01-01 00:00:00"
 
 
-def test_export_water_info_parquet_hourly_fallback_display_dt_minus_1h(tmp_path, monkeypatch):
+def test_export_water_info_parquet_hourly_without_datetime_is_empty(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     df = pd.DataFrame(
         {
-            "display_dt": pd.date_range("2025-01-01 01:00:00", periods=2, freq="h"),
+            "period_end_at": pd.date_range("2025-01-01 01:00:00", periods=2, freq="h"),
             "雨量": [1.0, 2.0],
         }
     )
@@ -142,7 +143,4 @@ def test_export_water_info_parquet_hourly_fallback_display_dt_minus_1h(tmp_path,
 
     saved = pd.read_parquet(path, engine="pyarrow")
     observed = pd.to_datetime(saved["observed_at"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S").tolist()
-    assert observed == [
-        "2025-01-01 00:00:00",
-        "2025-01-01 01:00:00",
-    ]
+    assert observed == []

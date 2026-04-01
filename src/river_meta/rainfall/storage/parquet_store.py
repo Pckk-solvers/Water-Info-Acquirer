@@ -29,6 +29,8 @@ UNIFIED_PARQUET_COLUMNS = [
     "source",
     "station_key",
     "station_name",
+    "period_start_at",
+    "period_end_at",
     "observed_at",
     "metric",
     "value",
@@ -41,6 +43,8 @@ COMPAT_OUTPUT_COLUMNS = [
     "source",
     "station_key",
     "station_name",
+    "period_start_at",
+    "period_end_at",
     "observed_at",
     "interval",
     "metric",
@@ -73,11 +77,15 @@ def save_records_parquet(records: list[RainfallRecord], output_path: str | Path)
     """RainfallRecord のリストを共通スキーマ (`metric/value`) で保存する。"""
     unified_rows = []
     for r in records:
+        period_start_at = r.period_start_at if r.period_start_at is not None else r.observed_at
+        period_end_at = r.period_end_at if r.period_end_at is not None else r.observed_at
         unified_rows.append({
             "source": r.source,
             "station_key": r.station_key,
             "station_name": r.station_name,
-            "observed_at": r.observed_at,
+            "period_start_at": period_start_at,
+            "period_end_at": period_end_at,
+            "observed_at": period_end_at,
             "metric": "rainfall",
             "value": r.rainfall_mm,
             "unit": "mm",
@@ -101,7 +109,19 @@ def save_unified_records_parquet(records: list[dict], output_path: str | Path) -
     df["metric"] = df["metric"].fillna("").astype(str).str.strip().replace("", "rainfall")
     df["unit"] = df["unit"].fillna("").astype(str).str.strip().replace("", "mm")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df["period_start_at"] = pd.to_datetime(df["period_start_at"], errors="coerce")
+    df["period_end_at"] = pd.to_datetime(df["period_end_at"], errors="coerce")
     df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
+    missing_start = df["period_start_at"].isna() & df["period_end_at"].notna()
+    missing_end = df["period_end_at"].isna() & df["period_start_at"].notna()
+    df.loc[missing_start, "period_start_at"] = df.loc[missing_start, "period_end_at"] - pd.to_timedelta(
+        df.loc[missing_start, "interval"].map(_interval_hours_for_timedelta), unit="h"
+    )
+    df.loc[missing_end, "period_end_at"] = df.loc[missing_end, "period_start_at"] + pd.to_timedelta(
+        df.loc[missing_end, "interval"].map(_interval_hours_for_timedelta), unit="h"
+    )
+    # observed_at は段階互換で period_end_at 同義に寄せる。
+    df.loc[df["period_end_at"].notna(), "observed_at"] = df.loc[df["period_end_at"].notna(), "period_end_at"]
     if "quality" not in df.columns:
         df["quality"] = pd.NA
     missing_quality = df["quality"].isna() | (df["quality"].fillna("").astype(str).str.strip() == "")
@@ -168,6 +188,14 @@ def _to_compat_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         work["observed_at"] = pd.to_datetime(work["observed_at"], errors="coerce")
     else:
         work["observed_at"] = pd.NaT
+    if "period_start_at" in work.columns:
+        work["period_start_at"] = pd.to_datetime(work["period_start_at"], errors="coerce")
+    else:
+        work["period_start_at"] = pd.NaT
+    if "period_end_at" in work.columns:
+        work["period_end_at"] = pd.to_datetime(work["period_end_at"], errors="coerce")
+    else:
+        work["period_end_at"] = pd.NaT
 
     has_unified = {"metric", "value"}.issubset(set(work.columns))
     has_legacy = "rainfall_mm" in work.columns
@@ -198,10 +226,47 @@ def _to_compat_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     work.loc[missing_quality & work["value"].isna(), "quality"] = "missing"
     work.loc[missing_quality & work["value"].notna(), "quality"] = "normal"
 
+    _fill_period_columns_in_place(work)
+    work.loc[work["period_end_at"].notna(), "observed_at"] = work.loc[work["period_end_at"].notna(), "period_end_at"]
+
     for column in COMPAT_OUTPUT_COLUMNS:
         if column not in work.columns:
             work[column] = pd.NA
     return work[COMPAT_OUTPUT_COLUMNS]
+
+
+def _interval_hours_for_timedelta(interval: str) -> float:
+    if interval == "1day":
+        return 24.0
+    if interval == "1hour":
+        return 1.0
+    return 10.0 / 60.0
+
+
+def _fill_period_columns_in_place(work: pd.DataFrame) -> None:
+    """旧Parquet互換: period列を observed_at から補完する。"""
+
+    missing_period = work["period_end_at"].isna() & work["observed_at"].notna()
+    if not missing_period.any():
+        return
+
+    end = work.loc[missing_period, "observed_at"].copy()
+    interval_series = work.loc[missing_period, "interval"].astype(str)
+    source_series = work.loc[missing_period, "source"].astype(str)
+    # 旧Parquet移行方針:
+    # - water_info/jma の 1hour/1day は observed_at を開始時刻として +interval
+    # - 10min は observed_at を終端として維持
+    start_mask = interval_series.isin(["1hour", "1day"]) & source_series.isin(["water_info", "jma"])
+    end.loc[start_mask] = end.loc[start_mask] + pd.to_timedelta(
+        interval_series.loc[start_mask].map(_interval_hours_for_timedelta), unit="h"
+    )
+    work.loc[missing_period, "period_end_at"] = end
+
+    missing_start = work["period_start_at"].isna() & work["period_end_at"].notna()
+    if missing_start.any():
+        work.loc[missing_start, "period_start_at"] = work.loc[missing_start, "period_end_at"] - pd.to_timedelta(
+            work.loc[missing_start, "interval"].map(_interval_hours_for_timedelta), unit="h"
+        )
 
 
 def migrate_legacy_jma_parquets(
