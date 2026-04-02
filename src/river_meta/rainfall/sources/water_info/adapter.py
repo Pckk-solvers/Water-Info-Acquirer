@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, cast
 
 import pandas as pd
 
@@ -90,13 +90,15 @@ def fetch_waterinfo_rainfall(
                 station_name = _parse_station_name_from_file(file_name, station.station_code)
             if df is None or df.empty:
                 continue
+            hourly_df = cast(pd.DataFrame, df)
 
-            for row in _iterate_hourly_rows(df):
+            for row in _iterate_hourly_rows(hourly_df):
                 if _is_cancelled(should_stop):
                     warn("water_info adapter cancelled")
                     break
-                observed_at = pd.to_datetime(row.get("datetime"), errors="coerce")
-                if pd.isna(observed_at):
+                raw_dt = row.get("datetime")
+                observed_at = pd.to_datetime(cast(Any, raw_dt), errors="coerce")
+                if not isinstance(observed_at, pd.Timestamp):
                     continue
                 period_start_at, period_end_at = normalize_period(
                     observed_at.to_pydatetime(),
@@ -136,13 +138,17 @@ def fetch_waterinfo_rainfall(
             station_name = _parse_station_name_from_file(file_name, station.station_code)
         if df is None or df.empty:
             continue
+        if not data_label:
+            continue
+        daily_df = cast(pd.DataFrame, df)
 
-        for row in _iterate_daily_rows(df):
+        for row in _iterate_daily_rows(daily_df):
             if _is_cancelled(should_stop):
                 warn("water_info adapter cancelled")
                 break
-            observed_at = pd.to_datetime(row.get("date"), errors="coerce")
-            if pd.isna(observed_at):
+            raw_date = row.get("date")
+            observed_at = pd.to_datetime(cast(Any, raw_date), errors="coerce")
+            if not isinstance(observed_at, pd.Timestamp):
                 continue
             period_start_at, period_end_at = normalize_period(
                 observed_at.to_pydatetime(),

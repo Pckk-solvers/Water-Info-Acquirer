@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
-from typing import Callable
+from typing import Any, Callable, cast
 
 import pandas as pd
 
@@ -45,19 +45,19 @@ def _to_frequency(interval: str) -> str:
 def _extract_datetime(row: dict, sample_dt: datetime, interval: str) -> datetime | None:
     dt_value = row.get("datetime")
     if dt_value is not None and not pd.isna(dt_value):
-        parsed = pd.to_datetime(dt_value, errors="coerce")
-        if not pd.isna(parsed):
+        parsed = pd.to_datetime(cast(Any, dt_value), errors="coerce")
+        if isinstance(parsed, pd.Timestamp):
             return parsed.to_pydatetime()
 
     date_value = row.get("date")
-    base_date = pd.to_datetime(date_value, errors="coerce")
+    base_date = pd.to_datetime(cast(Any, date_value), errors="coerce")
     if pd.isna(base_date):
         base_date = pd.Timestamp(sample_dt.date())
 
     time_value = row.get("time")
     if time_value is not None and not pd.isna(time_value):
-        parsed = pd.to_datetime(f"{base_date.date()} {time_value}", errors="coerce")
-        if not pd.isna(parsed):
+        parsed = pd.to_datetime(f"{cast(pd.Timestamp, base_date).date()} {time_value}", errors="coerce")
+        if isinstance(parsed, pd.Timestamp):
             return parsed.to_pydatetime()
 
     hour_value = row.get("hour")
@@ -65,10 +65,11 @@ def _extract_datetime(row: dict, sample_dt: datetime, interval: str) -> datetime
         hour_float = float(hour_value)
         hours = int(hour_float)
         minutes = int(round((hour_float - hours) * 60))
-        return (base_date + pd.Timedelta(hours=hours, minutes=minutes)).to_pydatetime()
+        shifted = cast(pd.Timestamp, base_date) + pd.Timedelta(hours=hours, minutes=minutes)
+        return cast(datetime, shifted.to_pydatetime())
 
     if interval == "1day":
-        return datetime.combine(base_date.date(), time.min)
+        return datetime.combine(cast(pd.Timestamp, base_date).date(), time.min)
     return sample_dt
 
 
@@ -105,7 +106,9 @@ def fetch_jma_rainfall(
         should_stop=should_stop,
     )
     frequency = _to_frequency(query.interval)
-    station_tuples = [(s.prefecture_code, s.block_number, s.obs_type) for s in stations]
+    station_tuples: list[tuple[str, str, str | None]] = [
+        (s.prefecture_code, s.block_number, cast(str | None, s.obs_type)) for s in stations
+    ]
     station_map = {(s.prefecture_code, s.block_number): s for s in stations}
 
     records: list[RainfallRecord] = []

@@ -9,7 +9,7 @@ import pandas as pd
 def build_hourly_dataframe(values, start_date: datetime, value_col: str):
     """時間データをDataFrame化し、period_end_at と sheet_year を付与する。"""
     data_date = pd.date_range(start=start_date, periods=len(values), freq="h")
-    df = pd.DataFrame(values, index=data_date, columns=[value_col])
+    df = pd.DataFrame(values, index=data_date, columns=pd.Index([value_col]))
     df = df.reset_index().rename(columns={"index": "datetime"})
     df["period_end_at"] = df["datetime"] + pd.to_timedelta(1, "h")
     df["sheet_year"] = df["datetime"].dt.year

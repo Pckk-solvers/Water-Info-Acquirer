@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 import warnings
 
 import matplotlib
@@ -145,7 +145,8 @@ def _plot_hyetograph(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     time_col = "period_end_at" if "period_end_at" in df.columns else "observed_at"
     data = df.sort_values(time_col).copy()
     data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
-    data["value"] = pd.to_numeric(data["value"], errors="coerce").fillna(0.0)
+    numeric_values = cast(pd.Series, pd.to_numeric(data["value"], errors="coerce"))
+    data["value"] = numeric_values.fillna(0.0)
     bar_cfg = graph_style.get("bar", {})
     width_hours = float(graph_style.get("x_axis", {}).get("tick_interval_hours", 1))
     width = float(bar_cfg.get("width", 0.8)) / max(width_hours, 1.0)

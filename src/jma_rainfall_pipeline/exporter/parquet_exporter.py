@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 import logging
 
 import pandas as pd
 from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import fetch_station_codes
 
-_UNIFIED_COLUMNS = [
+_UNIFIED_COLUMNS = (
     "source",
     "station_key",
     "station_name",
@@ -20,19 +20,22 @@ _UNIFIED_COLUMNS = [
     "unit",
     "interval",
     "quality",
-]
+)
 
 logger = logging.getLogger(__name__)
 _STATION_CACHE: dict[str, dict[str, str]] = {}
 
 
 def _save_unified_records_parquet(records: list[dict[str, Any]], output_path: Path) -> Path:
-    df = pd.DataFrame(records, columns=_UNIFIED_COLUMNS)
+    df = pd.DataFrame(records, columns=pd.Index(_UNIFIED_COLUMNS))
     if df.empty:
-        df = pd.DataFrame(columns=_UNIFIED_COLUMNS)
-    df["period_start_at"] = pd.to_datetime(df.get("period_start_at"), errors="coerce")
-    df["period_end_at"] = pd.to_datetime(df.get("period_end_at"), errors="coerce")
-    df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
+        df = pd.DataFrame(columns=pd.Index(_UNIFIED_COLUMNS))
+    period_start_series = cast(pd.Series, df["period_start_at"])
+    period_end_series = cast(pd.Series, df["period_end_at"])
+    observed_series = cast(pd.Series, df["observed_at"])
+    df["period_start_at"] = pd.to_datetime(period_start_series, errors="coerce")
+    df["period_end_at"] = pd.to_datetime(period_end_series, errors="coerce")
+    df["observed_at"] = pd.to_datetime(observed_series, errors="coerce")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, engine="pyarrow", index=False)
     return output_path
@@ -75,9 +78,10 @@ def _to_codepoints(text: str) -> str:
 
 
 def _extract_observed_at(row: dict[str, Any], interval_label: str) -> pd.Timestamp | None:
-    if "datetime" in row and not pd.isna(row.get("datetime")):
-        ts = pd.to_datetime(row.get("datetime"), errors="coerce")
-        if not pd.isna(ts):
+    raw_datetime = row.get("datetime")
+    if raw_datetime is not None and not pd.isna(raw_datetime):
+        ts = pd.to_datetime(cast(Any, raw_datetime), errors="coerce")
+        if isinstance(ts, pd.Timestamp):
             if interval_label == "hourly":
                 # 旧データの 23:59:59.999999 は 24:00 相当として扱う。
                 if ts.hour == 23 and ts.minute == 59 and ts.second == 59 and ts.microsecond >= 999000:
@@ -86,23 +90,26 @@ def _extract_observed_at(row: dict[str, Any], interval_label: str) -> pd.Timesta
                 # 旧データ互換: 23:59:59.999999 を翌日 00:00 にそろえる。
                 if ts.hour == 23 and ts.minute == 59 and ts.second == 59 and ts.microsecond >= 999000:
                     ts = ts + pd.Timedelta(microseconds=1)
-            return ts
+            return cast(pd.Timestamp, ts)
     if interval_label == "daily":
-        ts = pd.to_datetime(row.get("date"), errors="coerce")
-        if pd.isna(ts):
+        ts = pd.to_datetime(cast(Any, row.get("date")), errors="coerce")
+        if not isinstance(ts, pd.Timestamp):
             return None
-        return ts.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=1)
+        return cast(pd.Timestamp, ts.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=1))
     if "date" in row and "time" in row:
         ts = pd.to_datetime(f"{row.get('date')} {row.get('time')}", errors="coerce")
-        if not pd.isna(ts):
-            return ts
+        if isinstance(ts, pd.Timestamp):
+            return cast(pd.Timestamp, ts)
     if "date" in row and "hour" in row:
-        day = pd.to_datetime(row.get("date"), errors="coerce")
-        hour_value = pd.to_numeric(row.get("hour"), errors="coerce")
-        if not pd.isna(day) and not pd.isna(hour_value):
-            hours = int(float(hour_value))
-            minutes = int(round((float(hour_value) - hours) * 60))
-            return day + pd.to_timedelta(hours=hours, minutes=minutes)
+        day = pd.to_datetime(cast(Any, row.get("date")), errors="coerce")
+        try:
+            hour_float = float(cast(Any, row.get("hour")))
+        except (TypeError, ValueError):
+            return None
+        if isinstance(day, pd.Timestamp):
+            hours = int(hour_float)
+            minutes = int(round((hour_float - hours) * 60))
+            return cast(pd.Timestamp, day + pd.Timedelta(hours=hours, minutes=minutes))
     return None
 
 
@@ -139,11 +146,11 @@ def export_weather_parquet(
     interval_hours = {"hourly": 1.0, "daily": 24.0, "10min": 10.0 / 60.0}[interval_label]
     for row in df.to_dict(orient="records"):
         period_end_at = _extract_observed_at(row, interval_label)
-        if period_end_at is None or pd.isna(period_end_at):
+        if period_end_at is None:
             continue
         period_start_at = period_end_at - pd.to_timedelta(interval_hours, unit="h")
-        value = pd.to_numeric(row.get(value_col), errors="coerce")
-        value_float = None if pd.isna(value) else float(value)
+        numeric_value = pd.to_numeric(row.get(value_col), errors="coerce")
+        value_float = float(numeric_value) if isinstance(numeric_value, (int, float)) and not pd.isna(numeric_value) else None
         rows.append(
             {
                 "source": "jma",

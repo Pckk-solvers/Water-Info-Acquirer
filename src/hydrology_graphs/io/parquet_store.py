@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import threading
+from typing import cast
 
 import pandas as pd
 
@@ -101,13 +102,9 @@ class ParquetCatalog:
         required = {"source", "station_key", "station_name"}
         if not required.issubset(set(self.data.columns)):
             return []
-        rows = (
-            self.data[["source", "station_key", "station_name"]]
-            .drop_duplicates()
-            .sort_values(["source", "station_key"])
-            .itertuples(index=False, name=None)
-        )
-        return [(str(src), str(key), str(name or "")) for src, key, name in rows]
+        rows = self.data[["source", "station_key", "station_name"]].drop_duplicates().itertuples(index=False, name=None)
+        sorted_rows = sorted(rows, key=lambda r: (str(r[0]), str(r[1])))
+        return [(str(src), str(key), str(name or "")) for src, key, name in sorted_rows]
 
     @property
     def base_dates(self) -> list[str]:
@@ -118,7 +115,7 @@ class ParquetCatalog:
         time_col = "period_end_at" if "period_end_at" in self.data.columns else "observed_at"
         if time_col not in self.data.columns:
             return []
-        observed = _to_datetime_series(self.data[time_col]).dropna()
+        observed = _to_datetime_series(cast(pd.Series, self.data[time_col])).dropna()
         if observed.empty:
             return []
         return sorted({ts.date().isoformat() for ts in observed})
@@ -144,14 +141,14 @@ class ParquetCatalog:
         if selected.empty:
             return selected
         if "period_end_at" in selected.columns:
-            selected["period_end_at"] = _to_datetime_series(selected["period_end_at"])
+            selected["period_end_at"] = _to_datetime_series(cast(pd.Series, selected["period_end_at"]))
             selected["observed_at"] = selected["period_end_at"]
         else:
-            selected["observed_at"] = _to_datetime_series(selected["observed_at"])
+            selected["observed_at"] = _to_datetime_series(cast(pd.Series, selected["observed_at"]))
         selected["value"] = pd.to_numeric(selected["value"], errors="coerce")
         selected = selected.dropna(subset=["observed_at"])
         sort_col = "period_end_at" if "period_end_at" in selected.columns else "observed_at"
-        return selected.sort_values(sort_col).reset_index(drop=True)
+        return selected.sort_values(by=sort_col).reset_index(drop=True)
 
 
 def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
@@ -176,7 +173,7 @@ def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
         elif result.warning:
             warnings.append(result.warning)
 
-    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=_REQUIRED_COLUMNS)
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=pd.Index(_REQUIRED_COLUMNS))
     catalog = ParquetCatalog(data=merged, invalid_files=invalid_files, warnings=warnings)
     if not stat_errors:
         with _CATALOG_CACHE_LOCK:
@@ -207,13 +204,13 @@ def scan_parquet_station_index(parquet_dir: str | Path) -> ParquetCatalog:
         elif result.warning:
             warnings.append(result.warning)
 
-    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=station_columns)
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=pd.Index(station_columns))
     # 軽量走査は一覧表示が目的のため、最小限の型整形のみ行う。
     if not merged.empty:
         merged["source"] = merged["source"].astype(str)
         merged["station_key"] = merged["station_key"].astype(str)
         merged["station_name"] = merged["station_name"].fillna("").astype(str)
-        merged = merged.loc[merged["source"].isin(_ALLOWED_SOURCES)].copy()
+        merged = merged.loc[merged["source"].isin(list(_ALLOWED_SOURCES))].copy()
     catalog = ParquetCatalog(data=merged, invalid_files=invalid_files, warnings=warnings)
     if not stat_errors:
         with _CATALOG_CACHE_LOCK:
@@ -270,11 +267,11 @@ def _scan_single_file(path: Path, *, columns: list[str] | None) -> _FileScanResu
     path_str = str(path)
     try:
         # ファイル単位で読み込み、壊れた 1 件が全体を止めないようにする。
-        raw = pd.read_parquet(path, engine="pyarrow", columns=columns)
+        raw = cast(pd.DataFrame, pd.read_parquet(path, engine="pyarrow", columns=columns))
     except Exception as exc:  # noqa: BLE001
         return _FileScanResult(
             path=path_str,
-            frame=pd.DataFrame(columns=_REQUIRED_COLUMNS),
+            frame=pd.DataFrame(columns=pd.Index(_REQUIRED_COLUMNS)),
             errors=[f"read_error: {type(exc).__name__}: {exc}"],
         )
 
@@ -298,13 +295,13 @@ def _validate_station_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]
     required = ("source", "station_key", "station_name")
     missing = [column for column in required if column not in df.columns]
     if missing:
-        return pd.DataFrame(columns=list(required)), [f"missing_columns: {', '.join(missing)}"]
-    work = df[list(required)].copy()
+        return pd.DataFrame(columns=pd.Index(required)), [f"missing_columns: {', '.join(missing)}"]
+    work = cast(pd.DataFrame, df[list(required)].copy())
     work["source"] = work["source"].astype(str)
     work["station_key"] = work["station_key"].astype(str)
     work["station_name"] = work["station_name"].fillna("").astype(str)
-    bad_source = ~work["source"].isin(_ALLOWED_SOURCES)
-    if bad_source.any():
+    bad_source = ~work["source"].isin(list(_ALLOWED_SOURCES))
+    if bool(bad_source.any()):
         work = work.loc[~bad_source].copy()
         return work, ["invalid_source"]
     return work, []
@@ -318,9 +315,9 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     work = _expand_legacy_schema(df)
     missing = [column for column in _REQUIRED_COLUMNS if column not in work.columns]
     if missing:
-        return pd.DataFrame(columns=_REQUIRED_COLUMNS), [f"missing_columns: {', '.join(missing)}"]
+        return pd.DataFrame(columns=pd.Index(_REQUIRED_COLUMNS)), [f"missing_columns: {', '.join(missing)}"]
 
-    work = work[list(_REQUIRED_COLUMNS)].copy()
+    work = cast(pd.DataFrame, work[list(_REQUIRED_COLUMNS)].copy())
     work["source"] = work["source"].astype(str)
     work["station_key"] = work["station_key"].astype(str)
     work["station_name"] = work["station_name"].fillna("").astype(str)
@@ -328,18 +325,18 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     work["unit"] = work["unit"].fillna("").astype(str)
     work["interval"] = work["interval"].astype(str)
     work["quality"] = work["quality"].astype(str)
-    work["period_start_at"] = _to_datetime_series(work["period_start_at"])
-    work["period_end_at"] = _to_datetime_series(work["period_end_at"])
-    work["observed_at"] = _to_datetime_series(work["observed_at"])
+    work["period_start_at"] = _to_datetime_series(cast(pd.Series, work["period_start_at"]))
+    work["period_end_at"] = _to_datetime_series(cast(pd.Series, work["period_end_at"]))
+    work["observed_at"] = _to_datetime_series(cast(pd.Series, work["observed_at"]))
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
     work = _normalize_legacy_jma_hourly_observed_at(work)
     work = _fill_period_columns_from_legacy(work)
     work.loc[work["period_end_at"].notna(), "observed_at"] = work.loc[work["period_end_at"].notna(), "period_end_at"]
 
-    bad_source = ~work["source"].isin(_ALLOWED_SOURCES)
-    bad_metric = ~work["metric"].isin(_ALLOWED_METRICS)
-    bad_interval = ~work["interval"].isin(_ALLOWED_INTERVALS)
-    bad_quality = ~work["quality"].isin(_ALLOWED_QUALITIES)
+    bad_source = ~work["source"].isin(list(_ALLOWED_SOURCES))
+    bad_metric = ~work["metric"].isin(list(_ALLOWED_METRICS))
+    bad_interval = ~work["interval"].isin(list(_ALLOWED_INTERVALS))
+    bad_quality = ~work["quality"].isin(list(_ALLOWED_QUALITIES))
     bad_observed = work["observed_at"].isna()
     requirement_units = {
         "rainfall": "mm",
@@ -351,15 +348,15 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         for metric, unit in zip(work["metric"], work["unit"], strict=True)
     ]
     # 契約に合わない列値はまとめて落とし、後続処理を単純化する。
-    if bad_source.any():
+    if bool(bad_source.any()):
         errors.append("invalid_source")
-    if bad_metric.any():
+    if bool(bad_metric.any()):
         errors.append("invalid_metric")
-    if bad_interval.any():
+    if bool(bad_interval.any()):
         errors.append("invalid_interval")
-    if bad_quality.any():
+    if bool(bad_quality.any()):
         errors.append("invalid_quality")
-    if bad_observed.any():
+    if bool(bad_observed.any()):
         errors.append("invalid_observed_at")
     if any(bad_unit):
         errors.append("invalid_unit")
@@ -371,7 +368,7 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         | bad_observed
         | pd.Series(bad_unit, index=work.index)
     )
-    cleaned = work.loc[~drop_mask].copy()
+    cleaned = cast(pd.DataFrame, work.loc[~drop_mask].copy())
     return cleaned, errors
 
 
@@ -383,20 +380,20 @@ def _normalize_legacy_jma_hourly_observed_at(df: pd.DataFrame) -> pd.DataFrame:
 
     work = df.copy()
     base_mask = (work["source"] == "jma") & (work["interval"] == "1hour")
-    if not base_mask.any():
+    if not bool(base_mask.any()):
         return work
 
     group_columns = ["source", "station_key", "metric", "interval"]
     for _, group in work.loc[base_mask].groupby(group_columns, sort=False):
         idx = group.index
-        observed = work.loc[idx, "observed_at"]
+        observed = cast(pd.Series, work.loc[idx, "observed_at"])
         legacy_midnight_mask = (
             (observed.dt.hour == 23)
             & (observed.dt.minute == 59)
             & (observed.dt.second == 59)
             & (observed.dt.microsecond >= 999000)
         )
-        if not legacy_midnight_mask.any():
+        if not bool(legacy_midnight_mask.any()):
             continue
 
         normalized = observed.copy()
@@ -413,11 +410,11 @@ def _fill_period_columns_from_legacy(df: pd.DataFrame) -> pd.DataFrame:
         return df
     work = df.copy()
     missing_end = work["period_end_at"].isna() & work["observed_at"].notna()
-    if missing_end.any():
+    if bool(missing_end.any()):
         # hydrology_graphs 互換: 旧 observed_at は終端時刻として扱う。
         work.loc[missing_end, "period_end_at"] = work.loc[missing_end, "observed_at"]
     missing_start = work["period_start_at"].isna() & work["period_end_at"].notna()
-    if missing_start.any():
+    if bool(missing_start.any()):
         work.loc[missing_start, "period_start_at"] = work.loc[missing_start, "period_end_at"] - pd.to_timedelta(
             work.loc[missing_start, "interval"].map(_interval_hours), unit="h"
         )
@@ -431,7 +428,7 @@ def _expand_legacy_schema(df: pd.DataFrame) -> pd.DataFrame:
     if "metric" in work.columns and "value" in work.columns and "unit" in work.columns:
         # すでに新スキーマなら、欠けている quality だけ補う。
         if "quality" not in work.columns:
-            value_series = pd.to_numeric(work["value"], errors="coerce")
+            value_series = cast(pd.Series, pd.to_numeric(work["value"], errors="coerce"))
             work["quality"] = value_series.apply(lambda v: "missing" if pd.isna(v) else "normal")
         if "period_start_at" not in work.columns:
             work["period_start_at"] = pd.NaT
@@ -448,9 +445,9 @@ def _expand_legacy_schema(df: pd.DataFrame) -> pd.DataFrame:
         if "unit" not in work.columns:
             work["unit"] = unit
         if "value" not in work.columns:
-            work["value"] = pd.to_numeric(work[column], errors="coerce")
+            work["value"] = cast(pd.Series, pd.to_numeric(work[column], errors="coerce"))
         if "quality" not in work.columns:
-            value_series = pd.to_numeric(work["value"], errors="coerce")
+            value_series = cast(pd.Series, pd.to_numeric(work["value"], errors="coerce"))
             work["quality"] = value_series.apply(lambda v: "missing" if pd.isna(v) else "normal")
         if "period_start_at" not in work.columns:
             work["period_start_at"] = pd.NaT

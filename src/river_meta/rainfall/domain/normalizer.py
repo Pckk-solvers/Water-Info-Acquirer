@@ -20,7 +20,7 @@ def normalize_source_token(value: str) -> RainfallSource:
 
 def normalize_interval_token(value: str) -> RainfallInterval:
     token = (value or "").strip().lower()
-    mapping = {
+    mapping: dict[str, RainfallInterval] = {
         "10min": "10min",
         "10m": "10min",
         "hourly": "1hour",

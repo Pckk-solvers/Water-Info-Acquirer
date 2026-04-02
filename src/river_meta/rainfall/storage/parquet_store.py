@@ -9,6 +9,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -95,14 +96,14 @@ def save_records_parquet(records: list[RainfallRecord], output_path: str | Path)
     return save_unified_records_parquet(unified_rows, output_path)
 
 
-def save_unified_records_parquet(records: list[dict], output_path: str | Path) -> Path:
+def save_unified_records_parquet(records: list[dict[str, Any]], output_path: str | Path) -> Path:
     """共通時系列レコードを Parquet ファイルに保存する。"""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    df = pd.DataFrame(records, columns=UNIFIED_PARQUET_COLUMNS)
+    df = pd.DataFrame(records, columns=pd.Index(UNIFIED_PARQUET_COLUMNS))
     if df.empty:
-        df = pd.DataFrame(columns=UNIFIED_PARQUET_COLUMNS)
+        df = pd.DataFrame(columns=pd.Index(UNIFIED_PARQUET_COLUMNS))
     for column in UNIFIED_PARQUET_COLUMNS:
         if column not in df.columns:
             df[column] = pd.NA
@@ -127,7 +128,7 @@ def save_unified_records_parquet(records: list[dict], output_path: str | Path) -
     missing_quality = df["quality"].isna() | (df["quality"].fillna("").astype(str).str.strip() == "")
     df.loc[missing_quality & df["value"].isna(), "quality"] = "missing"
     df.loc[missing_quality & df["value"].notna(), "quality"] = "normal"
-    df = df[UNIFIED_PARQUET_COLUMNS]
+    df = cast(pd.DataFrame, df[UNIFIED_PARQUET_COLUMNS])
     df.to_parquet(path, engine="pyarrow", index=False)
     return path
 
@@ -136,7 +137,7 @@ def load_records_parquet(parquet_path: str | Path) -> pd.DataFrame:
     """Parquet ファイルから DataFrame を読み込む。"""
     path = Path(parquet_path)
     if not path.exists():
-        return pd.DataFrame(columns=COMPAT_OUTPUT_COLUMNS)
+        return pd.DataFrame(columns=pd.Index(COMPAT_OUTPUT_COLUMNS))
     df = pd.read_parquet(path, engine="pyarrow")
     return _to_compat_dataframe(df)
 
@@ -172,7 +173,7 @@ def load_and_concat_monthly_parquets(
             if not df.empty:
                 dfs.append(df)
     if not dfs:
-        return pd.DataFrame(columns=COMPAT_OUTPUT_COLUMNS)
+        return pd.DataFrame(columns=pd.Index(COMPAT_OUTPUT_COLUMNS))
     combined = pd.concat(dfs, ignore_index=True)
     combined.sort_values("observed_at", inplace=True)
     combined.reset_index(drop=True, inplace=True)
@@ -220,7 +221,7 @@ def _to_compat_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     else:
         metric_series = work["metric"].astype(str)
         value_series = pd.to_numeric(work["value"], errors="coerce")
-        work["rainfall_mm"] = value_series.where(metric_series.eq("rainfall"))
+        work["rainfall_mm"] = cast(pd.Series, value_series).where(metric_series.eq("rainfall"))
 
     missing_quality = work["quality"].isna() | (work["quality"].fillna("").astype(str).str.strip() == "")
     work.loc[missing_quality & work["value"].isna(), "quality"] = "missing"
@@ -232,7 +233,7 @@ def _to_compat_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     for column in COMPAT_OUTPUT_COLUMNS:
         if column not in work.columns:
             work[column] = pd.NA
-    return work[COMPAT_OUTPUT_COLUMNS]
+    return cast(pd.DataFrame, work[COMPAT_OUTPUT_COLUMNS])
 
 
 def _interval_hours_for_timedelta(interval: str) -> float:
@@ -354,8 +355,8 @@ def scan_parquet_dir(output_dir: str | Path) -> list[ParquetEntry]:
     # (source, station_key, year) -> set of months
     index: dict[tuple[str, str, int], set[int]] = {}
     station_names: dict[tuple[str, str], str] = {}
-    with os.scandir(parquet_dir) as entries:
-        for entry in entries:
+    with os.scandir(parquet_dir) as scan_entries:
+        for entry in scan_entries:
             if not entry.is_file() or not entry.name.endswith(".parquet"):
                 continue
             try:
@@ -378,19 +379,19 @@ def scan_parquet_dir(output_dir: str | Path) -> list[ParquetEntry]:
                 else:
                     index.setdefault(key, set()).add(month)
 
-    entries: list[ParquetEntry] = []
+    result_entries: list[ParquetEntry] = []
     for (source, station_key, year), months in sorted(index.items()):
         sorted_months = sorted(months)
         # 旧年単位 water_info（months が空）は complete 扱い。
         # それ以外は、月情報が 12 件揃うと complete。
         complete = (source == "water_info" and len(sorted_months) == 0) or (len(sorted_months) == 12)
-        entries.append(ParquetEntry(
+        result_entries.append(ParquetEntry(
             source=source, station_key=station_key, year=year,
             station_name=station_names.get((source, station_key), ""),
             months=sorted_months, complete=complete,
         ))
 
-    return entries
+    return result_entries
 
 
 def find_missing_months(

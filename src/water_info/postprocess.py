@@ -9,11 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, cast
 
 import pandas as pd
-from decimal import Decimal, ROUND_HALF_UP
 
 
 def load_hourly(path: str | Path) -> pd.DataFrame:
@@ -21,16 +21,17 @@ def load_hourly(path: str | Path) -> pd.DataFrame:
     file_path = Path(path)
     print(f"[INFO] 時間データ読込: {file_path}")
     xls = pd.ExcelFile(file_path)
-    sheet = "全期間" if "全期間" in xls.sheet_names else None
-    if sheet is None:
+    sheet_name: str | None = "全期間" if "全期間" in xls.sheet_names else None
+    if sheet_name is None:
         candidates = [s for s in xls.sheet_names if s.endswith("年")]
         if not candidates:
             raise ValueError(f"シートが見つかりません: {file_path}")
-        sheet = candidates
-    df = pd.read_excel(file_path, sheet_name=sheet, usecols=[0, 1], header=0)
+        sheet_name = candidates[0]
+    df = cast(pd.DataFrame, pd.read_excel(file_path, sheet_name=sheet_name, usecols=[0, 1], header=0))
     df.columns = ["period_end_at", "value"]
     df["period_end_at"] = pd.to_datetime(df["period_end_at"], errors="coerce")
-    df["value"] = pd.to_numeric(df["value"], errors="coerce").apply(
+    value_series = cast(pd.Series, pd.to_numeric(df["value"], errors="coerce"))
+    df["value"] = value_series.apply(
         lambda x: float(Decimal(str(x)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
         if pd.notna(x)
         else math.nan
@@ -48,16 +49,17 @@ def load_daily(path: str | Path) -> pd.DataFrame:
     file_path = Path(path)
     print(f"[INFO] 日データ読込: {file_path}")
     xls = pd.ExcelFile(file_path)
-    sheet = "全期間" if "全期間" in xls.sheet_names else None
-    if sheet is None:
+    sheet_name: str | None = "全期間" if "全期間" in xls.sheet_names else None
+    if sheet_name is None:
         candidates = [s for s in xls.sheet_names if s.endswith("年")]
         if not candidates:
             raise ValueError(f"シートが見つかりません: {file_path}")
-        sheet = candidates
-    df = pd.read_excel(file_path, sheet_name=sheet, usecols=[0, 1], header=0)
+        sheet_name = candidates[0]
+    df = cast(pd.DataFrame, pd.read_excel(file_path, sheet_name=sheet_name, usecols=[0, 1], header=0))
     df.columns = ["datetime", "daily_value"]
     df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-    df["daily_value"] = pd.to_numeric(df["daily_value"], errors="coerce").apply(
+    daily_series = cast(pd.Series, pd.to_numeric(df["daily_value"], errors="coerce"))
+    df["daily_value"] = daily_series.apply(
         lambda x: float(Decimal(str(x)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
         if pd.notna(x)
         else math.nan
@@ -88,7 +90,7 @@ def aggregate_hourly(df_hour_raw: pd.DataFrame) -> pd.DataFrame:
             avg_fixed = math.nan
         records.append(
             {
-                "hydro_date": pd.to_datetime(hydro_date),
+                "hydro_date": pd.Timestamp(cast(Any, hydro_date)),
                 "hourly_daily_avg_var_den": avg_var,
                 "hourly_daily_avg_fixed_den": avg_fixed,
                 "count_non_null": count_non_null,
@@ -108,7 +110,8 @@ def merge_daily(df_hour_daily: pd.DataFrame, df_daily_raw: pd.DataFrame) -> pd.D
     merged["hydro_date"] = pd.to_datetime(merged["hydro_date"])
     merged.sort_values("hydro_date", inplace=True)
     # 読み込み時の揺れを避け、日データも2桁で確定
-    merged["daily_value"] = _round_half_up_series(merged["daily_value"], ndigits=2)
+    merged_daily = cast(pd.Series, pd.to_numeric(merged["daily_value"], errors="coerce"))
+    merged["daily_value"] = _round_half_up_series(merged_daily, ndigits=2)
     merged["year"] = merged["hydro_date"].dt.year
     return merged
 
@@ -125,7 +128,7 @@ def _rank_one_year(
     apply_threshold=True のとき: 欠損11件以上なら全NaN。
     rank_missing=False のとき: 欠損行にはランクを付けない（NaNのまま）。
     """
-    ser = _round_half_up_series(df_year[col], ndigits=2)
+    ser = _round_half_up_series(cast(pd.Series, df_year[col]), ndigits=2)
     is_na = ser.isna()
     if apply_threshold and is_na.sum() >= 11:
         return pd.Series([math.nan] * len(df_year), index=df_year.index, dtype="float64")
@@ -165,7 +168,7 @@ def add_ranks(df_merged: pd.DataFrame, target_cols: list[str] | None = None) -> 
         if rank_col is None or col not in out.columns:
             continue
         ranks = []
-        for year, g in out.groupby("year", sort=True):
+        for _, g in out.groupby("year", sort=True):
             ranks.append(_rank_one_year(g, col, apply_threshold=True, rank_missing=True, tie_breaker="hydro_date"))
         out[rank_col] = pd.concat(ranks).sort_index()
     return out
@@ -191,11 +194,12 @@ def add_ranks_no_threshold(df_merged: pd.DataFrame, target_cols: list[str] | Non
         if rank_col is None or col not in out.columns:
             continue
         ranks = []
-        for year, g in out.groupby("year", sort=True):
+        for _, g in out.groupby("year", sort=True):
             # 可変/固定/日データを揃えるため、タイブレークは可変分母の値と同じ並びにする
             tie_key = "hourly_daily_avg_var_den"
             # 全列にタイブレーク列を持たせる
-            g["_tie_key"] = _round_half_up_series(g[tie_key], ndigits=2)
+            g = g.copy()
+            g["_tie_key"] = _round_half_up_series(cast(pd.Series, g[tie_key]), ndigits=2)
             ranks.append(_rank_one_year(g, col, apply_threshold=False, rank_missing=True, tie_breaker="_tie_key"))
         out[rank_col] = pd.concat(ranks).sort_index()
     out.drop(columns=["_tie_key"], errors="ignore", inplace=True)
@@ -255,10 +259,11 @@ def add_ikyo(
         }.get(src_col, src_col)
 
         for year, g in out.groupby("year", sort=True):
-            ser = g[src_col]
-            total_days = 366 if pd.Timestamp(year=year, month=1, day=1).is_leap_year else 365
+            year_int = int(cast(Any, year))
+            ser = cast(pd.Series, g[src_col])
+            total_days = 366 if pd.Timestamp(year=year_int, month=1, day=1).is_leap_year else 365
             missing = ser.isna().sum()
-            non_null = ser.dropna().sort_values(ascending=False)
+            non_null = cast(pd.Series, ser.dropna()).sort_values(ascending=False)
             if non_null.empty:
                 for name, _ in levels:
                     out.loc[g.index, f"{name}_{suffix}"] = math.nan
@@ -292,7 +297,7 @@ def build_peaks(df_hour_raw: pd.DataFrame) -> pd.DataFrame:
         if non_null.empty:
             records.append({"hydro_date": hydro_date, "peak_max_value": math.nan, "peak_max_time": pd.NaT})
             continue
-        idx = non_null["value"].idxmax()
+        idx = cast(int, cast(pd.Series, non_null["value"]).idxmax())
         rec = non_null.loc[idx]
         records.append(
             {
@@ -316,14 +321,14 @@ def _round_half_up_scalar(val: float, ndigits: int = 2) -> float:
 
 
 def _round_half_up_series(series: pd.Series, ndigits: int = 2) -> pd.Series:
-    return series.apply(lambda x: _round_half_up_scalar(x, ndigits=ndigits))
+    return cast(pd.Series, series.apply(lambda x: _round_half_up_scalar(x, ndigits=ndigits)))
 
 
 def _round_numeric(df: pd.DataFrame, ndigits: int = 2) -> pd.DataFrame:
     out = df.copy()
     num_cols = out.select_dtypes(include="number").columns
-    for col in num_cols:
-        out[col] = _round_half_up_series(out[col], ndigits=ndigits)
+    for col in list(num_cols):
+        out[col] = _round_half_up_series(cast(pd.Series, out[col]), ndigits=ndigits)
     return out
 
 
@@ -332,8 +337,8 @@ def _rename_for_excel(df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame
     """Excel出力時に列名を日本語へ寄せる。"""
     renamed = df.copy()
     cols = {c: mapping[c] for c in df.columns if c in mapping}
-    renamed = renamed.rename(columns=cols)
-    return renamed
+    renamed_df = renamed.rename(columns=cols)
+    return cast(pd.DataFrame, renamed_df)
 
 
 def build_year_summary(
@@ -367,35 +372,36 @@ def build_year_summary(
     ]
 
     for year, g in df_with_ikyo.groupby(df_with_ikyo["hydro_date"].dt.year, sort=True):
+        year_int = int(cast(Any, year))
         rec: dict[str, object] = {"year": year}
-        total_days = 366 if pd.Timestamp(year=year, month=1, day=1).is_leap_year else 365
+        total_days = 366 if pd.Timestamp(year=year_int, month=1, day=1).is_leap_year else 365
         for col in target_cols:
             suffix = suffix_map[col]
-            ser = g[col]
+            ser = cast(pd.Series, g[col])
             rec[f"missing_{suffix}"] = ser.isna().sum()
-            vals = [Decimal(str(v)) for v in ser.dropna()]
+            vals: list[Decimal] = [Decimal(str(v)) for v in cast(list[Any], ser.dropna().tolist())]
             if vals:
-                mean_val = float((sum(vals) / len(vals)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+                mean_val = float((sum(vals, Decimal("0")) / len(vals)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
             else:
                 mean_val = math.nan
             rec[f"mean_{suffix}"] = mean_val
             for lvl in ikyo_levels:
                 col_name = f"{lvl}_{suffix_map[col]}"
-                ser_ikyo = g[col_name] if col_name in g.columns else pd.Series(dtype=float)
+                ser_ikyo = cast(pd.Series, g[col_name]) if col_name in g.columns else pd.Series(dtype=float)
                 val = ser_ikyo.dropna().iloc[0] if not ser_ikyo.dropna().empty else math.nan
                 rec[col_name] = val
         # 時間データから最大/最小とその時刻（period_end_at）を取得
-        g_hour = df_hour_raw[df_hour_raw["period_end_at"].dt.year == year]
+        g_hour = cast(pd.DataFrame, df_hour_raw[df_hour_raw["period_end_at"].dt.year == year_int])
         if g_hour.dropna(subset=["value"]).empty:
             rec["max_hourly_value"] = math.nan
             rec["max_hourly_time"] = pd.NaT
             rec["min_hourly_value"] = math.nan
             rec["min_hourly_time"] = pd.NaT
         else:
-            idx_max = g_hour["value"].idxmax()
+            idx_max = cast(int, cast(pd.Series, g_hour["value"]).idxmax())
             rec["max_hourly_value"] = _round_half_up_scalar(g_hour.loc[idx_max, "value"], ndigits=2)
             rec["max_hourly_time"] = g_hour.loc[idx_max, "period_end_at"]
-            idx_min = g_hour["value"].idxmin()
+            idx_min = cast(int, cast(pd.Series, g_hour["value"]).idxmin())
             rec["min_hourly_value"] = _round_half_up_scalar(g_hour.loc[idx_min, "value"], ndigits=2)
             rec["min_hourly_time"] = g_hour.loc[idx_min, "period_end_at"]
         # 位況で採用した順位を記録
@@ -427,7 +433,7 @@ def export_excel(dfs: dict[str, pd.DataFrame], path: str | Path) -> None:
             rounded.to_excel(writer, sheet_name=sheet, index=False)
 
 
-def export_parquet(dfs: dict[str, pd.DataFrame], root: str | Path) -> None:
+def export_parquet(dfs: dict[str, pd.DataFrame], root: str | Path | None) -> None:
     """各DFを個別のParquetに保存。"""
     if root is None:
         return
@@ -454,7 +460,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _load_config(path: str | Path) -> dict:
+def _load_config(path: str | Path) -> dict[str, Any]:
     """設定ファイル(JSON)を読み込む。"""
     cfg_path = Path(path)
     if not cfg_path.exists():
@@ -466,7 +472,7 @@ def _load_config(path: str | Path) -> dict:
         raise ValueError(f"設定ファイルの読込に失敗しました: {e}") from e
     if not isinstance(data, dict):
         raise ValueError("設定ファイルの形式が不正です（最上位はオブジェクトである必要があります）")
-    return data
+    return cast(dict[str, Any], data)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -475,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
     pre_parser.add_argument("--config")
     pre_args, remaining = pre_parser.parse_known_args(argv)
 
-    config_data: dict[str, object] = {}
+    config_data: dict[str, Any] = {}
     if pre_args.config:
         config_data = _load_config(pre_args.config)
 
@@ -499,10 +505,11 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         parser.error(f"必須引数が指定されていません: {', '.join(missing)}")
     # Parquet 出力パスが空文字なら無効化
-    if args.out_parquet is not None and str(args.out_parquet).strip() == "":
-        args.out_parquet = None
+    out_parquet: str | Path | None = cast(str | Path | None, args.out_parquet)
+    if out_parquet is not None and str(out_parquet).strip() == "":
+        out_parquet = None
 
-    df_hour_raw = load_hourly(args.hour_file)
+    df_hour_raw = load_hourly(cast(str | Path, args.hour_file))
     source_cols_base = [
         "hourly_daily_avg_var_den",
         "hourly_daily_avg_fixed_den",
@@ -522,12 +529,12 @@ def main(argv: list[str] | None = None) -> int:
                 mask = df_main[col].isna()
                 ref_series = df_ranked_raw[col]
                 df_main[f"{col}_ref"] = ref_series.where(mask)
-                if df_main[f"{col}_ref"].isna().all():
+                if bool(cast(pd.Series, df_main[f"{col}_ref"]).isna().all()):
                     df_main.drop(columns=[f"{col}_ref"], inplace=True)
         if "year" in df_main.columns:
             cols = df_main.columns.tolist()
             cols.insert(1, cols.pop(cols.index("year")))
-            df_main = df_main[cols]
+            df_main = cast(pd.DataFrame, df_main[cols])
         # 非欠損本数は残す
 
         # サマリ用の位況計算は従来通り
@@ -599,9 +606,9 @@ def main(argv: list[str] | None = None) -> int:
 
         df_main_excel = _rename_for_excel(df_main, main_map)
         df_peaks_excel = _rename_for_excel(df_peaks, peak_map)
-        df_year_excel = _rename_for_excel(df_year_summary, year_map).T.reset_index()
+        df_year_excel = cast(pd.DataFrame, _rename_for_excel(df_year_summary, year_map).T.reset_index())
         df_year_excel.columns = ["項目"] + df_year_excel.columns[1:].tolist()
-        df_year_raw_excel = _rename_for_excel(df_year_summary_raw, year_map).T.reset_index()
+        df_year_raw_excel = cast(pd.DataFrame, _rename_for_excel(df_year_summary_raw, year_map).T.reset_index())
         df_year_raw_excel.columns = ["項目"] + df_year_raw_excel.columns[1:].tolist()
 
         export_excel(
@@ -611,7 +618,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.sheet_year_summary: df_year_excel,
                 args.sheet_year_summary_raw: df_year_raw_excel,
             },
-            args.out_excel,
+            cast(str | Path, args.out_excel),
         )
         export_parquet(
             {
@@ -620,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
                 "df_merged": df_ikyo,
                 "df_summary_peak": df_peaks,
             },
-            args.out_parquet,
+            out_parquet,
         )
     else:
         # 日データが無い場合: 時間集計とピークのみ出力（main/main_raw/year_summary も空でなく、ある列だけ出す）
@@ -640,12 +647,12 @@ def main(argv: list[str] | None = None) -> int:
                 mask = df_main_out[col].isna()
                 ref_series = df_ranked_raw[col]
                 df_main_out[f"{col}_ref"] = ref_series.where(mask)
-                if df_main_out[f"{col}_ref"].isna().all():
+                if bool(cast(pd.Series, df_main_out[f"{col}_ref"]).isna().all()):
                     df_main_out.drop(columns=[f"{col}_ref"], inplace=True)
         if "year" in df_main_out.columns:
             cols = df_main_out.columns.tolist()
             cols.insert(1, cols.pop(cols.index("year")))
-            df_main_out = df_main_out[cols]
+            df_main_out = cast(pd.DataFrame, df_main_out[cols])
 
         # サマリ用位況
         df_ikyo = add_ikyo(df_ranked, source_cols=source_cols, apply_threshold=True, use_scaling=True)
@@ -710,9 +717,9 @@ def main(argv: list[str] | None = None) -> int:
         }
         df_main_excel = _rename_for_excel(df_main_out, main_map)
         df_peaks_excel = _rename_for_excel(df_peaks, peak_map)
-        df_year_excel = _rename_for_excel(df_year_summary, year_map).T.reset_index()
+        df_year_excel = cast(pd.DataFrame, _rename_for_excel(df_year_summary, year_map).T.reset_index())
         df_year_excel.columns = ["項目"] + df_year_excel.columns[1:].tolist()
-        df_year_raw_excel = _rename_for_excel(df_year_summary_raw, year_map).T.reset_index()
+        df_year_raw_excel = cast(pd.DataFrame, _rename_for_excel(df_year_summary_raw, year_map).T.reset_index())
         df_year_raw_excel.columns = ["項目"] + df_year_raw_excel.columns[1:].tolist()
         export_excel(
             {
@@ -721,7 +728,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.sheet_year_summary: _round_numeric(df_year_excel, ndigits=2),
                 args.sheet_year_summary_raw: _round_numeric(df_year_raw_excel, ndigits=2),
             },
-            args.out_excel,
+            cast(str | Path, args.out_excel),
         )
         export_parquet(
             {
@@ -729,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
                 "df_hour_daily": df_hour_daily,
                 "df_summary_peak": df_peaks,
             },
-            args.out_parquet,
+            out_parquet,
         )
     return 0
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -18,7 +19,7 @@ class EmptyExcelWarning(Exception):
     pass
 
 
-_UNIFIED_COLUMNS = [
+_UNIFIED_COLUMNS = (
     "source",
     "station_key",
     "station_name",
@@ -30,16 +31,16 @@ _UNIFIED_COLUMNS = [
     "unit",
     "interval",
     "quality",
-]
+)
 
 
-def _save_unified_records_parquet(records: list[dict], output_path: Path) -> Path:
-    df = pd.DataFrame(records, columns=_UNIFIED_COLUMNS)
+def _save_unified_records_parquet(records: list[dict[str, Any]], output_path: Path) -> Path:
+    df = pd.DataFrame(records, columns=pd.Index(_UNIFIED_COLUMNS))
     if df.empty:
-        df = pd.DataFrame(columns=_UNIFIED_COLUMNS)
-    df["period_start_at"] = pd.to_datetime(df.get("period_start_at"), errors="coerce")
-    df["period_end_at"] = pd.to_datetime(df.get("period_end_at"), errors="coerce")
-    df["observed_at"] = pd.to_datetime(df["observed_at"], errors="coerce")
+        df = pd.DataFrame(columns=pd.Index(_UNIFIED_COLUMNS))
+    df["period_start_at"] = pd.to_datetime(cast(pd.Series, df["period_start_at"]), errors="coerce")
+    df["period_end_at"] = pd.to_datetime(cast(pd.Series, df["period_end_at"]), errors="coerce")
+    df["observed_at"] = pd.to_datetime(cast(pd.Series, df["observed_at"]), errors="coerce")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, engine="pyarrow", index=False)
     return output_path
@@ -119,13 +120,13 @@ def _export_water_info_parquet(
 
     rows = []
     if interval == "1day":
-        date_idx = df.index if "datetime" not in df.columns else pd.to_datetime(df["datetime"], errors="coerce")
+        date_idx = df.index if "datetime" not in df.columns else pd.to_datetime(cast(pd.Series, df["datetime"]), errors="coerce")
         for idx, value_raw in zip(date_idx, df[value_col]):
             observed_at = pd.to_datetime(idx, errors="coerce")
-            if pd.isna(observed_at):
+            if not isinstance(observed_at, pd.Timestamp):
                 continue
             value = pd.to_numeric(value_raw, errors="coerce")
-            value_float = None if pd.isna(value) else float(value)
+            value_float = float(value) if isinstance(value, (int, float)) and not pd.isna(value) else None
             period_start_at = observed_at.replace(hour=0, minute=0, second=0, microsecond=0)
             period_end_at = period_start_at + pd.Timedelta(days=1)
             rows.append(
@@ -146,15 +147,15 @@ def _export_water_info_parquet(
     else:
         # 時刻契約は datetime 列を正とする。
         datetime_col = df.get("datetime")
-        datetimes = pd.to_datetime(datetime_col, errors="coerce") if datetime_col is not None else None
+        datetimes = pd.to_datetime(cast(pd.Series, datetime_col), errors="coerce") if datetime_col is not None else None
         if datetimes is None:
             datetimes = pd.Series(dtype="datetime64[ns]")
         for period_start_at, value_raw in zip(datetimes, df[value_col]):
-            if pd.isna(period_start_at):
+            if not isinstance(period_start_at, pd.Timestamp):
                 continue
             period_end_at = period_start_at + pd.Timedelta(hours=1)
             value = pd.to_numeric(value_raw, errors="coerce")
-            value_float = None if pd.isna(value) else float(value)
+            value_float = float(value) if isinstance(value, (int, float)) and not pd.isna(value) else None
             rows.append(
                 {
                     "source": "water_info",
@@ -202,8 +203,11 @@ def process_data_for_code(
     )
     if df is None:
         return None
+    hourly_df = cast(pd.DataFrame, df)
+    if not value_col:
+        return None
 
-    if df.empty or df[value_col].dropna().empty:
+    if hourly_df.empty or cast(pd.Series, hourly_df[value_col]).dropna().empty:
         raise EmptyExcelWarning(f"観測所コード {code}：指定期間に有効なデータが見つかりませんでした")
 
     _, mode_str = build_hourly_base(mode_type)
@@ -224,7 +228,7 @@ def process_data_for_code(
         "summary": f"{station_name}({code}) {Y1}/{M1}-{Y2}/{M2} {source_info_item_label(mode_type)}",
     }
     write_hourly_excel(
-        df=df,
+        df=hourly_df,
         file_name=output_path,
         value_col=value_col,
         mode_type=mode_type,
@@ -234,7 +238,7 @@ def process_data_for_code(
     )
     if export_parquet:
         parquet_path = _export_water_info_parquet(
-            df=df,
+            df=hourly_df,
             code=str(code),
             station_name=station_name,
             mode_type=mode_type,
@@ -284,8 +288,11 @@ def process_period_date_display_for_code(
     if df is None:
         print("mode_typeは 'S', 'R', または 'U' を指定してください。")
         return None
+    daily_df = cast(pd.DataFrame, df)
+    if not data_label or not chart_title:
+        return None
 
-    if df.empty or df[data_label].dropna().empty:
+    if daily_df.empty or cast(pd.Series, daily_df[data_label]).dropna().empty:
         raise EmptyExcelWarning(f"観測所コード {code}：指定期間に有効なデータが見つかりませんでした")
 
     station_name = file_name.name.split("_")[1] if file_name else ""
@@ -305,7 +312,7 @@ def process_period_date_display_for_code(
         "summary": f"{station_name}({code}) {Y1}/{M1}-{Y2}/{M2} {source_info_item_label(mode_type)}",
     }
     write_daily_excel(
-        df=df,
+        df=daily_df,
         file_name=output_path,
         data_label=data_label,
         chart_title=chart_title,
@@ -314,7 +321,7 @@ def process_period_date_display_for_code(
     )
     if export_parquet:
         parquet_path = _export_water_info_parquet(
-            df=df,
+            df=daily_df,
             code=str(code),
             station_name=station_name,
             mode_type=mode_type,

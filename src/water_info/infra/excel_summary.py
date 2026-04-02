@@ -7,7 +7,7 @@ import pandas as pd
 def build_daily_empty_summary(df, value_col: str):
     tmp = pd.DataFrame(
         [[dt.strftime('%Y/%m/%d'), val] for dt, val in zip(df['period_end_at'], df[value_col])],
-        columns=['date', value_col],
+        columns=pd.Index(['date', value_col]),
     )
     tmp[value_col] = pd.to_numeric(tmp[value_col], errors='coerce')
     daily_df = (
@@ -33,7 +33,7 @@ def build_year_summary(df, value_col: str):
 
     return pd.DataFrame(
         year_list,
-        columns=['year', 'year_max_datetime', value_col, 'year_empty_count'],
+        columns=pd.Index(['year', 'year_max_datetime', value_col, 'year_empty_count']),
     )
 
 

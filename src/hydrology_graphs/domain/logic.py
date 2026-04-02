@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Any, cast
 
 import pandas as pd
 
@@ -100,9 +101,9 @@ def validate_event_series_complete(
     work = work.dropna(subset=[tcol]).set_index(tcol).reindex(expected)
     if "value" not in work.columns:
         return False, "value 列が見つかりません。"
-    if work["value"].isna().any():
+    if bool(cast(pd.Series, work["value"]).isna().any()):
         return False, "対象期間内に欠損値があります。"
-    if "quality" in work.columns and (work["quality"] == "missing").any():
+    if "quality" in work.columns and bool((work["quality"] == "missing").any()):
         return False, "対象期間内に quality=missing が含まれます。"
     return True, None
 
@@ -120,29 +121,29 @@ def annual_max_series(df: pd.DataFrame) -> pd.Series:
     if work.empty:
         return pd.Series(dtype="float64")
     work["year"] = work[tcol].dt.year
-    return work.groupby("year")["value"].max().sort_index()
+    return cast(pd.Series, work.groupby("year")["value"].max().sort_index())
 
 
 def annual_max_by_year(df: pd.DataFrame) -> pd.DataFrame:
     """年最大値と、その最大値が出た観測時刻を返す。"""
 
     if df.empty:
-        return pd.DataFrame(columns=["year", "period_end_at", "value"])
+        return pd.DataFrame(columns=pd.Index(["year", "period_end_at", "value"]))
     work = df.copy()
     tcol = _time_column(work)
     work[tcol] = pd.to_datetime(work[tcol], errors="coerce")
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
     work = work.dropna(subset=[tcol, "value"])
     if work.empty:
-        return pd.DataFrame(columns=["year", "period_end_at", "value"])
+        return pd.DataFrame(columns=pd.Index(["year", "period_end_at", "value"]))
     work["year"] = work[tcol].dt.year
     rows: list[dict[str, object]] = []
     for year, group in work.groupby("year", sort=True):
-        idx = group["value"].astype(float).idxmax()
+        idx = cast(int, cast(pd.Series, group["value"]).astype(float).idxmax())
         row = work.loc[idx]
         rows.append(
             {
-                "year": int(year),
+                "year": int(cast(Any, year)),
                 "period_end_at": row[tcol],
                 "value": float(row["value"]),
             }
