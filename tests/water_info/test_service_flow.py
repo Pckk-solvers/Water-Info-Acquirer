@@ -10,7 +10,7 @@ def test_fetch_hourly_dataframe_for_code_builds_df_and_path(monkeypatch, tmp_pat
         return "テスト観測所"
 
     def _values(*args, **kwargs):
-        return [1.0] * (24 * 2)
+        return [1.0] * ((31 * 24) + (24 * 2))
 
     monkeypatch.setattr(flow_fetch, "fetch_station_name", _station)
     monkeypatch.setattr(flow_fetch, "fetch_hourly_values", _values)
@@ -28,7 +28,9 @@ def test_fetch_hourly_dataframe_for_code_builds_df_and_path(monkeypatch, tmp_pat
 
     assert value_col == "水位"
     assert df is not None
-    assert len(df) == 48
+    assert len(df) == 49
+    assert pd.Timestamp(df.loc[0, "datetime"]) == pd.Timestamp("2024-01-01 00:00:00")
+    assert pd.Timestamp(df.loc[df.index.max(), "datetime"]) == pd.Timestamp("2024-01-03 00:00:00")
     assert "テスト観測所" in str(file_name)
 
 

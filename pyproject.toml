@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "Water-Info-Acquirer"
 version = "1.3.0"
@@ -17,6 +21,16 @@ dependencies = [
     "psutil>=7.2.2",
     "japanize-matplotlib>=1.1.3",
 ]
+
+[project.scripts]
+jma-rainfall = "jma_rainfall_pipeline.cli:main"
+water-info = "water_info.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [

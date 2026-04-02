@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Literal, Optional
 
 from fastapi import FastAPI, Response
@@ -30,6 +30,7 @@ from jma_rainfall_pipeline.api.handlers.weather_data_api import (
     BaseAPIHandler,
     WeatherDataAPIHandler,
 )
+from jma_rainfall_pipeline.api.datetime_bounds import normalize_payload_datetime
 from jma_rainfall_pipeline.app_container import build_weather_api_handler
 
 DEFAULT_ALLOW_ORIGINS: Iterable[str] = ("*",)
@@ -84,7 +85,7 @@ class WeatherDataRequestPayload(BaseModel):
     end_date: datetime = Field(
         ...,
         validation_alias=AliasChoices("end_date", "endDate"),
-        description="取得範囲の終了（ISO 日時または YYYY-MM-DD）。",
+        description="取得範囲の終了（排他的上限。YYYY-MM-DD 指定時は翌日 00:00 として扱う）。",
     )
     interval: Optional[str] = Field(
         None,
@@ -129,27 +130,12 @@ class WeatherDataRequestPayload(BaseModel):
     def _parse_datetime(cls, value: Any, info):
         """ISO 文字列や date をタイムゾーンなしの datetime に正規化。"""
 
-        if isinstance(value, datetime):
-            return value
-
-        if isinstance(value, date):
-            normalized = datetime.combine(value, datetime.min.time())
-        elif isinstance(value, str):
-            text = value.strip()
-            try:
-                normalized = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            except ValueError as exc:
-                raise ValueError(
-                    f"{info.field_name} の形式が不正です。ISO 日時または YYYY-MM-DD を使用してください。"
-                ) from exc
-        else:
-            return value
-
-        if info.field_name == "end_date" and normalized.time() == datetime.min.time():
-            # 素の日付（時刻 00:00）の終了値は当日いっぱいを含むように調整
-            normalized = normalized + timedelta(days=1) - timedelta(microseconds=1)
-
-        return normalized
+        try:
+            return normalize_payload_datetime(value, field_name=info.field_name)
+        except ValueError as exc:
+            raise ValueError(
+                f"{info.field_name} の形式が不正です。ISO 日時または YYYY-MM-DD を使用してください。"
+            ) from exc
 
     @model_validator(mode="after")
     def _validate_range(self) -> "WeatherDataRequestPayload":

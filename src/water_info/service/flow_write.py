@@ -14,15 +14,19 @@ from ..infra.excel_writer import add_scatter_chart, set_column_widths, write_tab
 _SOURCE_SHEET = "出典"
 
 
-def _resolve_period_end_at(df: pd.DataFrame) -> pd.Series:
-    """表示用終端時刻を解決する。"""
+def _resolve_display_at(df: pd.DataFrame) -> pd.Series:
+    """表示用時刻を解決する。"""
 
     if "period_end_at" in df.columns:
         resolved = pd.to_datetime(df["period_end_at"], errors="coerce")
         if not resolved.isna().all():
             return resolved
+    if "observed_at" in df.columns:
+        resolved = pd.to_datetime(df["observed_at"], errors="coerce")
+        if not resolved.isna().all():
+            return resolved
     if "datetime" in df.columns:
-        return pd.to_datetime(df["datetime"], errors="coerce") + pd.to_timedelta(1, "h")
+        return pd.to_datetime(df["datetime"], errors="coerce")
     return pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
 
 
@@ -63,11 +67,11 @@ def write_hourly_excel(
             raise empty_error_type("有効なデータがありません")
 
     with pd.ExcelWriter(file_name, engine="xlsxwriter", datetime_format="yyyy/m/d h:mm") as writer:
-        period_end_at = _resolve_period_end_at(df)
+        display_at = _resolve_display_at(df)
         work_df = df.copy()
-        work_df["period_end_at"] = period_end_at
+        work_df["display_at"] = display_at
         if single_sheet:
-            full_df = work_df[["period_end_at", value_col]].copy()
+            full_df = work_df[["display_at", value_col]].rename(columns={"display_at": "datetime"}).copy()
             sheet_full = "全期間"
             ws_full = write_table(
                 writer,
@@ -76,8 +80,8 @@ def write_hourly_excel(
                 column_widths={"A:A": 20, "B:B": 12},
             )
             max_row_full = len(full_df) + 1
-            min_dt = full_df["period_end_at"].min()
-            max_dt = full_df["period_end_at"].max()
+            min_dt = full_df["datetime"].min()
+            max_dt = full_df["datetime"].max()
             title_str = f"{min_dt.year}/{min_dt.month} - {max_dt.year}/{max_dt.month}"
             ytitle = {"S": "水位[m]", "R": "流量[m^3/s]", "U": "雨量[mm/h]"}[mode_type]
             xmin = shift_month(month_floor(min_dt), -1)
@@ -110,18 +114,19 @@ def write_hourly_excel(
         if "sheet_year" in work_df.columns:
             grouped = work_df.groupby("sheet_year", sort=True)
         else:
-            grouped = work_df.assign(sheet_year=work_df["period_end_at"].dt.year).groupby("sheet_year", sort=True)
+            grouped = work_df.assign(sheet_year=work_df["display_at"].dt.year).groupby("sheet_year", sort=True)
         for year, group in grouped:
             sheet_name = f"{year}年"
+            sheet_df = group[["display_at", value_col]].rename(columns={"display_at": "datetime"})
             ws = write_table(
                 writer,
                 sheet_name,
-                group[["period_end_at", value_col]],
+                sheet_df,
                 column_widths={"A:A": 20, "B:B": 12},
             )
             max_row = len(group) + 1
-            gmin = group["period_end_at"].min()
-            gmax = group["period_end_at"].max()
+            gmin = group["display_at"].min()
+            gmax = group["display_at"].max()
             xmin = shift_month(month_floor(gmin), -1)
             xmax = shift_month(month_floor(gmax), +2)
             ytitle = {"S": "水位[m]", "R": "流量[m^3/s]", "U": "雨量[mm/h]"}[mode_type]
@@ -149,8 +154,8 @@ def write_hourly_excel(
                 y_axis={"name": ytitle},
             )
 
-        daily_df = build_daily_empty_summary(work_df, value_col)
-        year_summary_df = build_year_summary(work_df, value_col)
+        daily_df = build_daily_empty_summary(work_df, value_col, time_col="display_at")
+        year_summary_df = build_year_summary(work_df, value_col, time_col="display_at")
 
         ws = write_table(
             writer,

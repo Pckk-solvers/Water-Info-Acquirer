@@ -113,6 +113,33 @@ def _extract_observed_at(row: dict[str, Any], interval_label: str) -> pd.Timesta
     return None
 
 
+def build_normalized_time_frame(df: pd.DataFrame, interval_label: str) -> pd.DataFrame:
+    """CSV/Excel/Parquet 共通の時刻契約へ正規化する。"""
+
+    work = df.copy()
+    if work.empty:
+        work["period_start_at"] = pd.Series(dtype="datetime64[ns]")
+        work["period_end_at"] = pd.Series(dtype="datetime64[ns]")
+        work["observed_at"] = pd.Series(dtype="datetime64[ns]")
+        return work
+
+    period_end_list: list[pd.Timestamp | None] = []
+    for row in work.to_dict(orient="records"):
+        ts = _extract_observed_at(row, interval_label)
+        period_end_list.append(ts)
+
+    period_end_series = pd.to_datetime(pd.Series(period_end_list, index=work.index), errors="coerce")
+    work["period_end_at"] = period_end_series
+    if interval_label == "daily":
+        work["period_start_at"] = period_end_series - pd.to_timedelta(1, unit="d")
+    elif interval_label == "hourly":
+        work["period_start_at"] = period_end_series - pd.to_timedelta(1, unit="h")
+    else:
+        work["period_start_at"] = period_end_series - pd.to_timedelta(10, unit="m")
+    work["observed_at"] = work["period_end_at"]
+    return work
+
+
 def export_weather_parquet(
     df: pd.DataFrame,
     *,
@@ -143,12 +170,17 @@ def export_weather_parquet(
 
     value_col = "precipitation_total" if interval_label == "daily" else "precipitation"
     rows: list[dict[str, Any]] = []
-    interval_hours = {"hourly": 1.0, "daily": 24.0, "10min": 10.0 / 60.0}[interval_label]
-    for row in df.to_dict(orient="records"):
-        period_end_at = _extract_observed_at(row, interval_label)
-        if period_end_at is None:
+    normalized = build_normalized_time_frame(df, interval_label)
+    for row in normalized.to_dict(orient="records"):
+        period_start_at = pd.to_datetime(cast(Any, row.get("period_start_at")), errors="coerce")
+        period_end_at = pd.to_datetime(cast(Any, row.get("period_end_at")), errors="coerce")
+        observed_at = pd.to_datetime(cast(Any, row.get("observed_at")), errors="coerce")
+        if not isinstance(period_start_at, pd.Timestamp):
             continue
-        period_start_at = period_end_at - pd.to_timedelta(interval_hours, unit="h")
+        if not isinstance(period_end_at, pd.Timestamp):
+            continue
+        if not isinstance(observed_at, pd.Timestamp):
+            continue
         numeric_value = pd.to_numeric(row.get(value_col), errors="coerce")
         value_float = float(numeric_value) if isinstance(numeric_value, (int, float)) and not pd.isna(numeric_value) else None
         rows.append(
@@ -158,7 +190,7 @@ def export_weather_parquet(
                 "station_name": station_name,
                 "period_start_at": period_start_at.to_pydatetime(),
                 "period_end_at": period_end_at.to_pydatetime(),
-                "observed_at": period_end_at.to_pydatetime(),
+                "observed_at": observed_at.to_pydatetime(),
                 "metric": "rainfall",
                 "value": value_float,
                 "unit": "mm",

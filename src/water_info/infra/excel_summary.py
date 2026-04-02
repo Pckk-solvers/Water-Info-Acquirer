@@ -4,9 +4,9 @@ from __future__ import annotations
 import pandas as pd
 
 
-def build_daily_empty_summary(df, value_col: str):
+def build_daily_empty_summary(df, value_col: str, *, time_col: str):
     tmp = pd.DataFrame(
-        [[dt.strftime('%Y/%m/%d'), val] for dt, val in zip(df['period_end_at'], df[value_col])],
+        [[dt.strftime('%Y/%m/%d'), val] for dt, val in zip(df[time_col], df[value_col])],
         columns=pd.Index(['date', value_col]),
     )
     tmp[value_col] = pd.to_numeric(tmp[value_col], errors='coerce')
@@ -19,14 +19,14 @@ def build_daily_empty_summary(df, value_col: str):
     return daily_df
 
 
-def build_year_summary(df, value_col: str):
+def build_year_summary(df, value_col: str, *, time_col: str):
     year_list = []
     for year, group in df.groupby('sheet_year', sort=True):
         non_null = group[value_col].dropna()
         if non_null.empty:
             continue
         max_idx = non_null.idxmax()
-        ts_max = group.loc[max_idx, 'period_end_at'].to_pydatetime()
+        ts_max = group.loc[max_idx, time_col].to_pydatetime()
         val_max = group.loc[max_idx, value_col]
         empty_year = group[value_col].isna().sum()
         year_list.append([year, ts_max, val_max, empty_year])

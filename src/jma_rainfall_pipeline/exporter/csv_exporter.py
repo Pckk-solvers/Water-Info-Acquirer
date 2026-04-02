@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 import pandas as pd
 from datetime import date, datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 
+from jma_rainfall_pipeline.exporter.parquet_exporter import build_normalized_time_frame
 from jma_rainfall_pipeline.logger.app_logger import get_logger
 from jma_rainfall_pipeline.fetcher.jma_codes_fetcher import fetch_prefecture_codes, fetch_station_codes
 from jma_rainfall_pipeline.utils.config_loader import get_output_directories
@@ -44,18 +45,18 @@ def _get_station_records(prec_no: str) -> List[Dict[str, str]]:
 # data export columns
 OUTPUT_COLUMNS = {
     'hourly': [
-        'datetime', 'date', 'time', 'hour',
+        'period_start_at', 'period_end_at', 'observed_at', 'datetime', 'date', 'time', 'hour',
         'pressure_ground', 'pressure_sea', 'precipitation', 'precipitation_total',
         'temperature', 'dew_point', 'vapor_pressure', 'humidity',
         'wind_speed', 'wind_direction', 'sunshine_hours', 'solar_radiation',
         'snow_fall', 'snow_depth', 'weather', 'cloud_cover', 'visibility'
     ],
     'daily': [
-        'date', 'precipitation_total', 'precipitation_max_1h', 'precipitation_max_10m', 'temperature_avg', 'temperature_max', 'temperature_min',
+        'period_start_at', 'period_end_at', 'observed_at', 'date', 'precipitation_total', 'precipitation_max_1h', 'precipitation_max_10m', 'temperature_avg', 'temperature_max', 'temperature_min',
         'humidity_avg', 'wind_speed_avg', 'sunshine_hours', 'snow_depth'
     ],
     '10min': [
-        'datetime', 'date', 'time', 'hour', 'minute',
+        'period_start_at', 'period_end_at', 'observed_at', 'datetime', 'date', 'time', 'hour', 'minute',
         'pressure_ground', 'pressure_sea', 'precipitation', 'temperature', 'humidity',
         'wind_speed', 'wind_direction', 'wind_speed_max', 'wind_direction_max',
         'sunshine_minutes', 'solar_radiation'
@@ -63,67 +64,51 @@ OUTPUT_COLUMNS = {
 }
 
 
-def _normalize_time_column(df: pd.DataFrame) -> Optional[pd.Series]:
-    """日時情報を正規化します。
+def _prepare_export_frame(df: pd.DataFrame, interval: str) -> pd.DataFrame:
+    work = build_normalized_time_frame(df, interval)
+    if work.empty:
+        return work
 
-    23:59:59.999999 のような時刻を翌日の 00:00:00 に変換する特別な処理を含みます。
-    """
+    if interval == "daily":
+        work["date"] = pd.to_datetime(work["period_start_at"], errors="coerce").dt.strftime("%Y/%m/%d")
+        return work
+
+    observed = pd.to_datetime(work["observed_at"], errors="coerce")
+    work["datetime"] = observed
+    work["date"] = observed.dt.strftime("%Y/%m/%d")
+    work["time"] = observed.dt.strftime("%H:%M")
+    work["hour"] = observed.dt.hour
+    if interval == "10min":
+        work["minute"] = observed.dt.minute
+    return work
+
+
+def _normalize_time_column(df: pd.DataFrame) -> Optional[pd.Series]:
+    """Excel 出力用の表示時刻列を返す。"""
     try:
-        # 日次データかどうかをチェック（'date'カラムはあるが'time'や'hour'カラムはない場合）
         is_daily = "date" in df.columns and "time" not in df.columns and "hour" not in df.columns
 
+        if "observed_at" in df.columns:
+            normalized = pd.to_datetime(df["observed_at"], errors="coerce")
+            return normalized.dt.strftime("%Y/%m/%d %H:%M")
+
+        if "period_end_at" in df.columns:
+            normalized = pd.to_datetime(df["period_end_at"], errors="coerce")
+            return normalized.dt.strftime("%Y/%m/%d %H:%M")
+
+        if "period_start_at" in df.columns:
+            normalized = pd.to_datetime(df["period_start_at"], errors="coerce")
+            if is_daily:
+                return normalized.dt.strftime("%Y/%m/%d")
+            return normalized.dt.strftime("%Y/%m/%d %H:%M")
+
         if "datetime" in df.columns:
-            # 直接datetimeカラムを処理
             normalized = pd.to_datetime(df["datetime"], errors="coerce")
             if is_daily:
                 return normalized.dt.strftime("%Y/%m/%d")
-
-            # 深夜0時近くの値をチェック
-            near_midnight = (normalized.dt.hour == 23) & (normalized.dt.minute == 59)
-            normalized[near_midnight] = normalized[near_midnight] + pd.Timedelta(minutes=1)
             return normalized.dt.strftime("%Y/%m/%d %H:%M")
 
-        elif "date" in df.columns and "time" in df.columns:
-            # 時刻が別カラムの場合の処理
-            time_col = df["time"].astype(str).str.strip()
-
-            # 23:59:59.999999 のようなパターンをチェック
-            is_midnight = time_col.str.contains(r'23:59:59\.?\d*$', regex=True)
-
-            # 日付シリーズを作成し、深夜の場合は1日加算
-            date_series = pd.to_datetime(df["date"].astype(str).str.strip(), errors="coerce")
-            date_series[is_midnight] = date_series[is_midnight] + pd.Timedelta(days=1)
-
-            # 時刻をフォーマットし、23:59:59.xxx を 00:00:00 に置換
-            time_series = time_col.replace(r'23:59:59\.?\d*$', '00:00:00', regex=True)
-
-            # 日付と時刻を結合
-            normalized = pd.to_datetime(
-                date_series.dt.strftime("%Y-%m-%d") + " " + time_series,
-                format='%Y-%m-%d %H:%M:%S',
-                errors='coerce'
-            )
-            return normalized.dt.strftime("%Y/%m/%d %H:%M")
-
-        elif "date" in df.columns and "hour" in df.columns:
-            # 時間が別カラムの時間データを処理
-            date_part = pd.to_datetime(df["date"], errors="coerce")
-            hour_part = pd.to_numeric(df["hour"], errors="coerce").fillna(0)
-
-            # 24時近くの時間（例：23.999）を処理
-            is_midnight = (hour_part >= 23.99) & (hour_part <= 24.0)
-            date_part[is_midnight] = date_part[is_midnight] + pd.Timedelta(days=1)
-            hour_part[is_midnight] = 0
-
-            # 浮動小数点の誤差を防ぐために分単位で丸める
-            minutes = ((hour_part - hour_part.astype(int)) * 60).round().astype(int)
-            hours = hour_part.astype(int)
-
-            normalized = date_part + pd.to_timedelta(hours, unit='h') + pd.to_timedelta(minutes, unit='m')
-            return normalized.dt.strftime("%Y/%m/%d %H:%M")
-
-        elif "date" in df.columns:
-            # 日付のみのデータを処理
+        if "date" in df.columns:
             normalized = pd.to_datetime(df["date"], errors="coerce")
             return normalized.dt.strftime("%Y/%m/%d")
 
@@ -160,18 +145,7 @@ def _export_precipitation_excel(
         # 日時カラムを正規化してExcel用のdatetimeオブジェクトとして保存
         normalized_time = _normalize_time_column(df)
         if normalized_time is not None:
-            # 適切なExcel形式で保存するためにdatetimeオブジェクトとして処理
-            if 'datetime' in df.columns:
-                dt_series = pd.to_datetime(df['datetime'], errors='coerce')
-            elif 'date' in df.columns and 'time' in df.columns:
-                dt_series = pd.to_datetime(df['date'] + ' ' + df['time'], errors='coerce')
-            elif 'date' in df.columns and 'hour' in df.columns:
-                dt_series = pd.to_datetime(df['date'], errors='coerce') + \
-                           pd.to_timedelta(df['hour'].fillna(0), unit='h')
-            else:
-                dt_series = pd.to_datetime(df['date'], errors='coerce')
-
-            precipitation_df["日時"] = dt_series
+            precipitation_df["日時"] = normalized_time
 
         # その他のカラムを追加
         for column, display_name in available_columns.items():
@@ -211,18 +185,11 @@ def _export_precipitation_excel(
             if "日時" in precipitation_df.columns:
                 # 日時カラムを文字列に変換してから書き込み
                 if not precipitation_df["日時"].empty:
-                    # 日時データを文字列に変換（表示形式を統一）
-                    if any(not pd.isna(t) and hasattr(t, 'hour') and (t.hour > 0 or t.minute > 0)
-                           for t in precipitation_df["日時"] if pd.notna(t)):
-                        # 時刻を含む場合
-                        precipitation_df["日時"] = precipitation_df["日時"].dt.strftime('%Y/%m/%d %H:%M')
+                    if any(" " in str(t) for t in precipitation_df["日時"] if pd.notna(t)):
                         col_width = 16
                     else:
-                        # 日付のみの場合
-                        precipitation_df["日時"] = precipitation_df["日時"].dt.strftime('%Y/%m/%d')
                         col_width = 12
 
-                    # データを再度書き込み
                     worksheet.write_column(1, 0, precipitation_df["日時"], datetime_format)
                     worksheet.set_column('A:A', col_width, datetime_format)
                 else:
@@ -306,7 +273,7 @@ def export_weather_data(
     interval: str,
     start_date: date,
     end_date: date,
-    output_dir: Path = None,
+    output_dir: Path | None = None,
     columns: Optional[List[str]] = None,
     export_csv: bool = True,
     export_excel: bool = True,
@@ -352,14 +319,13 @@ def export_weather_data(
     filepath = output_dir / filename
     overview_info["output_file"] = filename
 
+    prepared_df = _prepare_export_frame(df, interval)
     if columns is None:
-        columns = [col for col in OUTPUT_COLUMNS.get(interval, []) if col in df.columns]
-
-    valid_columns = [col for col in columns if col in df.columns]
+        columns = list(OUTPUT_COLUMNS.get(interval, prepared_df.columns.tolist()))
+    valid_columns = [col for col in columns if col in prepared_df.columns]
     if not valid_columns:
-        valid_columns = df.columns.tolist()
-
-    export_df = df[valid_columns]
+        valid_columns = prepared_df.columns.tolist()
+    export_df = cast(pd.DataFrame, prepared_df[valid_columns].copy())
 
     # CSV出力が有効な場合のみCSVファイルを作成
     if export_csv:

@@ -17,7 +17,9 @@ from .models import GraphTarget
 
 def _time_column(df: pd.DataFrame) -> str:
     if "period_end_at" in df.columns:
-        return "period_end_at"
+        period_end = pd.to_datetime(df["period_end_at"], errors="coerce")
+        if not period_end.isna().all():
+            return "period_end_at"
     return "observed_at"
 
 

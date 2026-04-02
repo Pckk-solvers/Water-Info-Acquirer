@@ -112,10 +112,15 @@ class ParquetCatalog:
 
         if self.data.empty:
             return []
-        time_col = "period_end_at" if "period_end_at" in self.data.columns else "observed_at"
-        if time_col not in self.data.columns:
+        if "period_end_at" in self.data.columns:
+            period_end = _to_datetime_series(cast(pd.Series, self.data["period_end_at"]))
+            observed = _to_datetime_series(cast(pd.Series, self.data["observed_at"]))
+            time_values = period_end.fillna(observed)
+        elif "observed_at" in self.data.columns:
+            time_values = _to_datetime_series(cast(pd.Series, self.data["observed_at"]))
+        else:
             return []
-        observed = _to_datetime_series(cast(pd.Series, self.data[time_col])).dropna()
+        observed = time_values.dropna()
         if observed.empty:
             return []
         return sorted({ts.date().isoformat() for ts in observed})
@@ -142,13 +147,14 @@ class ParquetCatalog:
             return selected
         if "period_end_at" in selected.columns:
             selected["period_end_at"] = _to_datetime_series(cast(pd.Series, selected["period_end_at"]))
-            selected["observed_at"] = selected["period_end_at"]
-        else:
-            selected["observed_at"] = _to_datetime_series(cast(pd.Series, selected["observed_at"]))
+        selected["observed_at"] = _to_datetime_series(cast(pd.Series, selected["observed_at"]))
         selected["value"] = pd.to_numeric(selected["value"], errors="coerce")
         selected = selected.dropna(subset=["observed_at"])
-        sort_col = "period_end_at" if "period_end_at" in selected.columns else "observed_at"
-        return selected.sort_values(by=sort_col).reset_index(drop=True)
+        if "period_end_at" in selected.columns:
+            selected["_sort_at"] = selected["period_end_at"].fillna(selected["observed_at"])
+            sorted_df = selected.sort_values(by="_sort_at").drop(columns="_sort_at")
+            return sorted_df.reset_index(drop=True)
+        return selected.sort_values(by="observed_at").reset_index(drop=True)
 
 
 def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
@@ -331,7 +337,8 @@ def _validate_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
     work = _normalize_legacy_jma_hourly_observed_at(work)
     work = _fill_period_columns_from_legacy(work)
-    work.loc[work["period_end_at"].notna(), "observed_at"] = work.loc[work["period_end_at"].notna(), "period_end_at"]
+    missing_observed = work["observed_at"].isna() & work["period_end_at"].notna()
+    work.loc[missing_observed, "observed_at"] = work.loc[missing_observed, "period_end_at"]
 
     bad_source = ~work["source"].isin(list(_ALLOWED_SOURCES))
     bad_metric = ~work["metric"].isin(list(_ALLOWED_METRICS))
@@ -409,7 +416,11 @@ def _fill_period_columns_from_legacy(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     work = df.copy()
-    missing_end = work["period_end_at"].isna() & work["observed_at"].notna()
+    instantaneous_mask = (
+        (work["source"] == "water_info")
+        & work["metric"].isin(["water_level", "discharge"])
+    )
+    missing_end = work["period_end_at"].isna() & work["observed_at"].notna() & ~instantaneous_mask
     if bool(missing_end.any()):
         # hydrology_graphs 互換: 旧 observed_at は終端時刻として扱う。
         work.loc[missing_end, "period_end_at"] = work.loc[missing_end, "observed_at"]

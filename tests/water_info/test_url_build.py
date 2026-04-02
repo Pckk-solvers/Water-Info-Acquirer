@@ -39,7 +39,7 @@ def test_process_data_for_code_builds_expected_url(monkeypatch, mode_type, expec
     assert expected_segment in url
     assert expected_kind in url
     assert "ID=123" in url
-    assert "BGNDATE=20240201" in url
+    assert "BGNDATE=20240101" in url
     assert "ENDDATE=20241231" in url
 
 

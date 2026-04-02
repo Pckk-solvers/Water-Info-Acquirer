@@ -7,8 +7,11 @@ from typing import Iterable, Optional
 
 from water_info_acquirer.app_meta import get_app_title
 
+from .cli import main as cli_main
 from .entry import show_water
 from .ui.dialogs import show_error
+
+_CLI_COMMANDS = {"fetch"}
 
 
 def _set_cwd_to_project_root() -> None:
@@ -25,6 +28,10 @@ def _set_cwd_to_project_root() -> None:
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
     """CLI entry point shared by `python -m src.water_info` and `python -m src` (dev)."""
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    if raw_args and raw_args[0] in _CLI_COMMANDS:
+        raise SystemExit(cli_main(raw_args))
+
     parser = argparse.ArgumentParser(description=get_app_title(lang="jp"))
     parser.add_argument(
         '--single-sheet',
@@ -41,7 +48,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         action='store_true',
         help='開発用の初期観測所コードを入力'
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_args)
     single_sheet_mode = args.single_sheet
     dev_mode = args.dev
     debug_ui = args.debug_ui or dev_mode

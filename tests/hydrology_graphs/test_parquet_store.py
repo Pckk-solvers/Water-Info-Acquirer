@@ -70,3 +70,27 @@ def test_scan_parquet_catalog_normalizes_legacy_jma_hourly_timestamps(tmp_path):
         "2026-02-02 02:00:00",
         "2026-02-03 00:00:00",
     ]
+
+
+def test_scan_parquet_catalog_keeps_instantaneous_observed_at_when_period_end_missing(tmp_path):
+    frame = pd.DataFrame(
+        {
+            "source": ["water_info"],
+            "station_key": ["303"],
+            "station_name": ["高幡橋"],
+            "period_start_at": [None],
+            "period_end_at": [None],
+            "observed_at": ["2025-01-01 00:00:00"],
+            "metric": ["water_level"],
+            "value": [1.2],
+            "unit": ["m"],
+            "interval": ["1hour"],
+            "quality": ["normal"],
+        }
+    )
+    frame.to_parquet(tmp_path / "instant.parquet", index=False)
+
+    catalog = scan_parquet_catalog(tmp_path)
+
+    assert pd.Timestamp(catalog.data.loc[0, "observed_at"]) == pd.Timestamp("2025-01-01 00:00:00")
+    assert pd.isna(catalog.data.loc[0, "period_end_at"])
