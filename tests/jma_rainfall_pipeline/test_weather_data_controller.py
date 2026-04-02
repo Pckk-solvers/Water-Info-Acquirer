@@ -29,6 +29,7 @@ def test_filter_dataframe_by_range_hourly_uses_period_end_window() -> None:
 
     actual = pd.to_datetime(filtered["datetime"]).tolist()
     assert actual == [
+        pd.Timestamp("2026-02-02 00:00:00"),
         pd.Timestamp("2026-02-02 01:00:00"),
         pd.Timestamp("2026-02-02 23:00:00"),
         pd.Timestamp("2026-02-03 00:00:00"),

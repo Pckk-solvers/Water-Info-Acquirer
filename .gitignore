@@ -13,3 +13,5 @@ build
 cache
 site
 outputs/*
+tmp/
+*.egg-info/

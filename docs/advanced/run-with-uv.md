@@ -45,8 +45,9 @@ uv run python scripts/verify_time_contracts.py
 - サマリ: `tmp/verify_time/report.json`
 - 検証対象:
   - `water_info` 水位 `S`: `303051283310090`（高幡橋）
+  - `water_info` 流量 `R`: `303031283301030`（栗橋）
   - `water_info` 雨量 `U`: `101031281101620`（定山渓ダム）
-  - `JMA` hourly / 10min: `13:47406:s1`（留萌）
+  - `JMA` daily / hourly / 10min: `13:47406:s1`（留萌）
 
 ## JMA の期間指定契約
 

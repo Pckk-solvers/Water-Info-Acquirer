@@ -88,7 +88,7 @@
   - 判定式は `request_start <= observed_at <= request_end_exclusive`
 - 区間値
   - `publish_window` 判定は `period_end_at` に対して行う
-  - 判定式は `request_start < period_end_at <= request_end_exclusive`
+  - 判定式は `request_start <= period_end_at <= request_end_exclusive`
 
 理由:
 
@@ -178,7 +178,8 @@
 3. `24時` や `23:59:59.999999` の吸収は正規化段階に限定する
 4. `CSV` の `hour=24` のような表示残りは排除し、最終的に実時刻へ寄せる
 5. `10min` の `period_start_at=...59.999999` のような疑似境界を排除する
-6. `request_end` の実装で `23:59:59.999999` を生成しない
+6. 先頭の `0:00` 終端区間も保持する
+7. `request_end` の実装で `23:59:59.999999` を生成しない
 
 ## 影響範囲
 

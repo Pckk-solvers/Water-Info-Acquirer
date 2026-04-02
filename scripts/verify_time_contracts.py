@@ -13,7 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -85,6 +85,116 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
             csv_glob="*.csv",
             parquet_glob="parquet/*.parquet",
             excel_glob="*.xlsx",
+        ),
+        VerificationCase(
+            name="water_info_r_hourly",
+            command=[
+                sys.executable,
+                "-m",
+                "water_info",
+                "fetch",
+                "--code",
+                "303031283301030",
+                "--mode",
+                "R",
+                "--start",
+                "2024-06",
+                "--end",
+                "2024-06",
+                "--interval",
+                "hourly",
+                "--csv",
+                "--excel",
+                "--parquet",
+                "--output-dir",
+                str(output_root / "water_r_hourly"),
+            ],
+            output_dir=output_root / "water_r_hourly",
+            csv_glob="*.csv",
+            parquet_glob="parquet/*.parquet",
+            excel_glob="*.xlsx",
+        ),
+        VerificationCase(
+            name="water_info_r_daily",
+            command=[
+                sys.executable,
+                "-m",
+                "water_info",
+                "fetch",
+                "--code",
+                "303031283301030",
+                "--mode",
+                "R",
+                "--start",
+                "2024-06",
+                "--end",
+                "2024-06",
+                "--interval",
+                "daily",
+                "--csv",
+                "--excel",
+                "--parquet",
+                "--output-dir",
+                str(output_root / "water_r_daily"),
+            ],
+            output_dir=output_root / "water_r_daily",
+            csv_glob="*.csv",
+            parquet_glob="parquet/*.parquet",
+            excel_glob="*.xlsx",
+        ),
+        VerificationCase(
+            name="water_info_u_daily",
+            command=[
+                sys.executable,
+                "-m",
+                "water_info",
+                "fetch",
+                "--code",
+                "101031281101620",
+                "--mode",
+                "U",
+                "--start",
+                "2024-06",
+                "--end",
+                "2024-06",
+                "--interval",
+                "daily",
+                "--csv",
+                "--excel",
+                "--parquet",
+                "--output-dir",
+                str(output_root / "water_u_daily"),
+            ],
+            output_dir=output_root / "water_u_daily",
+            csv_glob="*.csv",
+            parquet_glob="parquet/*.parquet",
+            excel_glob="*.xlsx",
+        ),
+        VerificationCase(
+            name="jma_daily",
+            command=[
+                sys.executable,
+                "-m",
+                "jma_rainfall_pipeline",
+                "fetch",
+                "--station",
+                "13:47406:s1",
+                "--start",
+                "2026-03-01",
+                "--end",
+                "2026-03-03",
+                "--interval",
+                "daily",
+                "--csv",
+                "--excel",
+                "--parquet",
+                "--output-dir",
+                str(output_root / "jma_daily"),
+            ],
+            output_dir=output_root / "jma_daily",
+            csv_glob="csv/*.csv",
+            parquet_glob="parquet/*.parquet",
+            excel_glob="excel/*.xlsx",
         ),
         VerificationCase(
             name="jma_hourly",
@@ -161,19 +271,21 @@ def _read_preview(path: Path) -> pd.DataFrame:
 def _series_min(df: pd.DataFrame, column: str) -> str | None:
     if column not in df.columns:
         return None
-    value = pd.to_datetime(df[column], errors="coerce").min()
+    series = cast(pd.Series, pd.to_datetime(cast(pd.Series, df[column]), errors="coerce"))
+    value = series.min()
     if pd.isna(value):
         return None
-    return pd.Timestamp(value).isoformat(sep=" ")
+    timestamp = cast(pd.Timestamp, pd.Timestamp(cast(Any, value)))
+    return timestamp.isoformat(sep=" ")
 
 
 def _hour_max(df: pd.DataFrame) -> int | None:
     if "hour" not in df.columns:
         return None
-    values = pd.to_numeric(df["hour"], errors="coerce").dropna()
+    values = cast(pd.Series, pd.to_numeric(cast(pd.Series, df["hour"]), errors="coerce")).dropna()
     if values.empty:
         return None
-    return int(values.max())
+    return int(cast(Any, values.max()))
 
 
 def _summarize_frame(df: pd.DataFrame) -> dict[str, Any]:
@@ -202,6 +314,8 @@ def _json_safe(value: Any) -> Any:
     if value is pd.NaT:
         return None
     if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
         return value.isoformat(sep=" ")
     if isinstance(value, float) and math.isnan(value):
         return None

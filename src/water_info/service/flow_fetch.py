@@ -88,7 +88,7 @@ def _filter_hourly_publish_window(
 
     raw_period_end = cast(pd.Series, work["period_end_at"]) if "period_end_at" in work.columns else cast(pd.Series, work["datetime"])
     period_end = pd.to_datetime(raw_period_end, errors="coerce")
-    mask = (period_end > request_start) & (period_end <= request_end_exclusive)
+    mask = (period_end >= request_start) & (period_end <= request_end_exclusive)
     return work.loc[mask.fillna(False)].reset_index(drop=True)
 
 

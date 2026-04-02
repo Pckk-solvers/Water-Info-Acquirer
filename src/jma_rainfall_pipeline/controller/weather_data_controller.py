@@ -340,7 +340,7 @@ class WeatherDataController:
             if interval_label in {"hourly", "10min"}:
                 normalized = build_normalized_time_frame(df, interval_label)
                 period_end = pd.to_datetime(normalized["period_end_at"], errors="coerce")
-                mask = (period_end > start) & (period_end <= end)
+                mask = (period_end >= start) & (period_end <= end)
                 return df.loc[mask.fillna(False)].reset_index(drop=True)
             if "datetime" in df.columns:
                 datetimes = pd.to_datetime(df["datetime"], errors="coerce")

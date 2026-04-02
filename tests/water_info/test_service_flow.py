@@ -34,6 +34,37 @@ def test_fetch_hourly_dataframe_for_code_builds_df_and_path(monkeypatch, tmp_pat
     assert "テスト観測所" in str(file_name)
 
 
+def test_fetch_hourly_dataframe_for_code_keeps_first_midnight_interval_for_u(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    def _station(*args, **kwargs):
+        return "テスト観測所"
+
+    def _values(*args, **kwargs):
+        return [1.0] * ((31 * 24) + (24 * 2))
+
+    monkeypatch.setattr(flow_fetch, "fetch_station_name", _station)
+    monkeypatch.setattr(flow_fetch, "fetch_hourly_values", _values)
+
+    df, _, value_col = flow_fetch.fetch_hourly_dataframe_for_code(
+        code="123",
+        year_start="2024",
+        year_end="2024",
+        month_start="1月",
+        month_end="1月",
+        mode_type="U",
+        throttled_get=lambda *a, **k: None,
+        headers={},
+    )
+
+    assert value_col == "雨量"
+    assert df is not None
+    assert len(df) == 49
+    assert pd.Timestamp(df.loc[0, "period_end_at"]) == pd.Timestamp("2024-01-01 00:00:00")
+    assert pd.Timestamp(df.loc[0, "datetime"]) == pd.Timestamp("2024-01-01 00:00:00")
+    assert pd.Timestamp(df.loc[df.index.max(), "period_end_at"]) == pd.Timestamp("2024-01-03 00:00:00")
+
+
 def test_write_hourly_excel_creates_file(tmp_path):
     df = pd.DataFrame(
         {
