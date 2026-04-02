@@ -15,3 +15,5 @@ site
 outputs/*
 tmp/
 *.egg-info/
+
+data/parquet_input/
