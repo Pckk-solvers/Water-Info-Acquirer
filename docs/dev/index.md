@@ -19,6 +19,7 @@
 ## 現行の設計
 
 - リポジトリ全体アーキテクチャ: `docs/dev/architecture/overview.md`
+- 起動経路: `docs/dev/architecture/entrypoints.md`
 - 時間意味と境界ルール: `docs/dev/domain/time-semantics.md`
 
 ## 参照資料

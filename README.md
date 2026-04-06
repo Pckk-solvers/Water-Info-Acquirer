@@ -1,5 +1,5 @@
 ## Water-Info-Acquirer(water Information Acquisition)；水文データ取得・整理ツール
-水文水質データベースからデータから水位・流量・雨量データを指定期間ごとに取得する。
+水文水質データベースから水位・流量・雨量データを指定期間ごとに取得する。
 取得したデータを日単位または1時間単位でExcelへ整理し、ハイドログラフを挿入する。
 
 配布形式は実行ファイルのため Windows OS であれば即実行可能<br>
@@ -33,9 +33,13 @@ cd クローン先のディレクトリ
 ```bash
 uv sync
 ```
-起動する。
+アプリ選択ランチャーを起動する。
 ```bash
 uv run python main.py
+```
+開発者モードで起動する場合:
+```bash
+uv run python main.py --dev
 ```
 雨量 GUI/CLI を直接確認する場合:
 ```bash
@@ -48,7 +52,7 @@ uv run python river_rainfall.py --gui
 pip install -r requirements.txt
 python main.py
 ```
-コンソール画面には詳しく、デバックしているので適宜ご確認ください。<br>
+コンソール画面には詳細ログを出しています。適宜ご確認ください。<br>
 もし、改善点等がありましたらお問い合わせいただけますと幸いです。<br>
 
 ## ドキュメント（MkDocs）
@@ -58,7 +62,7 @@ uv run mkdocs serve
 ```
 
 公開サイト（GitHub Pages）: https://pckk-solvers.github.io/Water-Info-Acquirer/  
-公開手順の詳細: `docs/dev/github-pages.md`
+公開手順の詳細: `docs/dev/reference/github-pages.md`
 
 GitHub Pages（プロジェクトページ）へ公開する場合は、リポジトリの **Settings → Pages → Source** を **GitHub Actions** に設定してください。  
 以降は `main` への push で自動デプロイされます（`.github/workflows/docs.yml`）。
