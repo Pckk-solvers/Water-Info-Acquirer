@@ -1,4 +1,4 @@
-# Water Info 後処理 仕様書（現行実装）
+# Water Info 後処理 要件（現行実装）
 
 Status: current
 
@@ -94,5 +94,9 @@ Status: current
   ```
   uv run python -m water_info.postprocess ^
     --hour-file water_info/303031283303010_木原_2020年1月-2021年12月_WH.xlsx ^
-    --out-excel out/postprocess_hour_only.xlsx
+  --out-excel out/postprocess_hour_only.xlsx
   ```
+
+## 参照
+
+- `docs/dev/reference/postprocess/config.sample.json`

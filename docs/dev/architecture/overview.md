@@ -1,5 +1,7 @@
 # アーキテクチャ概要
 
+Status: current
+
 ## 全体像
 
 - `main.py` から `src/launcher.py` を起動し、ランチャーで各アプリ（Toplevel）を切り替えます。

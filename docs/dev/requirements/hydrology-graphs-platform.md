@@ -1,4 +1,4 @@
-# Hydrology Graphs Platform Current Spec
+# Hydrology Graphs Platform 要件（現行）
 
 Status: current
 
@@ -52,7 +52,7 @@ Status: current
   - イベント系出力パス: `<output_dir>/<station_key>/<graph_type>/<base>/<3day|5day>/graph.png`
   - 年最大系出力パス: `<output_dir>/<station_key>/<graph_type>/annual/graph.png`
   - 実行中停止をサポート（未着手は `skipped`）
- - 結果表示:
+- 結果表示:
   - 列は `対象/窓/状態/理由` の4列
   - 行をダブルクリックすると出力先フルパスを表示
 
@@ -87,7 +87,7 @@ Status: current
 - ルート禁止: `common`, `variants`
 - `graph_styles` は必須9キー固定
 
-詳細は [style-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/hydrology-graphs-platform/current/style-contract.md) を参照。
+詳細は [style-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/style-contract.md) を参照。
 
 ## 7. 参照実装
 - [app.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/ui/app.py)
@@ -98,3 +98,9 @@ Status: current
 - [style_store.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/io/style_store.py)
 - [threshold_store.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/io/threshold_store.py)
 - [plotter.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/render/plotter.py)
+
+## 8. 参照資料
+
+- [style-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/style-contract.md)
+- [parquet-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/parquet-contract.md)
+- [threshold-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/threshold-contract.md)

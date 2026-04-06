@@ -1,28 +1,36 @@
-# 開発（保守・改修・ビルド）
+# 開発ドキュメント索引
 
-このセクションは、改修や配布（PyInstaller）を行う方向けの情報です。
+この配下は、実装と同じく「現行の真実」を置く。
 
-- 一般文書:
-  - `docs/dev/architecture.md`
-  - `docs/dev/build-pyinstaller.md`
-  - `docs/dev/github-pages.md`
-  - `docs/dev/release-process.md`
-- ランチャー: `src/launcher.py`
-- 国交省 水文データ取得: `src/water_info/`
-- 気象庁 雨量データ取得: `src/jma_rainfall_pipeline/`
-- 共通雨量 GUI/CLI/サービス: `src/river_meta/rainfall/`
-  - 入口: `entry.py`, `cli.py`, `__main__.py`
-  - GUI: `gui/`
-  - ユースケース: `services/`
-  - source連携: `sources/`
-  - ストレージ: `storage/`
-  - 出力: `outputs/`
-  - ドメイン/共通ロジック: `domain/`, `support/`
-- Hydrology Graphs Platform: `docs/dev/hydrology-graphs-platform/README.md`
-  - current: `docs/dev/hydrology-graphs-platform/current/README.md`
-  - current spec: `docs/dev/hydrology-graphs-platform/current/spec.md`
-  - current style contract: `docs/dev/hydrology-graphs-platform/current/style-contract.md`
-  - current parquet contract: `docs/dev/hydrology-graphs-platform/current/parquet-contract.md`
-  - current threshold contract: `docs/dev/hydrology-graphs-platform/current/threshold-contract.md`
-- Water Info 後処理仕様: `docs/dev/postprocess/specification.md`
-- 旧計画メモや差分案は削除済み
+## 入口
+
+- `docs/dev/domain/`
+- `docs/dev/requirements/`
+- `docs/dev/architecture/`
+- `docs/dev/adr/`
+- `docs/dev/tasks/`
+- `docs/dev/reference/`
+
+## 現行の要件
+
+- Hydrology Graphs Platform: `docs/dev/requirements/hydrology-graphs-platform.md`
+- Water Info 後処理: `docs/dev/requirements/postprocess.md`
+
+## 現行の設計
+
+- リポジトリ全体アーキテクチャ: `docs/dev/architecture/overview.md`
+- 時間意味と境界ルール: `docs/dev/domain/time-semantics.md`
+
+## 参照資料
+
+- PyInstaller ビルド: `docs/dev/reference/build-pyinstaller.md`
+- GitHub Pages 公開: `docs/dev/reference/github-pages.md`
+- リリース手順: `docs/dev/reference/release-process.md`
+- Hydrology Graphs Platform 契約: `docs/dev/reference/hydrology-graphs-platform/`
+- Water Info 後処理サンプル設定: `docs/dev/reference/postprocess/`
+
+## タスク運用
+
+- 進行中タスクなし: `docs/dev/tasks/active/README.md`
+- 完了タスク: `docs/dev/tasks/done/`
+- 中止タスク: `docs/dev/tasks/cancelled/`
