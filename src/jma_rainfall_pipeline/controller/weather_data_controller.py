@@ -12,6 +12,7 @@ import traceback
 import pandas as pd
 
 from ..exporter.csv_exporter import export_weather_data
+from ..exporter.ndjson_exporter import export_weather_ndjson
 from ..exporter.parquet_exporter import build_normalized_time_frame, export_weather_parquet
 from ..fetcher.fetcher import Fetcher
 from ..logger.app_logger import get_logger
@@ -27,6 +28,7 @@ class StationExportResult:
     csv_path: Path | None
     excel_path: Path | None
     parquet_path: Path | None
+    ndjson_path: Path | None
     request_urls: tuple[str, ...]
 
 
@@ -66,6 +68,7 @@ class WeatherDataController:
         excel_output_dir: Path | None = None,
         export_parquet: bool = False,
         parquet_output_dir: Path | None = None,
+        export_ndjson: bool = False,
     ) -> Path:
         """
         指定された観測所リスト・期間でデータを取得しCSV/Excelへ出力する。
@@ -82,6 +85,7 @@ class WeatherDataController:
             excel_output_dir=excel_output_dir,
             export_parquet=export_parquet,
             parquet_output_dir=parquet_output_dir,
+            export_ndjson=export_ndjson,
         )
         if not summary.results:
             raise ValueError("有効なファイルを出力できませんでした")
@@ -105,6 +109,7 @@ class WeatherDataController:
         excel_output_dir: Path | None = None,
         export_parquet: bool = False,
         parquet_output_dir: Path | None = None,
+        export_ndjson: bool = False,
     ) -> WeatherExportSummary:
         """指定された観測所リスト・期間でデータを取得し出力結果を返す。
 
@@ -113,7 +118,7 @@ class WeatherDataController:
         if not stations:
             raise ValueError("観測所が指定されていません")
 
-        csv_dir, resolved_excel_dir, resolved_parquet_dir = self._resolve_output_directories(
+        csv_dir, resolved_excel_dir, resolved_parquet_dir, resolved_ndjson_dir = self._resolve_output_directories(
             output_dir=output_dir,
             excel_output_dir=excel_output_dir,
             parquet_output_dir=parquet_output_dir,
@@ -194,6 +199,8 @@ class WeatherDataController:
             csv_dir.mkdir(parents=True, exist_ok=True)
         if export_parquet:
             resolved_parquet_dir.mkdir(parents=True, exist_ok=True)
+        if export_ndjson:
+            resolved_ndjson_dir.mkdir(parents=True, exist_ok=True)
 
         station_dfs: Dict[Tuple[str, str], List[pd.DataFrame]] = defaultdict(list)
         for prec_value, block_value, df in dfs:
@@ -255,6 +262,17 @@ class WeatherDataController:
                         end_date=public_end_date,
                         output_dir=resolved_parquet_dir,
                     )
+            ndjson_path = None
+            if export_ndjson:
+                ndjson_path = export_weather_ndjson(
+                    filtered_df,
+                    prec_no=str(prec_no),
+                    block_no=str(block_no),
+                    interval_label=interval_label,
+                    start_date=start.date(),
+                    end_date=public_end_date,
+                    output_dir=resolved_ndjson_dir,
+                )
             exported.append(
                 StationExportResult(
                     prec_no=str(prec_no),
@@ -263,6 +281,7 @@ class WeatherDataController:
                     csv_path=csv_path,
                     excel_path=excel_path,
                     parquet_path=parquet_path,
+                    ndjson_path=ndjson_path,
                     request_urls=request_list,
                 )
             )
@@ -275,7 +294,7 @@ class WeatherDataController:
         output_dir: Path | None,
         excel_output_dir: Path | None,
         parquet_output_dir: Path | None,
-    ) -> tuple[Path, Path, Path]:
+    ) -> tuple[Path, Path, Path, Path]:
         if output_dir is None:
             output_dirs = get_output_directories()
             csv_dir = Path(output_dirs["csv_dir"])
@@ -287,14 +306,16 @@ class WeatherDataController:
                 if parquet_output_dir is None
                 else Path(parquet_output_dir)
             )
-            return csv_dir, resolved_excel_dir, resolved_parquet_dir
+            resolved_ndjson_dir = csv_dir.parent / "ndjson"
+            return csv_dir, resolved_excel_dir, resolved_parquet_dir, resolved_ndjson_dir
 
         base_dir = Path(output_dir)
         resolved_excel_dir = Path(excel_output_dir) if excel_output_dir is not None else base_dir / "excel"
         resolved_parquet_dir = (
             Path(parquet_output_dir) if parquet_output_dir is not None else base_dir / "parquet"
         )
-        return base_dir / "csv", resolved_excel_dir, resolved_parquet_dir
+        resolved_ndjson_dir = base_dir / "ndjson"
+        return base_dir / "csv", resolved_excel_dir, resolved_parquet_dir, resolved_ndjson_dir
 
     def _resolve_jma_excel_path(
         self,

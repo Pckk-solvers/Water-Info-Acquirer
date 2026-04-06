@@ -54,3 +54,19 @@ uv run python scripts/verify_time_contracts.py
 - `jma-rainfall` の `--end YYYY-MM-DD` は、その日の終端ではなく「翌日 `00:00` の排他的上限」として扱います。
 - そのため、`2026-03-01` から `2026-03-03` を指定すると、末尾の `24時` 相当は `2026-03-04 00:00:00` として保持されます。
 - 新規出力では `23:59:59.999999` の疑似日末は生成しません。
+
+## CLI出力形式（2026-04時点）
+
+- `water-info fetch`
+  - `--csv` は廃止。
+  - 中間確認用の行指向JSONは `--ndjson` を使う。
+  - 例:
+    ```powershell
+    uv run water-info fetch --code 303051283310090 --mode S --start 2025-01 --end 2025-01 --interval hourly --ndjson --parquet --no-excel
+    ```
+- `jma-rainfall fetch`
+  - 既存の `--csv` / `--excel` / `--parquet` に加えて `--ndjson` を利用できる。
+  - 例:
+    ```powershell
+    uv run jma-rainfall fetch --station 13:47406:s1 --start 2026-03-01 --end 2026-03-03 --interval hourly --ndjson --parquet --no-excel
+    ```

@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--end", required=True, help="終了日 YYYY-MM-DD")
     fetch.add_argument("--interval", choices=("daily", "hourly", "10min"), required=True)
     fetch.add_argument("--csv", action="store_true", help="CSV を出力")
+    fetch.add_argument("--ndjson", action="store_true", help="NDJSON を出力")
     fetch.add_argument("--excel", dest="excel", action="store_true", default=True, help="Excel を出力")
     fetch.add_argument("--no-excel", dest="excel", action="store_false", help="Excel を出力しない")
     fetch.add_argument("--parquet", action="store_true", help="Parquet を出力")
@@ -85,8 +86,8 @@ def _run_list_stations(*, pref_tokens: list[str], output_format: str) -> int:
 
 
 def _run_fetch(args: argparse.Namespace) -> int:
-    if not args.csv and not args.excel and not args.parquet:
-        raise SystemExit("少なくとも1つの出力形式を指定してください: --csv / --excel / --parquet")
+    if not args.csv and not args.excel and not args.parquet and not args.ndjson:
+        raise SystemExit("少なくとも1つの出力形式を指定してください: --csv / --excel / --parquet / --ndjson")
 
     output_dir = Path(args.output_dir) if str(args.output_dir).strip() else None
     set_runtime_log_options(level=args.log_level, enable_log_output=args.log, logger_scope="jma")
@@ -103,6 +104,7 @@ def _run_fetch(args: argparse.Namespace) -> int:
         export_csv=bool(args.csv),
         export_excel=bool(args.excel),
         export_parquet=bool(args.parquet),
+        export_ndjson=bool(args.ndjson),
     )
     return _emit_fetch_summary(summary)
 
@@ -120,6 +122,7 @@ def _emit_fetch_summary(summary: WeatherExportSummary) -> int:
             "csv": str(result.csv_path) if result.csv_path else "",
             "excel": str(result.excel_path) if result.excel_path else "",
             "parquet": str(result.parquet_path) if result.parquet_path else "",
+            "ndjson": str(result.ndjson_path) if result.ndjson_path else "",
         }
         print(json.dumps(payload, ensure_ascii=False))
     return 0

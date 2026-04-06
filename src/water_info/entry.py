@@ -27,7 +27,7 @@ class WaterInfoOutputResult:
     station_name: str
     excel_path: Path | None
     parquet_path: Path | None
-    csv_records: tuple[dict[str, Any], ...] = ()
+    unified_records: tuple[dict[str, Any], ...] = ()
 
 
 _UNIFIED_COLUMNS = (
@@ -62,15 +62,21 @@ def _save_unified_records_parquet(records: list[dict[str, Any]], output_path: Pa
     return output_path
 
 
-def save_unified_records_csv(
+def save_unified_records_ndjson(
     records: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     output_path: Path,
 ) -> Path:
     df = _records_to_unified_dataframe(records)
     if not df.empty:
-        df = df.sort_values(["station_key", "period_start_at"], kind="stable").reset_index(drop=True)
+        df = df.sort_values(["station_key", "observed_at"], kind="stable").reset_index(drop=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_path, index=False, encoding="utf-8-sig", date_format="%Y-%m-%dT%H:%M:%S")
+    df.to_json(
+        output_path,
+        orient="records",
+        lines=True,
+        force_ascii=False,
+        date_format="iso",
+    )
     return output_path
 
 
@@ -417,7 +423,7 @@ def _run_hourly_request_for_code(
             f"{period.year_end}/{period.month_end} {source_info_item_label(request.mode_type)}"
         ),
     }
-    csv_records = tuple(
+    unified_records = tuple(
         _build_water_info_unified_records(
             df=hourly_df,
             code=str(code),
@@ -459,7 +465,7 @@ def _run_hourly_request_for_code(
         station_name=station_name,
         excel_path=excel_path,
         parquet_path=parquet_path,
-        csv_records=csv_records,
+        unified_records=unified_records,
     )
 
 
@@ -509,7 +515,7 @@ def _run_daily_request_for_code(
             f"{period.year_end}/{period.month_end} {source_info_item_label(request.mode_type)}"
         ),
     }
-    csv_records = tuple(
+    unified_records = tuple(
         _build_water_info_unified_records(
             df=daily_df,
             code=str(code),
@@ -550,7 +556,7 @@ def _run_daily_request_for_code(
         station_name=station_name,
         excel_path=excel_path,
         parquet_path=parquet_path,
-        csv_records=csv_records,
+        unified_records=unified_records,
     )
 
 
@@ -578,6 +584,6 @@ def _build_legacy_request(
             single_sheet=single_sheet,
             export_excel=True,
             export_parquet=export_parquet,
-            export_csv=False,
+            export_ndjson=False,
         ),
     )

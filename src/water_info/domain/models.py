@@ -48,7 +48,7 @@ class Options:
     single_sheet: bool
     export_excel: bool = True
     export_parquet: bool = False
-    export_csv: bool = False
+    export_ndjson: bool = False
 
 
 @dataclass(frozen=True)

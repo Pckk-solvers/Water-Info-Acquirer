@@ -46,6 +46,7 @@ def test_fetch_uses_custom_output_root(monkeypatch) -> None:
                         csv_path=Path("out.csv"),
                         excel_path=Path("out.xlsx"),
                         parquet_path=Path("out.parquet"),
+                        ndjson_path=Path("out.ndjson"),
                         request_urls=(),
                     ),
                 )

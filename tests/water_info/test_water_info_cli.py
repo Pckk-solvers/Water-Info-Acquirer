@@ -23,7 +23,7 @@ def test_fetch_returns_partial_exit_code(monkeypatch) -> None:
             station_name="観測所",
             excel_path=Path("out.xlsx"),
             parquet_path=None,
-            csv_records=(),
+            unified_records=(),
         )
 
     monkeypatch.setattr(cli, "run_cli_request_for_code", _fake_run)
@@ -56,13 +56,13 @@ def test_fetch_passes_custom_output_dir(monkeypatch) -> None:
         captured["code"] = code
         captured["output_dir"] = output_dir
         captured["export_excel"] = request.options.export_excel
-        captured["export_csv"] = request.options.export_csv
+        captured["export_ndjson"] = request.options.export_ndjson
         return WaterInfoOutputResult(
             code=code,
             station_name="観測所",
             excel_path=Path("out.xlsx"),
             parquet_path=Path("out.parquet"),
-            csv_records=(),
+            unified_records=(),
         )
 
     monkeypatch.setattr(cli, "run_cli_request_for_code", _fake_run)
@@ -80,7 +80,7 @@ def test_fetch_passes_custom_output_dir(monkeypatch) -> None:
             "2024-03",
             "--interval",
             "daily",
-            "--csv",
+            "--ndjson",
             "--no-excel",
             "--parquet",
             "--output-dir",
@@ -92,10 +92,10 @@ def test_fetch_passes_custom_output_dir(monkeypatch) -> None:
     assert captured["code"] == "303031283302005"
     assert captured["output_dir"] == Path("custom-water")
     assert captured["export_excel"] is False
-    assert captured["export_csv"] is True
+    assert captured["export_ndjson"] is True
 
 
-def test_fetch_writes_single_combined_csv(monkeypatch, tmp_path) -> None:
+def test_fetch_writes_single_combined_ndjson(monkeypatch, tmp_path) -> None:
     emitted_paths: list[Path] = []
 
     def _fake_run(*, code, request, output_dir):
@@ -104,7 +104,7 @@ def test_fetch_writes_single_combined_csv(monkeypatch, tmp_path) -> None:
             station_name=f"観測所-{code}",
             excel_path=None,
             parquet_path=None,
-            csv_records=(
+            unified_records=(
                 {
                     "source": "water_info",
                     "station_key": code,
@@ -128,7 +128,7 @@ def test_fetch_writes_single_combined_csv(monkeypatch, tmp_path) -> None:
         return output_path
 
     monkeypatch.setattr(cli, "run_cli_request_for_code", _fake_run)
-    monkeypatch.setattr(cli, "save_unified_records_csv", _fake_save)
+    monkeypatch.setattr(cli, "save_unified_records_ndjson", _fake_save)
 
     code = cli.main(
         [
@@ -145,7 +145,7 @@ def test_fetch_writes_single_combined_csv(monkeypatch, tmp_path) -> None:
             "2024-02",
             "--interval",
             "hourly",
-            "--csv",
+            "--ndjson",
             "--output-dir",
             str(tmp_path),
         ]
@@ -153,4 +153,4 @@ def test_fetch_writes_single_combined_csv(monkeypatch, tmp_path) -> None:
 
     assert code == 0
     assert len(emitted_paths) == 1
-    assert emitted_paths[0].name == "water_info_batch_water_level_1hour_202401_202402.csv"
+    assert emitted_paths[0].name == "water_info_batch_water_level_1hour_202401_202402.ndjson"

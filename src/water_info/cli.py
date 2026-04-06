@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .domain.models import Options, Period, WaterInfoRequest
-from .entry import WaterInfoOutputResult, run_cli_request_for_code, save_unified_records_csv
+from .entry import WaterInfoOutputResult, run_cli_request_for_code, save_unified_records_ndjson
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--end", required=True, help="終了年月 YYYY-MM")
     fetch.add_argument("--interval", choices=("hourly", "daily"), required=True)
     fetch.add_argument("--single-sheet", action="store_true", help="指定全期間シートを出力")
-    fetch.add_argument("--csv", action="store_true", help="複数コードを1枚の CSV にまとめて出力")
+    fetch.add_argument("--ndjson", action="store_true", help="複数コードを1枚の NDJSON にまとめて出力")
     fetch.add_argument("--excel", dest="excel", action="store_true", default=True, help="Excel を出力")
     fetch.add_argument("--no-excel", dest="excel", action="store_false", help="Excel を出力しない")
     fetch.add_argument("--parquet", action="store_true", help="Parquet を出力")
@@ -48,19 +48,19 @@ def _run_fetch(args: argparse.Namespace) -> int:
             single_sheet=bool(args.single_sheet),
             export_excel=bool(args.excel),
             export_parquet=bool(args.parquet),
-            export_csv=bool(args.csv),
+            export_ndjson=bool(args.ndjson),
         ),
     )
     output_dir = Path(args.output_dir) if str(args.output_dir).strip() else None
 
     successes: list[WaterInfoOutputResult] = []
     failures: list[tuple[str, str]] = []
-    combined_csv_records: list[dict[str, object]] = []
+    combined_unified_records: list[dict[str, object]] = []
     for code in args.code:
         try:
             result = run_cli_request_for_code(code=str(code), request=request, output_dir=output_dir)
             successes.append(result)
-            combined_csv_records.extend(result.csv_records)
+            combined_unified_records.extend(result.unified_records)
             print(
                 json.dumps(
                     {
@@ -77,18 +77,18 @@ def _run_fetch(args: argparse.Namespace) -> int:
             print(f"{code}: {exc}", file=sys.stderr)
 
     if successes and failures:
-        _emit_combined_csv_if_requested(
+        _emit_combined_ndjson_if_requested(
             request=request,
             output_dir=output_dir,
-            combined_csv_records=combined_csv_records,
+            combined_unified_records=combined_unified_records,
         )
         return 2
     if failures:
         return 1
-    _emit_combined_csv_if_requested(
+    _emit_combined_ndjson_if_requested(
         request=request,
         output_dir=output_dir,
-        combined_csv_records=combined_csv_records,
+        combined_unified_records=combined_unified_records,
     )
     return 0
 
@@ -120,27 +120,27 @@ def _parse_year_month(value: str) -> tuple[str, int]:
     return year, month_value
 
 
-def _emit_combined_csv_if_requested(
+def _emit_combined_ndjson_if_requested(
     *,
     request: WaterInfoRequest,
     output_dir: Path | None,
-    combined_csv_records: list[dict[str, object]],
+    combined_unified_records: list[dict[str, object]],
 ) -> None:
-    if not request.options.export_csv or not combined_csv_records:
+    if not request.options.export_ndjson or not combined_unified_records:
         return
-    csv_path = _build_combined_csv_path(request=request, output_dir=output_dir)
-    save_unified_records_csv(combined_csv_records, csv_path)
-    print(json.dumps({"csv": str(csv_path)}, ensure_ascii=False))
+    ndjson_path = _build_combined_ndjson_path(request=request, output_dir=output_dir)
+    save_unified_records_ndjson(combined_unified_records, ndjson_path)
+    print(json.dumps({"ndjson": str(ndjson_path)}, ensure_ascii=False))
 
 
-def _build_combined_csv_path(*, request: WaterInfoRequest, output_dir: Path | None) -> Path:
+def _build_combined_ndjson_path(*, request: WaterInfoRequest, output_dir: Path | None) -> Path:
     period = request.period
     metric = _metric_token(request.mode_type)
     interval = "1day" if request.options.use_daily else "1hour"
     file_name = (
         f"water_info_batch_{metric}_{interval}_"
         f"{period.year_start}{_to_month_number(period.month_start):02d}_"
-        f"{period.year_end}{_to_month_number(period.month_end):02d}.csv"
+        f"{period.year_end}{_to_month_number(period.month_end):02d}.ndjson"
     )
     root = Path("outputs") / "water_info" if output_dir is None else Path(output_dir)
     return root / file_name

@@ -23,7 +23,7 @@ class VerificationCase:
     name: str
     command: list[str]
     output_dir: Path
-    csv_glob: str
+    ndjson_glob: str
     parquet_glob: str
     excel_glob: str
 
@@ -47,14 +47,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2025-01",
                 "--interval",
                 "hourly",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "water_s"),
             ],
             output_dir=output_root / "water_s",
-            csv_glob="*.csv",
+            ndjson_glob="*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="*.xlsx",
         ),
@@ -75,14 +75,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2024-06",
                 "--interval",
                 "hourly",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "water_u"),
             ],
             output_dir=output_root / "water_u",
-            csv_glob="*.csv",
+            ndjson_glob="*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="*.xlsx",
         ),
@@ -103,14 +103,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2024-06",
                 "--interval",
                 "hourly",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "water_r_hourly"),
             ],
             output_dir=output_root / "water_r_hourly",
-            csv_glob="*.csv",
+            ndjson_glob="*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="*.xlsx",
         ),
@@ -131,14 +131,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2024-06",
                 "--interval",
                 "daily",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "water_r_daily"),
             ],
             output_dir=output_root / "water_r_daily",
-            csv_glob="*.csv",
+            ndjson_glob="*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="*.xlsx",
         ),
@@ -159,14 +159,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2024-06",
                 "--interval",
                 "daily",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "water_u_daily"),
             ],
             output_dir=output_root / "water_u_daily",
-            csv_glob="*.csv",
+            ndjson_glob="*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="*.xlsx",
         ),
@@ -185,14 +185,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2026-03-03",
                 "--interval",
                 "daily",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "jma_daily"),
             ],
             output_dir=output_root / "jma_daily",
-            csv_glob="csv/*.csv",
+            ndjson_glob="ndjson/*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="excel/*.xlsx",
         ),
@@ -211,14 +211,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2026-03-03",
                 "--interval",
                 "hourly",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "jma_hourly"),
             ],
             output_dir=output_root / "jma_hourly",
-            csv_glob="csv/*.csv",
+            ndjson_glob="ndjson/*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="excel/*.xlsx",
         ),
@@ -237,14 +237,14 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
                 "2026-03-03",
                 "--interval",
                 "10min",
-                "--csv",
+                "--ndjson",
                 "--excel",
                 "--parquet",
                 "--output-dir",
                 str(output_root / "jma_10min"),
             ],
             output_dir=output_root / "jma_10min",
-            csv_glob="csv/*.csv",
+            ndjson_glob="ndjson/*.ndjson",
             parquet_glob="parquet/*.parquet",
             excel_glob="excel/*.xlsx",
         ),
@@ -259,8 +259,8 @@ def _pick_one(base_dir: Path, pattern: str) -> Path:
 
 
 def _read_preview(path: Path) -> pd.DataFrame:
-    if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+    if path.suffix.lower() == ".ndjson":
+        return pd.read_json(path, orient="records", lines=True)
     if path.suffix.lower() == ".parquet":
         return pd.read_parquet(path)
     xls = pd.ExcelFile(path)
@@ -335,15 +335,15 @@ def _run_case(case: VerificationCase) -> dict[str, Any]:
     if proc.returncode != 0:
         return result
 
-    csv_path = _pick_one(case.output_dir, case.csv_glob)
+    ndjson_path = _pick_one(case.output_dir, case.ndjson_glob)
     parquet_path = _pick_one(case.output_dir, case.parquet_glob)
     excel_path = _pick_one(case.output_dir, case.excel_glob)
     result["artifacts"] = {
-        "csv": str(csv_path),
+        "ndjson": str(ndjson_path),
         "parquet": str(parquet_path),
         "excel": str(excel_path),
     }
-    result["csv_summary"] = _summarize_frame(_read_preview(csv_path))
+    result["ndjson_summary"] = _summarize_frame(_read_preview(ndjson_path))
     result["parquet_summary"] = _summarize_frame(_read_preview(parquet_path))
     result["excel_summary"] = _summarize_frame(_read_preview(excel_path))
     return result
@@ -377,14 +377,14 @@ def main() -> int:
             stderr = str(item.get("stderr", "")).strip()
             print(stderr or "failed")
             continue
-        csv_summary = item["csv_summary"]
+        ndjson_summary = item["ndjson_summary"]
         parquet_summary = item["parquet_summary"]
         print(
-            f"csv_rows={csv_summary['rows']} "
-            f"csv_observed_min={csv_summary['observed_min']} "
+            f"ndjson_rows={ndjson_summary['rows']} "
+            f"ndjson_observed_min={ndjson_summary['observed_min']} "
             f"parquet_period_start_min={parquet_summary['period_start_min']} "
             f"parquet_period_end_min={parquet_summary['period_end_min']} "
-            f"hour_max={csv_summary['hour_max']}"
+            f"hour_max={ndjson_summary['hour_max']}"
         )
     print(f"report={report_path}")
     return 0 if all(item["returncode"] == 0 for item in results) else 1

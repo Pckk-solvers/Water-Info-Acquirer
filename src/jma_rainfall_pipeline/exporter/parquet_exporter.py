@@ -150,6 +150,29 @@ def export_weather_parquet(
     end_date: date,
     output_dir: Path,
 ) -> Path:
+    rows = build_jma_unified_records(
+        df,
+        prec_no=str(prec_no),
+        block_no=str(block_no),
+        interval_label=interval_label,
+    )
+    interval = _to_interval_token(interval_label)
+    file_name = (
+        f"jma_{_safe_token(f'{prec_no}_{block_no}')}_{interval}_"
+        f"{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.parquet"
+    )
+    out_path = output_dir / file_name
+    _save_unified_records_parquet(rows, out_path)
+    return out_path
+
+
+def build_jma_unified_records(
+    df: pd.DataFrame,
+    *,
+    prec_no: str,
+    block_no: str,
+    interval_label: str,
+) -> list[dict[str, Any]]:
     station_key = f"{prec_no}_{block_no}"
     station_name = _resolve_station_name(prec_no, block_no)
     if station_name:
@@ -161,16 +184,10 @@ def export_weather_parquet(
         )
     else:
         logger.debug("Resolved JMA station_name is empty: station_key=%s", station_key)
-    interval = _to_interval_token(interval_label)
-    file_name = (
-        f"jma_{_safe_token(station_key)}_{interval}_"
-        f"{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.parquet"
-    )
-    out_path = output_dir / file_name
-
     value_col = "precipitation_total" if interval_label == "daily" else "precipitation"
     rows: list[dict[str, Any]] = []
     normalized = build_normalized_time_frame(df, interval_label)
+    interval = _to_interval_token(interval_label)
     for row in normalized.to_dict(orient="records"):
         period_start_at = pd.to_datetime(cast(Any, row.get("period_start_at")), errors="coerce")
         period_end_at = pd.to_datetime(cast(Any, row.get("period_end_at")), errors="coerce")
@@ -198,6 +215,4 @@ def export_weather_parquet(
                 "quality": "normal" if value_float is not None else "missing",
             }
         )
-
-    _save_unified_records_parquet(rows, out_path)
-    return out_path
+    return rows
