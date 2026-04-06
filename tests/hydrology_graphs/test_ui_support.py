@@ -14,6 +14,7 @@ from hydrology_graphs.ui.view_models import (
     parse_base_dates_text,
     selected_station_pairs,
 )
+from hydrology_graphs.ui.execute_actions import refresh_preview_choices
 
 
 def test_selected_station_pairs_deduplicates():
@@ -113,3 +114,49 @@ def test_format_result_status_display_uses_japanese_labels():
     assert format_result_status_display("success") == "完了"
     assert format_result_status_display("failed") == "失敗"
     assert format_result_status_display("skipped") == "スキップ"
+
+
+class _DummyVar:
+    def __init__(self, value: str = "") -> None:
+        self.value = value
+
+    def get(self) -> str:
+        return self.value
+
+    def set(self, value: str) -> None:
+        self.value = value
+
+
+class _DummyCombo:
+    def __init__(self) -> None:
+        self.values = None
+
+    def configure(self, **kwargs):
+        if "values" in kwargs:
+            self.values = list(kwargs["values"])
+
+
+def test_refresh_preview_choices_resets_invalid_selection_to_first_choice():
+    app = type("DummyApp", (), {})()
+    app._precheck_ok_targets = [
+        GraphTarget(source="jma", station_key="001", graph_type="hyetograph", base_date=date(2026, 1, 1), event_window_days=3),
+        GraphTarget(source="jma", station_key="002", graph_type="hydrograph_discharge", base_date=date(2026, 1, 2), event_window_days=3),
+    ]
+    app._catalog_stations = [("jma", "001", "観測所A"), ("jma", "002", "観測所B")]
+    app._preview_graph_key_to_display = {
+        "hyetograph": "ハイエトグラフ（雨量）",
+        "hydrograph_discharge": "ハイドログラフ（流量）",
+    }
+    app.preview_station_combo = _DummyCombo()
+    app.preview_date_combo = _DummyCombo()
+    app.preview_graph_combo = _DummyCombo()
+    app.preview_target_station = _DummyVar("無効な観測所")
+    app.preview_target_date = _DummyVar("2099-12-31")
+    app.preview_target_graph = _DummyVar("無効な種別")
+    app._refresh_style_forms_from_payload = lambda: None
+
+    refresh_preview_choices(app)
+
+    assert app.preview_target_station.get() == "観測所A (jma:001)"
+    assert app.preview_target_date.get() == "2026-01-01"
+    assert app.preview_target_graph.get() == "ハイドログラフ（流量）"

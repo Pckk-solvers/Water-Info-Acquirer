@@ -115,7 +115,7 @@ def _build_preview_input(
         graph_type=graph_type,
         base_datetime=base_date,
         event_window_days=event_window_days,
-        event_window_terminal_padding=bool(app.event_window_terminal_padding.get()),
+        event_window_terminal_padding=True,
         time_display_mode=str(app.time_display_mode.get()).strip() or "datetime",
     )
     return preview_input, threshold_file

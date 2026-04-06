@@ -12,15 +12,13 @@
 - `src/hydrology_graphs/ui/tabs_execute.py`
 - `src/hydrology_graphs/ui/execute_actions.py`
 - `src/hydrology_graphs/ui/preview_actions.py`
-- `src/hydrology_graphs/services/dto.py`
-- `src/hydrology_graphs/services/usecases.py`
 - `tests/hydrology_graphs/test_ui_support.py`
 
 ## 実施内容
-- イベント窓補正のチェックボックスを GUI から削除する。
-- precheck / preview / batch では常に終端+1時間余白を適用する。
-- スタイル調整タブの基準日候補を、選択中値の妥当性を見ながら更新する。
-- 無効になった基準日は候補の先頭へ切り替えるか、未選択に戻す。
+- イベント窓補正のチェックボックスを GUI から削除した。
+- precheck / preview / batch では常に終端+1時間余白を適用するようにした。
+- スタイル調整タブの基準日候補を、選択中値の妥当性を見ながら更新するようにした。
+- 無効になった基準日や表示候補は、候補の先頭へ切り替えるか、未選択に戻すようにした。
 
 ## 完了条件
 - イベント系の終端+1時間余白が常時有効になっている。
@@ -35,3 +33,10 @@
 - 要件: `docs/dev/requirements/hydrology-graphs-platform.md`
 - 設計: `docs/dev/architecture/hydrology_graphs.md`
 
+## 結果
+- GUI からイベント窓補正の切替部品を削除し、precheck / preview / batch は余白ありで固定した。
+- プレビュー候補の更新時に、無効な観測所・基準日・グラフ種別を先頭候補へ戻すようにした。
+- `uv run pytest -q tests/hydrology_graphs` で `42 passed`、`uv run pytest -q` で `191 passed` を確認した。
+
+## 残課題
+- なし。

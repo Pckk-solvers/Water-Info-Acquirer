@@ -143,16 +143,6 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     col_annual = ttk.Label(graph_box, text="年最大")
     col_annual.grid(row=0, column=3, sticky="w", padx=6, pady=(4, 2))
 
-    event_option_box = ttk.LabelFrame(left, text="イベント窓補正")
-    event_option_box.grid(row=4, column=0, sticky="ew", pady=(0, 6))
-    event_option_box.columnconfigure(0, weight=1)
-    app.event_padding_check = ttk.Checkbutton(
-        event_option_box,
-        text="終端+1時間余白を有効にする",
-        variable=app.event_window_terminal_padding,
-    )
-    app.event_padding_check.grid(row=0, column=0, sticky="w", padx=6, pady=6)
-
     app._execute_tooltips = [
         ToolTip(app.parquet_entry, "入力Parquetディレクトリです。スキャンで観測所一覧を更新します。"),
         ToolTip(app.btn_browse_parquet, "Parquetディレクトリを選択します。"),
@@ -176,10 +166,6 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
         ToolTip(col_3day, "基準日の前後1日を含む3日間（基準日-1日〜+1日）を対象にします。"),
         ToolTip(col_5day, "基準日の前後2日を含む5日間（基準日-2日〜+2日）を対象にします。"),
         ToolTip(col_annual, "基準日を使わず、各年の最大値系列を対象にします。"),
-        ToolTip(
-            app.event_padding_check,
-            "24時相当の記録を窓端で取りこぼさないように、終端側へ1時間の余白を追加します。",
-        ),
     ]
 
     rows = (
@@ -211,7 +197,7 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
         app._graph_type_checkbuttons.append(chk_annual)
 
     execute_box = ttk.LabelFrame(left, text="実行")
-    execute_box.grid(row=5, column=0, sticky="ew")
+    execute_box.grid(row=4, column=0, sticky="ew")
     app.btn_precheck = ttk.Button(execute_box, text="実行前検証", command=app._run_precheck)
     app.btn_precheck.grid(row=0, column=0, padx=12, pady=6, sticky="w")
     app.run_btn = ttk.Button(execute_box, text="バッチ実行", command=app._start_batch_run)
@@ -288,6 +274,5 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
         app.btn_clear_base_date,
         app.btn_import_base_date_csv,
         app.btn_export_base_date_csv,
-        app.event_padding_check,
         app.btn_precheck,
     ]

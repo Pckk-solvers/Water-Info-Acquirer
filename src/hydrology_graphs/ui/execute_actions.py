@@ -52,7 +52,7 @@ def run_precheck(app) -> None:
         base_dates=base_dates,
         event_window_days_list=event_windows,
         event_window_days_by_graph=event_windows_by_graph,
-        event_window_terminal_padding=bool(app.event_window_terminal_padding.get()),
+        event_window_terminal_padding=True,
     )
     app._append_log(
         f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)} windows={event_windows}"
@@ -145,15 +145,15 @@ def refresh_preview_choices(app) -> None:
     app._preview_graph_display_to_key = choices.graph_display_to_key
     app.preview_station_combo.configure(values=choices.station_values)
     app.preview_date_combo.configure(values=choices.date_values)
-    if not app.preview_target_station.get() and choices.station_values:
-        app.preview_target_station.set(choices.station_values[0])
-    if not app.preview_target_date.get() and choices.date_values:
-        app.preview_target_date.set(choices.date_values[0])
+    current_station = app.preview_target_station.get().strip()
+    current_date = app.preview_target_date.get().strip()
+    app.preview_target_station.set(_retained_preview_choice(current_station, choices.station_values))
+    app.preview_target_date.set(_retained_preview_choice(current_date, choices.date_values))
     preview_graph_combo = getattr(app, "preview_graph_combo", None)
     if preview_graph_combo is not None:
         preview_graph_combo.configure(values=choices.graph_values)
-        if app.preview_target_graph.get() not in choices.graph_values and choices.graph_values:
-            app.preview_target_graph.set(choices.graph_values[0])
+    current_graph = app.preview_target_graph.get().strip()
+    app.preview_target_graph.set(_retained_preview_choice(current_graph, choices.graph_values))
     app._refresh_style_forms_from_payload()
 
 
@@ -187,7 +187,7 @@ def start_batch_run(app) -> None:
         style_json_path=app._style_json_path,
         style_payload=payload,
         targets=batch_targets,
-        event_window_terminal_padding=bool(app.event_window_terminal_padding.get()),
+        event_window_terminal_padding=True,
         should_stop=app._stop_event.is_set if app._stop_event else None,
     )
     for target in batch_targets:
@@ -330,6 +330,16 @@ def _sync_base_date_listbox(app) -> None:
 
 def _row_id_for_target_id(target_id: str) -> str:
     return target_id
+
+
+def _retained_preview_choice(current: str, choices: list[str]) -> str:
+    """現在値が候補にあれば維持し、なければ先頭候補か空文字へ戻す。"""
+
+    if current in choices:
+        return current
+    if choices:
+        return choices[0]
+    return ""
 
 
 def _clear_result_rows(app) -> None:
