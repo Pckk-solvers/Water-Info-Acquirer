@@ -129,3 +129,100 @@ def build_batch_targets(ok_targets: list[GraphTarget]) -> list[BatchTarget]:
         )
         for t in ok_targets
     ]
+
+
+def format_result_target_display(
+    *,
+    source: str,
+    station_key: str,
+    graph_type: str,
+    base_datetime: str | None,
+    event_window_days: int | None,
+    catalog_stations: list[tuple[str, str, str]],
+    source_label_map: dict[str, str],
+    graph_label_map: dict[str, str],
+) -> str:
+    """結果一覧用の日本語ラベルを作る。"""
+
+    station_name = _station_name_for_pair(catalog_stations, source, station_key)
+    source_label = source_label_map.get(source, source)
+    station_label = (
+        f"{station_name}（{source_label}:{station_key}）"
+        if station_name
+        else f"{source_label}:{station_key}"
+    )
+    graph_label = graph_label_map.get(graph_type, graph_type)
+    if event_window_days in (3, 5):
+        base_label = _base_datetime_label(base_datetime)
+        return f"{station_label} / {graph_label} / {base_label} / {event_window_days}日窓"
+    if base_datetime == "annual" or event_window_days is None:
+        return f"{station_label} / {graph_label} / 年最大"
+    return f"{station_label} / {graph_label} / {_base_datetime_label(base_datetime)}"
+
+
+def format_result_target_display_from_target_id(
+    target_id: str,
+    *,
+    catalog_stations: list[tuple[str, str, str]],
+    source_label_map: dict[str, str],
+    graph_label_map: dict[str, str],
+) -> str:
+    """target_id から結果一覧用の日本語ラベルを作る。"""
+
+    source, station_key, graph_type, base_datetime, event_window_days = _split_result_target_id(target_id)
+    return format_result_target_display(
+        source=source,
+        station_key=station_key,
+        graph_type=graph_type,
+        base_datetime=base_datetime,
+        event_window_days=event_window_days,
+        catalog_stations=catalog_stations,
+        source_label_map=source_label_map,
+        graph_label_map=graph_label_map,
+    )
+
+
+def _station_name_for_pair(
+    catalog_stations: list[tuple[str, str, str]],
+    source: str,
+    station_key: str,
+) -> str:
+    for catalog_source, catalog_station_key, station_name in catalog_stations:
+        if catalog_source == source and catalog_station_key == station_key:
+            return station_name
+    return ""
+
+
+def _base_datetime_label(base_datetime: str | None) -> str:
+    if base_datetime in (None, "", "none"):
+        return "基準日未指定"
+    return base_datetime
+
+
+def _split_result_target_id(target_id: str) -> tuple[str, str, str, str | None, int | None]:
+    parts = target_id.split(":")
+    if len(parts) == 4:
+        source, station_key, graph_type, base_datetime = parts
+        return source, station_key, graph_type, base_datetime, None
+    if len(parts) == 5:
+        source, station_key, graph_type, base_datetime, window = parts
+        if window.endswith("day"):
+            try:
+                return source, station_key, graph_type, base_datetime, int(window[:-3])
+            except ValueError:
+                return source, station_key, graph_type, base_datetime, None
+        return source, station_key, graph_type, base_datetime, None
+    if len(parts) > 5:
+        source, station_key, graph_type = parts[:3]
+        base_datetime = parts[3]
+        window = parts[4]
+        if window.endswith("day"):
+            try:
+                return source, station_key, graph_type, base_datetime, int(window[:-3])
+            except ValueError:
+                return source, station_key, graph_type, base_datetime, None
+        return source, station_key, graph_type, base_datetime, None
+    if len(parts) == 3:
+        source, station_key, graph_type = parts
+        return source, station_key, graph_type, None, None
+    return target_id, "", "", None, None

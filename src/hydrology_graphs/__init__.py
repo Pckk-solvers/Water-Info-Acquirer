@@ -2,6 +2,7 @@ from .domain.constants import ANNUAL_GRAPH_TYPES, EVENT_GRAPH_TYPES, GRAPH_TYPES
 from .domain.logic import (
     annual_max_by_year,
     annual_max_series,
+    event_capture_window_bounds,
     event_window_bounds,
     ensure_graph_type_supported,
     extract_event_series,
@@ -48,6 +49,7 @@ __all__ = [
     "HydrologyGraphService",
     "annual_max_by_year",
     "annual_max_series",
+    "event_capture_window_bounds",
     "event_window_bounds",
     "ensure_graph_type_supported",
     "extract_event_series",

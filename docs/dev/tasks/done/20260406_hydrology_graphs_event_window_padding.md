@@ -35,3 +35,12 @@
 - 要件: `docs/dev/requirements/hydrology-graphs-platform.md`
 - 設計: `docs/dev/architecture/hydrology_graphs.md`
 - 判断記録: `docs/dev/adr/20260406_event_window_terminal_padding.md`
+
+## 結果
+- イベント系の logical window と capture window を分離し、終端+1時間の余白を設定で切り替えられるようにした。
+- precheck / preview / batch で同じ窓定義を使うようにした。
+- 3日/5日併用時の再利用も capture window 基準にそろえた。
+- `uv run pytest -q` で `187 passed` を確認した。
+
+## 残課題
+- 表示モードの切替は別タスクとして管理済み。

@@ -10,6 +10,7 @@ from hydrology_graphs.services import BatchRunInput, PrecheckInput
 from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
+    format_result_target_display,
     graph_targets_from_precheck_items,
 )
 
@@ -50,6 +51,7 @@ def run_precheck(app) -> None:
         base_dates=base_dates,
         event_window_days_list=event_windows,
         event_window_days_by_graph=event_windows_by_graph,
+        event_window_terminal_padding=bool(app.event_window_terminal_padding.get()),
     )
     app._append_log(
         f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)} windows={event_windows}"
@@ -69,9 +71,20 @@ def run_precheck(app) -> None:
     for row in result.items:
         reason = row.reason_message or ""
         status = "ready" if row.status == "ok" else "precheck_ng"
+        display_target = format_result_target_display(
+            source=row.source,
+            station_key=row.station_key,
+            graph_type=row.graph_type,
+            base_datetime=row.base_datetime,
+            event_window_days=row.event_window_days,
+            catalog_stations=app._catalog_stations,
+            source_label_map=app.SOURCE_LABELS,
+            graph_label_map=app.GRAPH_TYPE_LABELS,
+        )
         _upsert_result_row(
             app,
             target_id=row.target_id,
+            display_target=display_target,
             window_days=row.event_window_days,
             status=status,
             reason=reason,
@@ -174,6 +187,7 @@ def start_batch_run(app) -> None:
         style_json_path=app._style_json_path,
         style_payload=payload,
         targets=batch_targets,
+        event_window_terminal_padding=bool(app.event_window_terminal_padding.get()),
         should_stop=app._stop_event.is_set if app._stop_event else None,
     )
     for target in batch_targets:
@@ -335,16 +349,17 @@ def _upsert_result_row(
     app,
     *,
     target_id: str,
+    display_target: str,
     window_days: int | None,
     status: str,
     reason: str,
     output_path: str,
 ) -> None:
     row_key = _row_id_for_target_id(target_id)
-    values = (target_id, _window_text(window_days), status, reason)
+    values = (display_target, _window_text(window_days), status, reason)
     row_id = app._result_row_ids.get(row_key)
     if row_id is None:
-        row_id = app.result_tree.insert("", "end", values=values)
+        row_id = app.result_tree.insert("", "end", iid=row_key, values=values)
         app._result_row_ids[row_key] = row_id
     else:
         app.result_tree.item(row_id, values=values)

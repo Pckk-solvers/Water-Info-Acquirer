@@ -217,6 +217,28 @@ def test_preview_graph_target_returns_style_error(tmp_path):
     assert result.reason_code == "style_error"
 
 
+def test_preview_graph_target_accepts_24h_display_mode(tmp_path):
+    _write_timeseries(tmp_path)
+
+    result = preview_graph_target(
+        PreviewInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            style_json_path=None,
+            style_payload=default_style(),
+            source="jma",
+            station_key="111",
+            graph_type="hyetograph",
+            base_datetime="2025-01-02",
+            event_window_days=3,
+            time_display_mode="24h",
+        )
+    )
+
+    assert result.status == "success"
+    assert result.image_bytes_png is not None
+
+
 def test_precheck_reports_insufficient_years(tmp_path):
     frame = pd.DataFrame(
         {
@@ -339,6 +361,37 @@ def test_precheck_allows_3day_when_5day_is_missing(tmp_path):
     assert by_window[5].status == "ng"
 
 
+def test_precheck_event_padding_requires_terminal_hour(tmp_path):
+    _write_timeseries(tmp_path, hours=72)
+
+    without_padding = precheck_graph_targets(
+        PrecheckInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            graph_types=["hyetograph"],
+            station_pairs=[("jma", "111")],
+            base_dates=["2025-01-02"],
+            event_window_days_list=[3],
+            event_window_terminal_padding=False,
+        )
+    )
+    with_padding = precheck_graph_targets(
+        PrecheckInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            graph_types=["hyetograph"],
+            station_pairs=[("jma", "111")],
+            base_dates=["2025-01-02"],
+            event_window_days_list=[3],
+            event_window_terminal_padding=True,
+        )
+    )
+
+    assert without_padding.summary.ok_targets == 1
+    assert with_padding.summary.ng_targets == 1
+    assert with_padding.items[0].reason_code == "missing_timeseries"
+
+
 def test_run_graph_batch_writes_png(tmp_path):
     _write_timeseries(tmp_path)
     threshold_path = tmp_path / "thresholds.csv"
@@ -368,3 +421,32 @@ def test_run_graph_batch_writes_png(tmp_path):
     assert result.items[0].status == "success"
     assert result.items[0].output_path is not None
     assert (output_dir / "111" / "hyetograph" / "2025-01-02" / "3day" / "graph.png").exists()
+
+
+def test_run_graph_batch_honors_event_padding(tmp_path):
+    _write_timeseries(tmp_path, hours=72)
+    output_dir = tmp_path / "out"
+
+    result = run_graph_batch(
+        BatchRunInput(
+            parquet_dir=str(tmp_path),
+            output_dir=str(output_dir),
+            threshold_file_path=None,
+            style_json_path=None,
+            style_payload=default_style(),
+            targets=[
+                BatchTarget(
+                    source="jma",
+                    station_key="111",
+                    graph_type="hyetograph",
+                    base_datetime="2025-01-02",
+                    event_window_days=3,
+                )
+            ],
+            event_window_terminal_padding=True,
+        )
+    )
+
+    assert result.summary.skipped == 1
+    assert result.items[0].status == "skipped"
+    assert result.items[0].reason_code == "missing_timeseries"

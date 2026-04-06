@@ -141,10 +141,27 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
     right = ttk.Frame(parent, padding=6)
     right.grid(row=0, column=1, sticky="nsew")
     right.columnconfigure(0, weight=1)
-    right.rowconfigure(1, weight=1)
+    right.rowconfigure(2, weight=1)
+
+    display_mode_box = ttk.LabelFrame(right, text="表示モード")
+    display_mode_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+    display_mode_box.columnconfigure(1, weight=1)
+    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=0, padx=6, pady=6, sticky="w")
+    ttk.Radiobutton(
+        display_mode_box,
+        text="1時~24時",
+        variable=app.time_display_mode,
+        value="24h",
+    ).grid(row=0, column=1, padx=(0, 6), pady=6, sticky="w")
+    ttk.Radiobutton(
+        display_mode_box,
+        text="datetime",
+        variable=app.time_display_mode,
+        value="datetime",
+    ).grid(row=0, column=2, padx=(0, 6), pady=6, sticky="w")
 
     preview_target = ttk.LabelFrame(right, text="プレビュー出力対象")
-    preview_target.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+    preview_target.grid(row=1, column=0, sticky="ew", pady=(0, 6))
     ttk.Label(preview_target, text="観測所").grid(row=0, column=0, padx=6, pady=6)
     app.preview_station_combo = ttk.Combobox(
         preview_target,
@@ -178,7 +195,7 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
     ).grid(row=1, column=0, columnspan=6, sticky="w", padx=6, pady=(0, 6))
 
     preview_box = ttk.LabelFrame(right, text="プレビュー")
-    preview_box.grid(row=1, column=0, sticky="nsew")
+    preview_box.grid(row=2, column=0, sticky="nsew")
     preview_box.columnconfigure(0, weight=1)
     preview_box.rowconfigure(0, weight=1)
     app.preview_viewport = tk.Frame(preview_box, bg="#4B5563")

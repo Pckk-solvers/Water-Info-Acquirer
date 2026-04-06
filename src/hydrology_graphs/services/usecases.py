@@ -9,7 +9,7 @@ import pandas as pd
 from ..domain.logic import (
     annual_max_by_year,
     annual_max_series,
-    event_window_bounds,
+    event_capture_window_bounds,
     ensure_graph_type_supported,
     extract_event_series,
     has_min_years,
@@ -242,6 +242,7 @@ def precheck_graph_targets_with_catalog(
                         graph_type=graph_type,
                         base_datetime=parsed.isoformat(),
                         window_days_list=window_days_list,
+                        terminal_padding_hours=_event_padding_hours(data.event_window_terminal_padding),
                         threshold_result=threshold_result,
                     )
                     for window_days in window_days_list:
@@ -273,6 +274,7 @@ def precheck_graph_targets_with_catalog(
                         graph_type=graph_type,
                         base_datetime=None,
                         event_window_days=None,
+                        terminal_padding_hours=0,
                         threshold_result=threshold_result,
                     )
                 except UsecaseError as exc:
@@ -402,6 +404,8 @@ def preview_graph_target_with_catalog(
             style_result.style,
             threshold_file_path=data.threshold_file_path,
             threshold_result=threshold_result,
+            terminal_padding_hours=_event_padding_hours(data.event_window_terminal_padding),
+            time_display_mode=data.time_display_mode,
         )
         return PreviewResult(
             status="success",
@@ -478,6 +482,7 @@ def run_graph_batch(
                 style_result.style,
                 threshold_file_path=data.threshold_file_path,
                 threshold_result=threshold_result,
+                terminal_padding_hours=_event_padding_hours(data.event_window_terminal_padding),
             )
             output_path = _build_output_path(output_dir, target)
             write_png(output_path, png)
@@ -524,6 +529,7 @@ def _evaluate_target(
     graph_type: str,
     base_datetime: str | None,
     event_window_days: int | None,
+    terminal_padding_hours: int,
     threshold_result: ThresholdLoadResult | None,
 ) -> tuple[str, str | None, str | None, pd.DataFrame | None]:
     """1対象分の検証を行い、描画に使う DataFrame を返す。"""
@@ -554,8 +560,18 @@ def _evaluate_target(
         parsed = _parse_date(base_datetime)
         if parsed is None:
             return "ng", REASON_CONTRACT_ERROR, "基準日の形式は YYYY-MM-DD で指定してください。", None
-        sliced = extract_event_series(subset, parsed, event_window_days)
-        ok, reason = validate_event_series_complete(sliced, parsed, event_window_days)
+        sliced = extract_event_series(
+            subset,
+            parsed,
+            event_window_days,
+            terminal_padding_hours=terminal_padding_hours,
+        )
+        ok, reason = validate_event_series_complete(
+            sliced,
+            parsed,
+            event_window_days,
+            terminal_padding_hours=terminal_padding_hours,
+        )
         if not ok:
             return "ng", REASON_MISSING_TIMESERIES, reason or "イベント窓に欠損があります。", None
         thresholds = _thresholds_for_target(threshold_result, source, station_key, graph_type)
@@ -584,6 +600,7 @@ def _evaluate_event_windows(
     graph_type: str,
     base_datetime: str,
     window_days_list: list[int],
+    terminal_padding_hours: int,
     threshold_result: ThresholdLoadResult | None,
 ) -> dict[int, tuple[str, str | None, str | None, pd.DataFrame | None]]:
     """イベント窓(3/5)の評価を行い、可能な範囲で5日結果を再利用する。"""
@@ -602,6 +619,7 @@ def _evaluate_event_windows(
                 graph_type=graph_type,
                 base_datetime=base_datetime,
                 event_window_days=window_days,
+                terminal_padding_hours=terminal_padding_hours,
                 threshold_result=threshold_result,
             )
         except UsecaseError as exc:
@@ -615,12 +633,17 @@ def _evaluate_event_windows(
         if status_5 == "ok" and draw_df_5 is not None:
             parsed = _parse_date(base_datetime)
             if parsed is not None:
-                start_3, end_3 = event_window_bounds(parsed, 3)
+                start_3, end_3 = event_capture_window_bounds(parsed, 3, terminal_padding_hours)
                 time_col = "period_end_at" if "period_end_at" in draw_df_5.columns else "observed_at"
                 observed = pd.to_datetime(draw_df_5[time_col], errors="coerce")
                 mask = (observed >= pd.Timestamp(start_3)) & (observed < pd.Timestamp(end_3))
                 draw_df_3 = draw_df_5.loc[mask].copy()
-                ok_3, reason_3 = validate_event_series_complete(draw_df_3, parsed, 3)
+                ok_3, reason_3 = validate_event_series_complete(
+                    draw_df_3,
+                    parsed,
+                    3,
+                    terminal_padding_hours=terminal_padding_hours,
+                )
                 if ok_3:
                     results[3] = "ok", None, None, draw_df_3.reset_index(drop=True)
                 else:
@@ -645,6 +668,8 @@ def _render_target_bytes(
     *,
     threshold_file_path: str | None,
     threshold_result: ThresholdLoadResult | None = None,
+    terminal_padding_hours: int = 0,
+    time_display_mode: str = "datetime",
 ) -> bytes:
     """1対象分の PNG を生成する。"""
 
@@ -659,6 +684,7 @@ def _render_target_bytes(
         graph_type=target.graph_type,
         base_datetime=target.base_date.isoformat() if target.base_date else None,
         event_window_days=target.event_window_days,
+        terminal_padding_hours=terminal_padding_hours,
         threshold_result=effective_threshold_result,
     )
     if status != "ok" or draw_df is None:
@@ -688,6 +714,7 @@ def _render_target_bytes(
             df=draw_df,
             graph_style=graph_style,
             thresholds=thresholds,
+            time_display_mode=time_display_mode,
         )
     except Exception as exc:  # noqa: BLE001
         raise UsecaseError(REASON_RENDER_ERROR, str(exc)) from exc
@@ -731,6 +758,10 @@ def _parse_date(value: str | None) -> date | None:
     if getattr(parsed, "tzinfo", None) is not None:
         parsed = parsed.tz_convert(None)
     return parsed.date()
+
+
+def _event_padding_hours(enabled: bool) -> int:
+    return 1 if enabled else 0
 
 
 def _resolve_station_name(catalog: ParquetCatalog, station_key: str) -> str:

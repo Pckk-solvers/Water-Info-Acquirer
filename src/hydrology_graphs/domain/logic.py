@@ -63,17 +63,37 @@ def event_window_bounds(base_date: date, window_days: int) -> tuple[datetime, da
     return start, end
 
 
-def expected_event_index(base_date: date, window_days: int) -> pd.DatetimeIndex:
-    """イベント窓に含まれる想定時刻の索引を作る。"""
+def event_capture_window_bounds(base_date: date, window_days: int, terminal_padding_hours: int = 0) -> tuple[datetime, datetime]:
+    """描画・検証で使う capture window の開始・終了を返す。"""
 
     start, end = event_window_bounds(base_date, window_days)
+    if terminal_padding_hours < 0:
+        raise ValueError("terminal_padding_hours must be >= 0")
+    return start, end + timedelta(hours=terminal_padding_hours)
+
+
+def expected_event_index(
+    base_date: date,
+    window_days: int,
+    *,
+    terminal_padding_hours: int = 0,
+) -> pd.DatetimeIndex:
+    """イベント窓に含まれる想定時刻の索引を作る。"""
+
+    start, end = event_capture_window_bounds(base_date, window_days, terminal_padding_hours)
     return pd.date_range(start=start, end=end - timedelta(hours=1), freq="1h")
 
 
-def extract_event_series(df: pd.DataFrame, base_date: date, window_days: int) -> pd.DataFrame:
+def extract_event_series(
+    df: pd.DataFrame,
+    base_date: date,
+    window_days: int,
+    *,
+    terminal_padding_hours: int = 0,
+) -> pd.DataFrame:
     """対象期間のデータだけを切り出し、同一時刻の重複は後勝ちでまとめる。"""
 
-    start, end = event_window_bounds(base_date, window_days)
+    start, end = event_capture_window_bounds(base_date, window_days, terminal_padding_hours)
     work = df.copy()
     tcol = _time_column(work)
     work[tcol] = pd.to_datetime(work[tcol], errors="coerce")
@@ -89,10 +109,12 @@ def validate_event_series_complete(
     df: pd.DataFrame,
     base_date: date,
     window_days: int,
+    *,
+    terminal_padding_hours: int = 0,
 ) -> tuple[bool, str | None]:
     """イベント窓に欠損がないかを確認する。"""
 
-    expected = expected_event_index(base_date, window_days)
+    expected = expected_event_index(base_date, window_days, terminal_padding_hours=terminal_padding_hours)
     if df.empty:
         return False, "対象期間のデータが存在しません。"
     tcol = _time_column(df)

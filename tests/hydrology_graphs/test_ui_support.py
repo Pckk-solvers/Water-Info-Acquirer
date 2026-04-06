@@ -7,6 +7,8 @@ from hydrology_graphs.services.dto import PrecheckItem
 from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
+    format_result_target_display,
+    format_result_target_display_from_target_id,
     graph_targets_from_precheck_items,
     parse_base_dates_text,
     selected_station_pairs,
@@ -77,3 +79,27 @@ def test_build_batch_targets_converts_graph_target():
     batch_targets = build_batch_targets(targets)
     assert batch_targets[0].base_datetime == "2026-01-01"
     assert batch_targets[0].event_window_days == 3
+
+
+def test_format_result_target_display_uses_japanese_labels():
+    text = format_result_target_display(
+        source="jma",
+        station_key="111",
+        graph_type="hydrograph_water_level",
+        base_datetime="2025-01-02",
+        event_window_days=3,
+        catalog_stations=[("jma", "111", "高幡橋")],
+        source_label_map={"jma": "気象庁"},
+        graph_label_map={"hydrograph_water_level": "ハイドログラフ（水位）"},
+    )
+    assert text == "高幡橋（気象庁:111） / ハイドログラフ（水位） / 2025-01-02 / 3日窓"
+
+
+def test_format_result_target_display_from_target_id_uses_japanese_labels():
+    text = format_result_target_display_from_target_id(
+        "jma:111:hydrograph_water_level:2025-01-02:3day",
+        catalog_stations=[("jma", "111", "高幡橋")],
+        source_label_map={"jma": "気象庁"},
+        graph_label_map={"hydrograph_water_level": "ハイドログラフ（水位）"},
+    )
+    assert text == "高幡橋（気象庁:111） / ハイドログラフ（水位） / 2025-01-02 / 3日窓"
