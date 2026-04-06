@@ -158,6 +158,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self.threshold_path = tk.StringVar(value="")
         self.event_window_3 = tk.BooleanVar(value=True)
         self.event_window_5 = tk.BooleanVar(value=False)
+        self.event_window_terminal_padding = tk.BooleanVar(value=False)
         self.batch_status = tk.StringVar(value="待機中")
         self.preview_message = tk.StringVar(value="")
         self.preview_target_station = tk.StringVar(value="")

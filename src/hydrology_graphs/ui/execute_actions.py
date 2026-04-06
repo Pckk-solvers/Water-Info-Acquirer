@@ -11,6 +11,7 @@ from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
     format_result_target_display,
+    format_result_status_display,
     graph_targets_from_precheck_items,
 )
 
@@ -85,8 +86,7 @@ def run_precheck(app) -> None:
             app,
             target_id=row.target_id,
             display_target=display_target,
-            window_days=row.event_window_days,
-            status=status,
+            status=format_result_status_display(status),
             reason=reason,
             output_path="",
         )
@@ -193,7 +193,7 @@ def start_batch_run(app) -> None:
     for target in batch_targets:
         row_id = _row_id_for_target_id(target.target_id)
         if row_id in app._result_row_ids:
-            app.result_tree.set(app._result_row_ids[row_id], "status", "running")
+            app.result_tree.set(app._result_row_ids[row_id], "status", format_result_status_display("running"))
             app.result_tree.set(app._result_row_ids[row_id], "reason", "")
             app.result_tree.set(app._result_row_ids[row_id], "path", "")
     app._stop_event = threading.Event()
@@ -339,24 +339,17 @@ def _clear_result_rows(app) -> None:
         app.result_tree.delete(item_id)
 
 
-def _window_text(window_days: int | None) -> str:
-    if window_days in (3, 5):
-        return f"{window_days}day"
-    return ""
-
-
 def _upsert_result_row(
     app,
     *,
     target_id: str,
     display_target: str,
-    window_days: int | None,
     status: str,
     reason: str,
     output_path: str,
 ) -> None:
     row_key = _row_id_for_target_id(target_id)
-    values = (display_target, _window_text(window_days), status, reason)
+    values = (display_target, status, reason)
     row_id = app._result_row_ids.get(row_key)
     if row_id is None:
         row_id = app.result_tree.insert("", "end", iid=row_key, values=values)

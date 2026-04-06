@@ -9,6 +9,7 @@ from hydrology_graphs.ui.view_models import (
     build_preview_choices,
     format_result_target_display,
     format_result_target_display_from_target_id,
+    format_result_status_display,
     graph_targets_from_precheck_items,
     parse_base_dates_text,
     selected_station_pairs,
@@ -103,3 +104,12 @@ def test_format_result_target_display_from_target_id_uses_japanese_labels():
         graph_label_map={"hydrograph_water_level": "ハイドログラフ（水位）"},
     )
     assert text == "高幡橋（気象庁:111） / ハイドログラフ（水位） / 2025-01-02 / 3日窓"
+
+
+def test_format_result_status_display_uses_japanese_labels():
+    assert format_result_status_display("ready") == "準備完了"
+    assert format_result_status_display("precheck_ng") == "要確認"
+    assert format_result_status_display("running") == "実行中"
+    assert format_result_status_display("success") == "完了"
+    assert format_result_status_display("failed") == "失敗"
+    assert format_result_status_display("skipped") == "スキップ"

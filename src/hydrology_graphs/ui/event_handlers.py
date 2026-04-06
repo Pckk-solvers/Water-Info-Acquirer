@@ -3,7 +3,7 @@ from __future__ import annotations
 from tkinter import messagebox
 
 from hydrology_graphs.ui.preview_canvas import display_preview_image, show_preview_placeholder
-from hydrology_graphs.ui.view_models import format_result_target_display_from_target_id
+from hydrology_graphs.ui.view_models import format_result_status_display, format_result_target_display_from_target_id
 
 
 def handle_event(app, event: str, payload: object) -> None:
@@ -43,18 +43,13 @@ def _handle_run_done(app, payload: object) -> None:
     result = payload
     for row in result.items:
         row_id = app._result_row_ids.get(row.target_id)
-        window = ""
-        if row.target_id.endswith(":3day"):
-            window = "3day"
-        elif row.target_id.endswith(":5day"):
-            window = "5day"
         display_target = format_result_target_display_from_target_id(
             row.target_id,
             catalog_stations=app._catalog_stations,
             source_label_map=app.SOURCE_LABELS,
             graph_label_map=app.GRAPH_TYPE_LABELS,
         )
-        values = (display_target, window, row.status, row.reason_message or "")
+        values = (display_target, format_result_status_display(row.status), row.reason_message or "")
         if row_id is None:
             row_id = app.result_tree.insert("", "end", iid=row.target_id, values=values)
             app._result_row_ids[row.target_id] = row_id

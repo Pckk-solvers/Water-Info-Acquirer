@@ -228,19 +228,18 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     app.precheck_summary = tk.StringVar(value="対象数: 0 / NG: 0")
     ttk.Label(result_box, textvariable=app.precheck_summary).grid(row=0, column=0, sticky="w", padx=6, pady=(6, 4))
 
-    cols = ("target", "window", "status", "reason")
+    cols = ("target", "status", "reason")
     app.result_tree = ttk.Treeview(result_box, columns=cols, show="headings")
     for key, text, width in (
-        ("target", "対象", 230),
-        ("window", "窓", 60),
-        ("status", "状態", 80),
+        ("target", "対象", 290),
+        ("status", "状態", 100),
         ("reason", "理由", 180),
     ):
         app.result_tree.heading(key, text=text)
         app.result_tree.column(
             key,
             width=width,
-            minwidth=48 if key in ("window", "status") else 120,
+            minwidth=48 if key == "status" else 120,
             stretch=True,
             anchor="w" if key in ("target", "reason") else "center",
         )

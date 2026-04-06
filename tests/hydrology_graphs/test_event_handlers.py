@@ -65,6 +65,7 @@ def test_handle_run_done_updates_rows_and_status():
     event_handlers.handle_event(app, "run_done", result)
     assert len(app.result_tree.rows) == 1
     assert app.result_tree.rows[0][0] == "高幡橋（気象庁:111） / ハイドログラフ（水位） / 2025-01-02 / 3日窓"
+    assert app.result_tree.rows[0][1] == "完了"
     assert app.batch_status.value.startswith("完了:")
 
 

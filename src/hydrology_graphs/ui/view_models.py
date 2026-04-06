@@ -182,6 +182,23 @@ def format_result_target_display_from_target_id(
     )
 
 
+def format_result_status_display(status: str) -> str:
+    """結果一覧用の状態ラベルを日本語化する。"""
+
+    text = str(status or "").strip()
+    mapping = {
+        "ok": "準備完了",
+        "ng": "要確認",
+        "ready": "準備完了",
+        "precheck_ng": "要確認",
+        "running": "実行中",
+        "success": "完了",
+        "failed": "失敗",
+        "skipped": "スキップ",
+    }
+    return mapping.get(text, text)
+
+
 def _station_name_for_pair(
     catalog_stations: list[tuple[str, str, str]],
     source: str,
