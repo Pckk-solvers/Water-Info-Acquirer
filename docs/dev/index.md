@@ -2,6 +2,11 @@
 
 このセクションは、改修や配布（PyInstaller）を行う方向けの情報です。
 
+- 一般文書:
+  - `docs/dev/architecture.md`
+  - `docs/dev/build-pyinstaller.md`
+  - `docs/dev/github-pages.md`
+  - `docs/dev/release-process.md`
 - ランチャー: `src/launcher.py`
 - 国交省 水文データ取得: `src/water_info/`
 - 気象庁 雨量データ取得: `src/jma_rainfall_pipeline/`
@@ -13,24 +18,11 @@
   - ストレージ: `storage/`
   - 出力: `outputs/`
   - ドメイン/共通ロジック: `domain/`, `support/`
-- 雨量共通フォーマット化メモ: `docs/dev/river-meta-rainfall-unified-design.md`
-- Excel 時間範囲・年シート契約: `docs/dev/hydrology-graphs-platform/archive/excel-time-window-and-year-sheet-contract.md`
-- Pyright 解消ガイド（river_meta analysis）: `docs/dev/hydrology-graphs-platform/archive/pyright-remediation-analysis-module-2026-04-06.md`
-- 観測所インデックス可用年メンテナンス Overview: `docs/dev/station-index-availability-maintenance/overview.md`
-- 観測所インデックス可用年メンテナンス 要件: `docs/dev/station-index-availability-maintenance/requirements.md`
-- 観測所インデックス可用年メンテナンス 詳細設計: `docs/dev/station-index-availability-maintenance/design.md`
-- 観測所インデックス可用年メンテナンス タスク: `docs/dev/station-index-availability-maintenance/task.md`
-- JMA 年存在判定（hourly最適化）要件: `docs/dev/jma-hourly-availability-optimization/requirements.md`
-- JMA 年存在判定（hourly最適化）詳細設計: `docs/dev/jma-hourly-availability-optimization/design.md`
-- JMA 年存在判定（hourly最適化）タスク: `docs/dev/jma-hourly-availability-optimization/task.md`
-- 雨量整理取得 高速化 Overview: `docs/dev/rainfall-collection-performance/overview.md`
-- 雨量整理取得 高速化 要件: `docs/dev/rainfall-collection-performance/requirements.md`
-- 雨量取得順序/停止時ロールバック 要件: `docs/dev/rainfall-collection-performance/requirements-order-and-cancel-policy.md`
-- 整理・出力タブ 高速化 Overview: `docs/dev/rainfall-generate-performance/overview.md`
-- 整理・出力タブ 高速化 要件: `docs/dev/rainfall-generate-performance/requirements.md`
-- 整理・出力タブ 高速化 詳細設計: `docs/dev/rainfall-generate-performance/design.md`
-- 整理・出力タブ 高速化 タスク: `docs/dev/rainfall-generate-performance/task.md`
-- 雨量 Parquet 期間抽出 Overview: `docs/dev/rainfall-parquet-period-export/overview.md`
-- 雨量 Parquet 期間抽出 要件: `docs/dev/rainfall-parquet-period-export/requirements.md`
-- 雨量 Parquet 期間抽出 詳細設計: `docs/dev/rainfall-parquet-period-export/design.md`
-- 雨量 Parquet 期間抽出 タスク: `docs/dev/rainfall-parquet-period-export/task.md`
+- Hydrology Graphs Platform: `docs/dev/hydrology-graphs-platform/README.md`
+  - current: `docs/dev/hydrology-graphs-platform/current/README.md`
+  - current spec: `docs/dev/hydrology-graphs-platform/current/spec.md`
+  - current style contract: `docs/dev/hydrology-graphs-platform/current/style-contract.md`
+  - current parquet contract: `docs/dev/hydrology-graphs-platform/current/parquet-contract.md`
+  - current threshold contract: `docs/dev/hydrology-graphs-platform/current/threshold-contract.md`
+- Water Info 後処理仕様: `docs/dev/postprocess/specification.md`
+- 旧計画メモや差分案は削除済み
