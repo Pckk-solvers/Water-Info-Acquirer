@@ -223,6 +223,33 @@ def _build_cases(output_root: Path) -> list[VerificationCase]:
             excel_glob="excel/*.xlsx",
         ),
         VerificationCase(
+            name="jma_hourly_all_period_sheet",
+            command=[
+                sys.executable,
+                "-m",
+                "jma_rainfall_pipeline",
+                "fetch",
+                "--station",
+                "13:47406:s1",
+                "--start",
+                "2026-03-01",
+                "--end",
+                "2026-03-03",
+                "--interval",
+                "hourly",
+                "--ndjson",
+                "--excel",
+                "--excel-all-period-sheet",
+                "--parquet",
+                "--output-dir",
+                str(output_root / "jma_hourly_all_period_sheet"),
+            ],
+            output_dir=output_root / "jma_hourly_all_period_sheet",
+            ndjson_glob="ndjson/*.ndjson",
+            parquet_glob="parquet/*.parquet",
+            excel_glob="excel/*.xlsx",
+        ),
+        VerificationCase(
             name="jma_10min",
             command=[
                 sys.executable,
@@ -266,6 +293,11 @@ def _read_preview(path: Path) -> pd.DataFrame:
     xls = pd.ExcelFile(path)
     target_sheet = next((name for name in xls.sheet_names if name not in {"summary", "出典"}), xls.sheet_names[0])
     return pd.read_excel(path, sheet_name=target_sheet)
+
+
+def _excel_sheet_names(path: Path) -> list[str]:
+    xls = pd.ExcelFile(path)
+    return list(xls.sheet_names)
 
 
 def _series_min(df: pd.DataFrame, column: str) -> str | None:
@@ -343,6 +375,7 @@ def _run_case(case: VerificationCase) -> dict[str, Any]:
         "parquet": str(parquet_path),
         "excel": str(excel_path),
     }
+    result["excel_sheet_names"] = _excel_sheet_names(excel_path)
     result["ndjson_summary"] = _summarize_frame(_read_preview(ndjson_path))
     result["parquet_summary"] = _summarize_frame(_read_preview(parquet_path))
     result["excel_summary"] = _summarize_frame(_read_preview(excel_path))
@@ -384,7 +417,8 @@ def main() -> int:
             f"ndjson_observed_min={ndjson_summary['observed_min']} "
             f"parquet_period_start_min={parquet_summary['period_start_min']} "
             f"parquet_period_end_min={parquet_summary['period_end_min']} "
-            f"hour_max={ndjson_summary['hour_max']}"
+            f"hour_max={ndjson_summary['hour_max']} "
+            f"sheets={item.get('excel_sheet_names', [])}"
         )
     print(f"report={report_path}")
     return 0 if all(item["returncode"] == 0 for item in results) else 1

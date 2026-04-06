@@ -35,6 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--ndjson", action="store_true", help="NDJSON を出力")
     fetch.add_argument("--excel", dest="excel", action="store_true", default=True, help="Excel を出力")
     fetch.add_argument("--no-excel", dest="excel", action="store_false", help="Excel を出力しない")
+    fetch.add_argument(
+        "--excel-all-period-sheet",
+        action="store_true",
+        help="Excel に全期間シートを追加（年別シートに加えて出力）",
+    )
     fetch.add_argument("--parquet", action="store_true", help="Parquet を出力")
     fetch.add_argument("--output-dir", default="", help="出力ルートディレクトリ")
     fetch.add_argument("--log", action="store_true", help="ログ出力を有効化")
@@ -103,6 +108,7 @@ def _run_fetch(args: argparse.Namespace) -> int:
         output_dir=output_dir,
         export_csv=bool(args.csv),
         export_excel=bool(args.excel),
+        include_all_period_sheet=bool(args.excel_all_period_sheet),
         export_parquet=bool(args.parquet),
         export_ndjson=bool(args.ndjson),
     )

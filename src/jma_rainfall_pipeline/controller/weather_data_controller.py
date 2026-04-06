@@ -66,6 +66,7 @@ class WeatherDataController:
         export_csv: bool = True,
         export_excel: bool = True,
         excel_output_dir: Path | None = None,
+        include_all_period_sheet: bool = False,
         export_parquet: bool = False,
         parquet_output_dir: Path | None = None,
         export_ndjson: bool = False,
@@ -83,6 +84,7 @@ class WeatherDataController:
             export_csv=export_csv,
             export_excel=export_excel,
             excel_output_dir=excel_output_dir,
+            include_all_period_sheet=include_all_period_sheet,
             export_parquet=export_parquet,
             parquet_output_dir=parquet_output_dir,
             export_ndjson=export_ndjson,
@@ -107,6 +109,7 @@ class WeatherDataController:
         export_csv: bool = True,
         export_excel: bool = True,
         excel_output_dir: Path | None = None,
+        include_all_period_sheet: bool = False,
         export_parquet: bool = False,
         parquet_output_dir: Path | None = None,
         export_ndjson: bool = False,
@@ -233,6 +236,7 @@ class WeatherDataController:
                 export_csv=export_csv,
                 export_excel=export_excel,
                 excel_output_dir=resolved_excel_dir,
+                include_all_period_sheet=include_all_period_sheet,
                 request_urls=list(request_list),
             )
             csv_path = output_path if export_csv else None

@@ -124,3 +124,71 @@ def test_write_daily_excel_creates_file(tmp_path):
         single_sheet=True,
     )
     assert file_path.exists()
+
+
+def test_write_hourly_excel_chart_targets_across_years(monkeypatch, tmp_path):
+    called_sheets: list[str] = []
+
+    def _capture_chart(**kwargs):
+        called_sheets.append(str(kwargs.get("sheet_name")))
+
+    monkeypatch.setattr(flow_write, "add_scatter_chart", _capture_chart)
+    df = pd.DataFrame(
+        {
+            "period_end_at": pd.to_datetime(
+                [
+                    "2024-12-31 23:00:00",
+                    "2025-01-01 00:00:00",
+                    "2025-01-01 01:00:00",
+                ]
+            ),
+            "水位": [1.0, 2.0, 3.0],
+            "sheet_year": [2024, 2025, 2025],
+        }
+    )
+    file_path = tmp_path / "hourly_split.xlsx"
+
+    flow_write.write_hourly_excel(
+        df=df,
+        file_name=file_path,
+        value_col="水位",
+        mode_type="S",
+        single_sheet=True,
+    )
+
+    assert file_path.exists()
+    assert called_sheets == ["全期間", "2024年", "2025年"]
+
+
+def test_write_hourly_excel_without_single_sheet_charts_year_sheets_only(monkeypatch, tmp_path):
+    called_sheets: list[str] = []
+
+    def _capture_chart(**kwargs):
+        called_sheets.append(str(kwargs.get("sheet_name")))
+
+    monkeypatch.setattr(flow_write, "add_scatter_chart", _capture_chart)
+    df = pd.DataFrame(
+        {
+            "period_end_at": pd.to_datetime(
+                [
+                    "2024-12-31 23:00:00",
+                    "2025-01-01 00:00:00",
+                    "2025-01-01 01:00:00",
+                ]
+            ),
+            "水位": [1.0, 2.0, 3.0],
+            "sheet_year": [2024, 2025, 2025],
+        }
+    )
+    file_path = tmp_path / "hourly_split_year_only.xlsx"
+
+    flow_write.write_hourly_excel(
+        df=df,
+        file_name=file_path,
+        value_col="水位",
+        mode_type="S",
+        single_sheet=False,
+    )
+
+    assert file_path.exists()
+    assert called_sheets == ["2024年", "2025年"]

@@ -44,6 +44,7 @@ class BrowseWindow(ttk.Frame):
         self.interval_var = tk.StringVar()
         self.csv_output_var = tk.BooleanVar(value=False)  # CSV出力フラグ（初期状態はFalse）
         self.excel_output_var = tk.BooleanVar(value=True)  # Excel出力フラグ（初期状態はTrue）
+        self.excel_all_period_sheet_var = tk.BooleanVar(value=False)  # Excel全期間シート出力フラグ
         self.parquet_output_var = tk.BooleanVar(value=False)  # Parquet出力フラグ（初期状態はFalse）
         self.log_output_var = tk.BooleanVar(value=False)  # ログ出力フラグ（初期状態はFalse）
         self.log_level_var = tk.StringVar(value="INFO")  # ログレベル
@@ -130,8 +131,16 @@ class BrowseWindow(ttk.Frame):
         ttk.Checkbutton(
             checkbox_frame,
             text="Excelを出力",
-            variable=self.excel_output_var
+            variable=self.excel_output_var,
+            command=self._update_excel_all_period_state,
         ).pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.excel_all_period_sheet_check = ttk.Checkbutton(
+            checkbox_frame,
+            text="Excelに全期間シートを追加",
+            variable=self.excel_all_period_sheet_var,
+        )
+        self.excel_all_period_sheet_check.pack(side=tk.LEFT, padx=5, pady=5)
 
         ttk.Checkbutton(
             checkbox_frame,
@@ -155,6 +164,7 @@ class BrowseWindow(ttk.Frame):
             state="readonly",
         )
         self.log_level_combo.pack(side=tk.LEFT, padx=5, pady=5)
+        self._update_excel_all_period_state()
         self._update_log_level_state()
 
         path_frame = ttk.Frame(output_frame)
@@ -566,6 +576,7 @@ class BrowseWindow(ttk.Frame):
                 export_csv=self.csv_output_var.get(),
                 export_excel=self.excel_output_var.get(),
                 excel_output_dir=excel_dir,
+                include_all_period_sheet=self.excel_all_period_sheet_var.get(),
                 export_parquet=self.parquet_output_var.get(),
                 parquet_output_dir=parquet_dir,
             )
@@ -663,6 +674,13 @@ class BrowseWindow(ttk.Frame):
 
     def _update_fetch_button_state(self) -> None:
         self._set_fetch_enabled(bool(self.selected_stations))
+
+    def _update_excel_all_period_state(self) -> None:
+        if self.excel_output_var.get():
+            self.excel_all_period_sheet_check.configure(state="normal")
+            return
+        self.excel_all_period_sheet_var.set(False)
+        self.excel_all_period_sheet_check.configure(state="disabled")
 
     def _set_fetch_enabled(self, enabled: bool) -> None:
         if self.fetch_button.winfo_exists():

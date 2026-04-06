@@ -88,12 +88,12 @@ def _normalize_time_column(df: pd.DataFrame) -> Optional[pd.Series]:
     try:
         is_daily = "date" in df.columns and "time" not in df.columns and "hour" not in df.columns
 
-        if "observed_at" in df.columns:
-            normalized = pd.to_datetime(df["observed_at"], errors="coerce")
-            return normalized.dt.strftime("%Y/%m/%d %H:%M")
-
         if "period_end_at" in df.columns:
             normalized = pd.to_datetime(df["period_end_at"], errors="coerce")
+            return normalized.dt.strftime("%Y/%m/%d %H:%M")
+
+        if "observed_at" in df.columns:
+            normalized = pd.to_datetime(df["observed_at"], errors="coerce")
             return normalized.dt.strftime("%Y/%m/%d %H:%M")
 
         if "period_start_at" in df.columns:
@@ -124,6 +124,7 @@ def _export_precipitation_excel(
     csv_path: Path,
     excel_output_dir: Optional[Path] = None,
     overview_info: Optional[Dict[str, Any]] = None,
+    include_all_period_sheet: bool = False,
 ) -> Optional[Path]:
     """降水量関連のカラムのみを含むExcelファイルを作成します。"""
     try:
@@ -168,32 +169,36 @@ def _export_precipitation_excel(
 
         # XlsxWriterエンジンを使用してExcelライターを作成
         with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
-            # データフレームをExcelに書き込み
-            precipitation_df.to_excel(writer, sheet_name='Sheet1', index=False)
-
-            # ワークブックとワークシートオブジェクトを取得
             workbook = writer.book
-            worksheet = writer.sheets['Sheet1']
+            datetime_format = workbook.add_format({'num_format': 'yyyy/mm/dd hh:mm', 'align': 'left'})
+            display_at = pd.to_datetime(precipitation_df["日時"], errors="coerce")
 
-            # 日時フォーマットを定義（表示形式を統一）
-            datetime_format = workbook.add_format({
-                'num_format': 'yyyy/mm/dd hh:mm',
-                'align': 'left'
-            })
-
-            # 日時カラムの幅とフォーマットを設定
-            if "日時" in precipitation_df.columns:
-                # 日時カラムを文字列に変換してから書き込み
-                if not precipitation_df["日時"].empty:
-                    if any(" " in str(t) for t in precipitation_df["日時"] if pd.notna(t)):
-                        col_width = 16
-                    else:
-                        col_width = 12
-
-                    worksheet.write_column(1, 0, precipitation_df["日時"], datetime_format)
-                    worksheet.set_column('A:A', col_width, datetime_format)
-                else:
+            def _write_data_sheet(sheet_name: str, data: pd.DataFrame) -> None:
+                data.to_excel(writer, sheet_name=sheet_name, index=False)
+                worksheet = writer.sheets[sheet_name]
+                if "日時" not in data.columns:
+                    return
+                if data["日時"].empty:
                     worksheet.set_column('A:A', 12, datetime_format)
+                    return
+                if any(" " in str(t) for t in data["日時"] if pd.notna(t)):
+                    col_width = 16
+                else:
+                    col_width = 12
+                worksheet.write_column(1, 0, data["日時"], datetime_format)
+                worksheet.set_column('A:A', col_width, datetime_format)
+
+            if include_all_period_sheet:
+                _write_data_sheet("全期間", precipitation_df)
+
+            year_values = display_at.dt.year
+            valid_years = sorted(int(year) for year in year_values.dropna().unique())
+            if valid_years:
+                for year in valid_years:
+                    year_df = precipitation_df.loc[year_values == year].copy()
+                    _write_data_sheet(f"{year}年", year_df)
+            else:
+                _write_data_sheet("Sheet1", precipitation_df)
 
             _write_source_sheet(workbook, overview_info)
 
@@ -278,6 +283,7 @@ def export_weather_data(
     export_csv: bool = True,
     export_excel: bool = True,
     excel_output_dir: Optional[Path] = None,
+    include_all_period_sheet: bool = False,
     request_urls: Optional[List[str]] = None,
 ) -> Path:
     """Export weather data to CSV and Excel."""
@@ -349,7 +355,13 @@ def export_weather_data(
     excel_path = None
     if export_excel:
         try:
-            excel_path = _export_precipitation_excel(export_df, filepath, excel_output_dir, overview_info)
+            excel_path = _export_precipitation_excel(
+                export_df,
+                filepath,
+                excel_output_dir,
+                overview_info,
+                include_all_period_sheet=include_all_period_sheet,
+            )
             if excel_path:
                 logger.info(f"Excelエクスポート完了: {interval}処理 - 都道府県コード: {prec_no}, 観測所番号: {block_no}, 出力ファイル: {excel_path.resolve()}")
         except Exception as exc:

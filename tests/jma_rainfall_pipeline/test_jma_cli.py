@@ -78,3 +78,51 @@ def test_fetch_uses_custom_output_root(monkeypatch) -> None:
     assert code == 0
     assert captured["output_dir"] == Path("custom-root")
     assert captured["stations"] == [("11", "47401", "a1")]
+
+
+def test_fetch_passes_excel_all_period_sheet_flag(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeController:
+        def __init__(self, *, interval):
+            captured["interval"] = interval
+
+        def fetch_and_export_summary(self, **kwargs):
+            captured.update(kwargs)
+            return WeatherExportSummary(
+                results=(
+                    StationExportResult(
+                        prec_no="11",
+                        block_no="47401",
+                        interval_label="hourly",
+                        csv_path=None,
+                        excel_path=Path("out.xlsx"),
+                        parquet_path=None,
+                        ndjson_path=None,
+                        request_urls=(),
+                    ),
+                )
+            )
+
+    monkeypatch.setattr(cli, "WeatherDataController", _FakeController)
+    monkeypatch.setattr(cli, "setup_logging", lambda **kwargs: None)
+    monkeypatch.setattr(cli, "set_runtime_log_options", lambda **kwargs: None)
+
+    code = cli.main(
+        [
+            "fetch",
+            "--station",
+            "11:47401:a",
+            "--start",
+            "2025-01-01",
+            "--end",
+            "2025-01-31",
+            "--interval",
+            "hourly",
+            "--excel",
+            "--excel-all-period-sheet",
+        ]
+    )
+
+    assert code == 0
+    assert captured["include_all_period_sheet"] is True
