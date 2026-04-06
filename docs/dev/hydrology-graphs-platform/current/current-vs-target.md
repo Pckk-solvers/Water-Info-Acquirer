@@ -1,18 +1,18 @@
 # Hydrology Graphs Platform Current vs Target
 
 Status: current
-Updated: 2026-04-01
+Updated: 2026-04-06
 
 ## 1. 結論
-- 2026-04-01 時点で、完了済みだった `target` 文書は `archive` へ移動済み。
-- 現在、アクティブな `target` 文書は存在しない。
+- 2026-04-06 時点で、Excel時間範囲・年シート契約は実装完了のため `archive` へ移動済み。
+- 現在、`datetime-internal-unification` 系の `target` 文書がアクティブ。
 
 ## 2. 運用状態
 
 | 区分 | 状態 | 判定 |
 |---|---|---|
 | current 仕様 | `current/spec.md` と各契約文書で管理 | 正常 |
-| target 計画 | 現在は空（次フェーズ検討時のみ作成） | 正常 |
+| target 計画 | `datetime-internal-unification` 系 3 文書が進行中 | 正常 |
 | archive 履歴 | 完了済み計画と旧仕様文書を保管 | 正常 |
 
 ## 3. 文書運用ルール
@@ -28,3 +28,4 @@ Updated: 2026-04-01
 - [archive/execute-tab-v2-requirements.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/hydrology-graphs-platform/archive/execute-tab-v2-requirements.md)
 - [archive/improvement-backlog.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/hydrology-graphs-platform/archive/improvement-backlog.md)
 - [archive/target-README-20260401.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/hydrology-graphs-platform/archive/target-README-20260401.md)
+- [archive/excel-time-window-and-year-sheet-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/hydrology-graphs-platform/archive/excel-time-window-and-year-sheet-contract.md)

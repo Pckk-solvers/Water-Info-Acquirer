@@ -11,3 +11,4 @@ Status: archived
 - `default-style-confirmation-requirements.md`: デフォルトスタイル実行前確認 要件（完了後アーカイブ）
 - `station-selection-apply-and-date-candidate-requirements.md`: 観測所チェック反映・基準日候補遅延計算 要件（完了後アーカイブ）
 - `scan-performance-requirements.md`: スキャン処理性能改善 要件（完了後アーカイブ）
+- `excel-time-window-and-year-sheet-contract.md`: Excel時間範囲・年シート契約（実装完了後アーカイブ）

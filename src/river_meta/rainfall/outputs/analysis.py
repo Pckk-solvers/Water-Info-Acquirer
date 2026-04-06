@@ -114,9 +114,11 @@ def build_hourly_timeseries_dataframe(records_df: pd.DataFrame) -> pd.DataFrame:
         prepared = prepared[metric_series.eq("rainfall")].copy()
         prepared["rainfall_mm"] = value_series.loc[prepared.index]
 
+    prepared["period_end_at"] = pd.to_datetime(prepared.get("period_end_at"), errors="coerce")
     prepared["observed_at"] = pd.to_datetime(prepared.get("observed_at"), errors="coerce")
+    prepared["time_at"] = prepared["period_end_at"].where(prepared["period_end_at"].notna(), prepared["observed_at"])
     prepared = prepared[prepared["interval"].astype(str).eq("1hour")]
-    prepared = prepared.dropna(subset=["observed_at"])
+    prepared = prepared.dropna(subset=["time_at"])
     if prepared.empty:
         return pd.DataFrame(columns=TIMESERIES_COLUMNS)
 
@@ -141,12 +143,12 @@ def _build_station_timeseries(
     station_key: str,
     station_name: str,
 ) -> pd.DataFrame:
-    station_records = station_records.sort_values("observed_at").drop_duplicates(subset=["observed_at"])
-    min_at = station_records["observed_at"].min().floor("h")
-    max_at = station_records["observed_at"].max().floor("h")
+    station_records = station_records.sort_values("time_at").drop_duplicates(subset=["time_at"])
+    min_at = station_records["time_at"].min().floor("h")
+    max_at = station_records["time_at"].max().floor("h")
     full_index = pd.date_range(min_at, max_at, freq="h")
 
-    aligned = station_records.set_index("observed_at").reindex(full_index)
+    aligned = station_records.set_index("time_at").reindex(full_index)
     aligned["source"] = source
     aligned["station_key"] = station_key
     aligned["station_name"] = station_name

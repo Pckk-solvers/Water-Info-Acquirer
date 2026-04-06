@@ -1,6 +1,6 @@
 # Excel出力: 時間範囲と年シート分割 契約定義
 
-Status: target
+Status: archived
 Updated: 2026-04-06
 Related:
 - `docs/dev/time-semantics-and-fetch-window-design.md`

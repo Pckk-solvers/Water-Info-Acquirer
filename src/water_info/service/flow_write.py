@@ -15,8 +15,8 @@ from ..infra.excel_writer import add_scatter_chart, set_column_widths, write_tab
 _SOURCE_SHEET = "出典"
 
 
-def _resolve_display_at(df: pd.DataFrame) -> pd.Series:
-    """表示用時刻を解決する。"""
+def _resolve_excel_display_at(df: pd.DataFrame) -> pd.Series:
+    """Excel表示用時刻を解決する。"""
 
     if "period_end_at" in df.columns:
         resolved = pd.to_datetime(df["period_end_at"], errors="coerce")
@@ -186,12 +186,11 @@ def write_hourly_excel(
             raise empty_error_type("有効なデータがありません")
 
     with pd.ExcelWriter(file_name, engine="xlsxwriter", datetime_format="yyyy/m/d h:mm") as writer:
-        display_at = _resolve_display_at(df)
+        excel_display_at = _resolve_excel_display_at(df)
         work_df = df.copy()
-        work_df["display_at"] = display_at
         target_sheets: list[tuple[str, pd.DataFrame, str | None]] = []
         if single_sheet:
-            full_df = work_df[["display_at", value_col]].rename(columns={"display_at": "datetime"}).copy()
+            full_df = pd.DataFrame({"datetime": excel_display_at, value_col: work_df[value_col]})
             min_dt = pd.to_datetime(full_df["datetime"], errors="coerce").min()
             max_dt = pd.to_datetime(full_df["datetime"], errors="coerce").max()
             title_str: str | None = None
@@ -201,13 +200,23 @@ def write_hourly_excel(
                 title_str = f"{min_ts.year}/{min_ts.month} - {max_ts.year}/{max_ts.month}"
             target_sheets.append(("全期間", full_df, title_str))
 
-        if "sheet_year" in work_df.columns:
-            grouped = work_df.groupby("sheet_year", sort=True)
-        else:
-            grouped = work_df.assign(sheet_year=work_df["display_at"].dt.year).groupby("sheet_year", sort=True)
-        for year, group in grouped:
+        sheet_year = (
+            pd.to_numeric(work_df["sheet_year"], errors="coerce")
+            if "sheet_year" in work_df.columns
+            else pd.to_datetime(excel_display_at, errors="coerce").dt.year
+        )
+        sheet_year_series = pd.Series(sheet_year, index=work_df.index)
+        display_series = pd.Series(excel_display_at, index=work_df.index)
+        for year in sorted(int(y) for y in sheet_year_series.dropna().unique()):
+            group_mask = sheet_year_series.eq(year)
+            group = work_df.loc[group_mask].copy()
             sheet_name = f"{year}年"
-            sheet_df = group[["display_at", value_col]].rename(columns={"display_at": "datetime"})
+            sheet_df = pd.DataFrame(
+                {
+                    "datetime": display_series.loc[group.index].reset_index(drop=True),
+                    value_col: group[value_col].reset_index(drop=True),
+                }
+            )
             target_sheets.append((sheet_name, sheet_df, None))
         for sheet_name, sheet_df, title in target_sheets:
             _add_hourly_sheet_with_chart(
@@ -219,8 +228,10 @@ def write_hourly_excel(
                 title=title,
             )
 
-        daily_df = build_daily_empty_summary(work_df, value_col, time_col="display_at")
-        year_summary_df = build_year_summary(work_df, value_col, time_col="display_at")
+        summary_df = work_df.copy()
+        summary_df["__excel_display_at"] = excel_display_at
+        daily_df = build_daily_empty_summary(summary_df, value_col, time_col="__excel_display_at")
+        year_summary_df = build_year_summary(summary_df, value_col, time_col="__excel_display_at")
 
         ws = write_table(
             writer,
