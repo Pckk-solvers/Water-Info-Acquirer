@@ -4,7 +4,7 @@ Status: archived
 Updated: 2026-04-06
 Related:
 - `docs/dev/time-semantics-and-fetch-window-design.md`
-- `docs/dev/hydrology-graphs-platform/target/datetime-internal-unification-requirements.md`
+- `docs/dev/hydrology-graphs-platform/archive/datetime-internal-unification-requirements.md`
 
 ## 1. 目的
 - `water_info` と `jma_rainfall_pipeline` の Excel 出力で、時間範囲の切り方とシート分割ルールを統一する。

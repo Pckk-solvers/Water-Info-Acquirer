@@ -1,6 +1,6 @@
 # 時刻契約統一: 内部表現 datetime 統一 要件定義
 
-Status: target
+Status: archived
 Updated: 2026-04-06
 Related:
 - `datetime-internal-unification-impact-analysis.md` (Where)
@@ -216,3 +216,4 @@ Related:
   - `uv run pytest tests/hydrology_graphs -k "domain or parquet_store or services"`
 - 全体回帰時は次を実行する。
   - `uv run pytest tests/river_meta tests/jma_rainfall_pipeline tests/water_info tests/hydrology_graphs`
+

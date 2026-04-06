@@ -15,6 +15,7 @@
   - ドメイン/共通ロジック: `domain/`, `support/`
 - 雨量共通フォーマット化メモ: `docs/dev/river-meta-rainfall-unified-design.md`
 - Excel 時間範囲・年シート契約: `docs/dev/hydrology-graphs-platform/archive/excel-time-window-and-year-sheet-contract.md`
+- Pyright 解消ガイド（river_meta analysis）: `docs/dev/hydrology-graphs-platform/archive/pyright-remediation-analysis-module-2026-04-06.md`
 - 観測所インデックス可用年メンテナンス Overview: `docs/dev/station-index-availability-maintenance/overview.md`
 - 観測所インデックス可用年メンテナンス 要件: `docs/dev/station-index-availability-maintenance/requirements.md`
 - 観測所インデックス可用年メンテナンス 詳細設計: `docs/dev/station-index-availability-maintenance/design.md`

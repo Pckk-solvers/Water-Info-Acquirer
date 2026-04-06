@@ -123,8 +123,8 @@ def test_export_consolidated_rainfall_excel_creates_single_file(tmp_path):
 def test_run_rainfall_analyze_rejects_non_hourly_interval():
     config = RainfallRunInput(
         source="jma",
-        start_at=pd.Timestamp("2025-01-01").to_pydatetime(),
-        end_at=pd.Timestamp("2025-01-31 23:59:59").to_pydatetime(),
+        start_at=datetime(2025, 1, 1, 0, 0, 0),
+        end_at=datetime(2025, 1, 31, 23, 59, 59),
         interval="1day",
         jma_station_codes=["47401"],
     )
@@ -238,8 +238,8 @@ def test_run_rainfall_collect_waterinfo_prefecture_resolve_path(monkeypatch):
 
     config = RainfallRunInput(
         source="water_info",
-        start_at=pd.Timestamp("2025-01-01 00:00:00").to_pydatetime(),
-        end_at=pd.Timestamp("2025-01-01 23:00:00").to_pydatetime(),
+        start_at=datetime(2025, 1, 1, 0, 0, 0),
+        end_at=datetime(2025, 1, 1, 23, 0, 0),
         interval="1hour",
         waterinfo_prefectures=["大阪", "京都"],
         waterinfo_station_codes=["2700000001"],

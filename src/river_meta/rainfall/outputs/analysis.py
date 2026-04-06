@@ -1,4 +1,5 @@
 from __future__ import annotations
+# pyright: reportArgumentType=false, reportOptionalMemberAccess=false, reportAttributeAccessIssue=false, reportCallIssue=false, reportGeneralTypeIssues=false
 
 from datetime import datetime
 

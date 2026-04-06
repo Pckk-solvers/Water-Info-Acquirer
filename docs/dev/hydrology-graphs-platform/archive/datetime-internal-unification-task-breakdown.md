@@ -1,6 +1,6 @@
 # 時刻契約統一: 実装タスク分解
 
-Status: target
+Status: archived
 Updated: 2026-04-06
 Related:
 - `datetime-internal-unification-requirements.md` (Why/What)
@@ -164,3 +164,4 @@ Related:
   - `uv run pytest tests/hydrology_graphs -k "parquet_store or domain"`
 - スプリント3終了時:
   - `uv run pytest tests/river_meta tests/jma_rainfall_pipeline tests/water_info tests/hydrology_graphs`
+

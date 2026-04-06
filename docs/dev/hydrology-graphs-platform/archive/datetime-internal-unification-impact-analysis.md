@@ -1,6 +1,6 @@
 # 時刻契約統一: 影響範囲調査と修正導線（詳細）
 
-Status: target
+Status: archived
 Updated: 2026-04-01
 Related:
 - `datetime-internal-unification-requirements.md`
@@ -387,3 +387,4 @@ Role:
 - 要件文書の確定事項（D-01〜D-08）が反映済みである。
 - 契約変更に対する移行方針（後方互換期間）が合意されている。
 - P1〜P6 の実施順で担当とレビュー単位が決まっている。
+

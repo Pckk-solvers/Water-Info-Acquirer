@@ -1,11 +1,11 @@
 # 時刻契約統一 実装レディネス判定（2026-04-06）
 
-Status: current
+Status: archived
 Updated: 2026-04-06
 Related:
-- `../target/datetime-internal-unification-requirements.md`
-- `../target/datetime-internal-unification-impact-analysis.md`
-- `../target/datetime-internal-unification-task-breakdown.md`
+- `./datetime-internal-unification-requirements.md`
+- `./datetime-internal-unification-impact-analysis.md`
+- `./datetime-internal-unification-task-breakdown.md`
 
 ## 1. 目的
 - `target` にある `T1〜T10` について、現実装の到達点を簡潔に可視化する。
@@ -69,3 +69,4 @@ Related:
 ---
 
 この文書は「実装着手可否の判断用」なので、詳細仕様は `target` 側を正本として扱う。
+
