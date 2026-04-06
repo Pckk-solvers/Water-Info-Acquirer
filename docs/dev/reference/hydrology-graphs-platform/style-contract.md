@@ -1,6 +1,5 @@
 # Hydrology Graphs Platform Style Contract (Current)
 
-Status: current
 Schema Version: 2.0
 
 ## 1. ルート構造
@@ -47,3 +46,4 @@ Schema Version: 2.0
 実装正本:
 - `src/hydrology_graphs/io/style_store.py`
 - `src/hydrology_graphs/render/plotter.py`
+

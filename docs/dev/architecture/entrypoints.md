@@ -1,6 +1,5 @@
 # 起動経路
 
-Status: current
 
 ## 1. 直下 `main.py`
 
@@ -45,3 +44,4 @@ Status: current
 - `src/water_info_acquirer/app_registry.py`
 - `src/water_info_acquirer/navigation.py`
 - `src/water_info_acquirer/runtime.py`
+

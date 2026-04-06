@@ -1,6 +1,5 @@
 # 時間意味と境界ルール
 
-Status: current
 
 ## 1. 正式ルール
 
@@ -43,3 +42,4 @@ Status: current
 - `src/river_meta/rainfall/storage/parquet_store.py`
 - `src/hydrology_graphs/io/parquet_store.py`
 - `src/water_info/entry.py`
+

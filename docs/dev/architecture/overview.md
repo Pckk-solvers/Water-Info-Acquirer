@@ -1,6 +1,5 @@
 # アーキテクチャ概要
 
-Status: current
 
 ## 全体像
 
@@ -39,3 +38,4 @@ Status: current
 - 出力: `src/river_meta/rainfall/outputs/`
 - ドメイン: `src/river_meta/rainfall/domain/`
 - 共通補助: `src/river_meta/rainfall/support/`
+

@@ -1,6 +1,5 @@
 # Water Info 後処理 要件（現行実装）
 
-Status: current
 
 ## 目的・対象範囲
 - 国土交通省の水文データ (_H 系時間データ、_D 系日データ) を後処理し、日次集計・ランク付与・位況算出・ピーク抽出・年次サマリを生成して Excel/Parquet に出力する。
@@ -100,3 +99,4 @@ Status: current
 ## 参照
 
 - `docs/dev/reference/postprocess/config.sample.json`
+

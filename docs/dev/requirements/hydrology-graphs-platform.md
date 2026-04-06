@@ -1,6 +1,5 @@
 # Hydrology Graphs Platform 要件（現行）
 
-Status: current
 
 ## 1. 対象範囲
 - 対象実装: `src/hydrology_graphs`
@@ -104,3 +103,4 @@ Status: current
 - [style-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/style-contract.md)
 - [parquet-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/parquet-contract.md)
 - [threshold-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/threshold-contract.md)
+

@@ -1,6 +1,5 @@
 # Reference
 
-Status: current
 
 このフォルダは、運用手順・契約・サンプル設定などの参照資料を置く。
 
@@ -9,3 +8,4 @@ Status: current
 - `release-process.md`
 - `hydrology-graphs-platform/`: グラフ機能の各種契約
 - `postprocess/`: 後処理の設定サンプル
+
