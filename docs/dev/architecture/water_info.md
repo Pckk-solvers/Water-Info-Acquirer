@@ -18,6 +18,7 @@
 - 取得条件の解釈
 - 国交省サイトからの取得
 - 観測所・値・時刻の正規化
+- HTML 行単位での時刻と値の対応付け
 - Parquet / NDJSON / Excel 出力
 - GUI での条件設定と実行
 
@@ -36,13 +37,14 @@
 
 1. UI または CLI が入力条件を受け取る。
 2. `service/usecase.py` が取得単位と出力先を決める。
-3. `service/flow_fetch.py` がリクエスト窓を計算する。
+3. `service/flow_fetch.py` がリクエスト窓を計算し、HTML の日付行ごとに 24 時間分の値列を対応付ける。
 4. `infra/fetching.py` と関連モジュールが HTML / 表を取得する。
-5. `entry.py` が標準スキーマへまとめる。
+5. `entry.py` が source 時点で正規化済みの `datetime` / `period_end_at` を標準スキーマへまとめる。
 6. `service/flow_write.py` と `infra/excel_writer.py` が各形式へ書き出す。
 
 ## 補足
 
 - `period_end_at` が時刻の正本。
 - `observed_at` は欠損時の補助参照。
+- 値列をあとから時刻へ貼り付けるのではなく、取得行の基準日と時間列を同時に解決する。
 - 表示用の別時刻列を中間に恒久保存しない。
