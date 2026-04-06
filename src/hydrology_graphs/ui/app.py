@@ -40,10 +40,7 @@ from .preview_canvas import (
     show_preview_placeholder,
 )
 from .preview_actions import export_preview_sample, render_preview
-from .style_payload import (
-    nested_value,
-    set_nested_value,
-)
+from .style_payload import nested_value, set_nested_value
 from .tabs_execute import build_execute_tab
 from .tabs_style import build_style_tab
 from .tooltip import ToolTip
@@ -166,6 +163,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self.preview_target_station = tk.StringVar(value="")
         self.preview_target_date = tk.StringVar(value="")
         self.preview_target_graph = tk.StringVar(value=GRAPH_TYPES[0])
+        self.time_display_mode = tk.StringVar(value="datetime")
         self.base_date_year = tk.StringVar(value="")
         self.base_date_month = tk.StringVar(value="")
         self.base_date_candidate = tk.StringVar(value="")
@@ -220,6 +218,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._graph_type_checkbuttons: list[ttk.Checkbutton] = []
         self.event_window_3.trace_add("write", self._on_event_window_days_changed)
         self.event_window_5.trace_add("write", self._on_event_window_days_changed)
+        self.time_display_mode.trace_add("write", self._on_time_display_mode_changed)
 
         self.config(
             menu=build_navigation_menu(
@@ -959,6 +958,11 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         self._schedule_preview_refresh()
 
+    def _on_time_display_mode_changed(self, *_args) -> None:
+        """表示モードの切替時にプレビューを更新する。"""
+
+        self._schedule_preview_refresh()
+
     def _on_style_text_changed(self, _event=None) -> None:
         """JSON 直接編集時に payload とフォームを同期する。"""
 
@@ -1331,10 +1335,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         item_id = self.result_tree.identify_row(event.y)
         if not item_id:
             return "break"
-        values = self.result_tree.item(item_id, "values")
-        if not values:
-            return "break"
-        target_id = str(values[0])
+        target_id = str(item_id)
         output_path = self._result_output_paths.get(target_id, "").strip()
         if output_path:
             messagebox.showinfo("出力先", output_path)

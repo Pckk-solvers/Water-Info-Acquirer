@@ -142,6 +142,7 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     col_5day.grid(row=0, column=2, sticky="w", padx=6, pady=(4, 2))
     col_annual = ttk.Label(graph_box, text="年最大")
     col_annual.grid(row=0, column=3, sticky="w", padx=6, pady=(4, 2))
+
     app._execute_tooltips = [
         ToolTip(app.parquet_entry, "入力Parquetディレクトリです。スキャンで観測所一覧を更新します。"),
         ToolTip(app.btn_browse_parquet, "Parquetディレクトリを選択します。"),
@@ -196,7 +197,7 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
         app._graph_type_checkbuttons.append(chk_annual)
 
     execute_box = ttk.LabelFrame(left, text="実行")
-    execute_box.grid(row=5, column=0, sticky="ew")
+    execute_box.grid(row=4, column=0, sticky="ew")
     app.btn_precheck = ttk.Button(execute_box, text="実行前検証", command=app._run_precheck)
     app.btn_precheck.grid(row=0, column=0, padx=12, pady=6, sticky="w")
     app.run_btn = ttk.Button(execute_box, text="バッチ実行", command=app._start_batch_run)
@@ -213,19 +214,18 @@ def build_execute_tab(app, parent: ttk.Frame) -> None:
     app.precheck_summary = tk.StringVar(value="対象数: 0 / NG: 0")
     ttk.Label(result_box, textvariable=app.precheck_summary).grid(row=0, column=0, sticky="w", padx=6, pady=(6, 4))
 
-    cols = ("target", "window", "status", "reason")
+    cols = ("target", "status", "reason")
     app.result_tree = ttk.Treeview(result_box, columns=cols, show="headings")
     for key, text, width in (
-        ("target", "対象", 230),
-        ("window", "窓", 60),
-        ("status", "状態", 80),
+        ("target", "対象", 290),
+        ("status", "状態", 100),
         ("reason", "理由", 180),
     ):
         app.result_tree.heading(key, text=text)
         app.result_tree.column(
             key,
             width=width,
-            minwidth=48 if key in ("window", "status") else 120,
+            minwidth=48 if key == "status" else 120,
             stretch=True,
             anchor="w" if key in ("target", "reason") else "center",
         )

@@ -10,6 +10,8 @@ from hydrology_graphs.services import BatchRunInput, PrecheckInput
 from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
+    format_result_target_display,
+    format_result_status_display,
     graph_targets_from_precheck_items,
 )
 
@@ -50,6 +52,7 @@ def run_precheck(app) -> None:
         base_dates=base_dates,
         event_window_days_list=event_windows,
         event_window_days_by_graph=event_windows_by_graph,
+        event_window_terminal_padding=True,
     )
     app._append_log(
         f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)} windows={event_windows}"
@@ -69,11 +72,21 @@ def run_precheck(app) -> None:
     for row in result.items:
         reason = row.reason_message or ""
         status = "ready" if row.status == "ok" else "precheck_ng"
+        display_target = format_result_target_display(
+            source=row.source,
+            station_key=row.station_key,
+            graph_type=row.graph_type,
+            base_datetime=row.base_datetime,
+            event_window_days=row.event_window_days,
+            catalog_stations=app._catalog_stations,
+            source_label_map=app.SOURCE_LABELS,
+            graph_label_map=app.GRAPH_TYPE_LABELS,
+        )
         _upsert_result_row(
             app,
             target_id=row.target_id,
-            window_days=row.event_window_days,
-            status=status,
+            display_target=display_target,
+            status=format_result_status_display(status),
             reason=reason,
             output_path="",
         )
@@ -132,15 +145,15 @@ def refresh_preview_choices(app) -> None:
     app._preview_graph_display_to_key = choices.graph_display_to_key
     app.preview_station_combo.configure(values=choices.station_values)
     app.preview_date_combo.configure(values=choices.date_values)
-    if not app.preview_target_station.get() and choices.station_values:
-        app.preview_target_station.set(choices.station_values[0])
-    if not app.preview_target_date.get() and choices.date_values:
-        app.preview_target_date.set(choices.date_values[0])
+    current_station = app.preview_target_station.get().strip()
+    current_date = app.preview_target_date.get().strip()
+    app.preview_target_station.set(_retained_preview_choice(current_station, choices.station_values))
+    app.preview_target_date.set(_retained_preview_choice(current_date, choices.date_values))
     preview_graph_combo = getattr(app, "preview_graph_combo", None)
     if preview_graph_combo is not None:
         preview_graph_combo.configure(values=choices.graph_values)
-        if app.preview_target_graph.get() not in choices.graph_values and choices.graph_values:
-            app.preview_target_graph.set(choices.graph_values[0])
+    current_graph = app.preview_target_graph.get().strip()
+    app.preview_target_graph.set(_retained_preview_choice(current_graph, choices.graph_values))
     app._refresh_style_forms_from_payload()
 
 
@@ -174,12 +187,13 @@ def start_batch_run(app) -> None:
         style_json_path=app._style_json_path,
         style_payload=payload,
         targets=batch_targets,
+        event_window_terminal_padding=True,
         should_stop=app._stop_event.is_set if app._stop_event else None,
     )
     for target in batch_targets:
         row_id = _row_id_for_target_id(target.target_id)
         if row_id in app._result_row_ids:
-            app.result_tree.set(app._result_row_ids[row_id], "status", "running")
+            app.result_tree.set(app._result_row_ids[row_id], "status", format_result_status_display("running"))
             app.result_tree.set(app._result_row_ids[row_id], "reason", "")
             app.result_tree.set(app._result_row_ids[row_id], "path", "")
     app._stop_event = threading.Event()
@@ -318,6 +332,16 @@ def _row_id_for_target_id(target_id: str) -> str:
     return target_id
 
 
+def _retained_preview_choice(current: str, choices: list[str]) -> str:
+    """現在値が候補にあれば維持し、なければ先頭候補か空文字へ戻す。"""
+
+    if current in choices:
+        return current
+    if choices:
+        return choices[0]
+    return ""
+
+
 def _clear_result_rows(app) -> None:
     app._result_row_ids = {}
     app._result_output_paths = {}
@@ -325,26 +349,20 @@ def _clear_result_rows(app) -> None:
         app.result_tree.delete(item_id)
 
 
-def _window_text(window_days: int | None) -> str:
-    if window_days in (3, 5):
-        return f"{window_days}day"
-    return ""
-
-
 def _upsert_result_row(
     app,
     *,
     target_id: str,
-    window_days: int | None,
+    display_target: str,
     status: str,
     reason: str,
     output_path: str,
 ) -> None:
     row_key = _row_id_for_target_id(target_id)
-    values = (target_id, _window_text(window_days), status, reason)
+    values = (display_target, status, reason)
     row_id = app._result_row_ids.get(row_key)
     if row_id is None:
-        row_id = app.result_tree.insert("", "end", values=values)
+        row_id = app.result_tree.insert("", "end", iid=row_key, values=values)
         app._result_row_ids[row_key] = row_id
     else:
         app.result_tree.item(row_id, values=values)

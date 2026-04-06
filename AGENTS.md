@@ -133,3 +133,18 @@
 - `src/gui/AGENTS.md` : GUI実装ルール
 - `src/core/AGENTS.md` : コアロジックとI/O分離ルール
 - `tests/AGENTS.md` : テスト命名・fixture方針
+
+---
+
+## Review guidelines
+
+- 変更内容が `docs/dev/requirements/` `docs/dev/architecture/` `docs/dev/adr/` と矛盾していないか確認する。
+- 仕様変更を伴うコード変更では、コードより先に関連文書が更新されているか確認する。
+- `docs/dev/tasks/active/` に対応する作業計画がない大きな変更は指摘する。
+- 変更に対して必要なテスト、確認手順、または手動確認方法が追加されているか確認する。
+- 完了済みの変更なのに、関連タスクが `docs/dev/tasks/done/` に移動されていない場合は指摘する。
+- requirements に実装詳細が入りすぎていないか確認する。
+- architecture/adr を更新すべき変更なのに未更新なら指摘する。
+- docs のタイポ、リンク切れ、用語ゆれも指摘する。Treat docs issues as P1.
+- リファクタ時は責務分離の悪化、I/O境界の混濁、密結合の増加を指摘する。
+- 変更が局所的なはずなのに、無関係な範囲へ波及している場合は指摘する。

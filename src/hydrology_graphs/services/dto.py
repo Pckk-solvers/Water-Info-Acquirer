@@ -19,6 +19,7 @@ class PrecheckInput:
     base_dates: list[str]
     event_window_days_list: list[int] = field(default_factory=lambda: [3])
     event_window_days_by_graph: dict[str, list[int]] = field(default_factory=dict)
+    event_window_terminal_padding: bool = False
     station_pairs: list[tuple[str, str]] | None = None
     station_keys: list[str] = field(default_factory=list)
     sources: list[str] | None = None
@@ -37,6 +38,8 @@ class PreviewInput:
     graph_type: str
     base_datetime: str | None
     event_window_days: int | None
+    event_window_terminal_padding: bool = False
+    time_display_mode: str = "datetime"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +63,7 @@ class BatchRunInput:
     style_json_path: str | None
     style_payload: dict | None
     targets: list[BatchTarget]
+    event_window_terminal_padding: bool = False
     should_stop: Callable[[], bool] | None = None
 
 

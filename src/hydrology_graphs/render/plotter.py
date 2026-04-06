@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from io import BytesIO
 from typing import Any, cast
 import warnings
@@ -58,6 +59,7 @@ def render_graph_png(
     df: pd.DataFrame,
     graph_style: dict[str, Any],
     thresholds: list[ThresholdRecord],
+    time_display_mode: str = "datetime",
 ) -> bytes:
     """描画対象とスタイルから PNG バイト列を生成する。"""
 
@@ -85,7 +87,7 @@ def render_graph_png(
     # 基準線は最後に重ねることで、主系列の見た目を邪魔しにくくする。
     _plot_thresholds(ax, thresholds, graph_style)
     _apply_title_axis_labels(ax, graph_style, station_name)
-    _apply_axis_details(ax, graph_style)
+    _apply_axis_details(ax, graph_style, time_display_mode=time_display_mode)
 
     legend_cfg = graph_style.get("legend", {})
     if legend_cfg.get("enabled", True):
@@ -250,15 +252,17 @@ def _apply_title_axis_labels(ax, graph_style: dict[str, Any], station_name: str)
         ax.set_ylabel(y_label)
 
 
-def _apply_axis_details(ax, graph_style: dict[str, Any]) -> None:
+def _apply_axis_details(ax, graph_style: dict[str, Any], *, time_display_mode: str = "datetime") -> None:
     """日時目盛りや数値フォーマットなどの細部を調整する。"""
 
     x_axis = graph_style.get("x_axis", {})
     y_axis = graph_style.get("y_axis", {})
-    if x_axis.get("date_format"):
-        ax.xaxis.set_major_formatter(mdates.DateFormatter(str(x_axis["date_format"])))
     if x_axis.get("tick_interval_hours"):
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(float(x_axis["tick_interval_hours"])))))
+    if _is_24h_time_display_mode(time_display_mode):
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(_format_24h_tick))
+    elif x_axis.get("date_format"):
+        ax.xaxis.set_major_formatter(mdates.DateFormatter(str(x_axis["date_format"])))
     rotation = float(x_axis.get("tick_rotation", 0))
     align = str(x_axis.get("label_align", "center"))
     for tick in ax.get_xticklabels():
@@ -303,3 +307,20 @@ def _legend_label_visible(label: object) -> bool:
 
     text = _coerce_text(label)
     return bool(text) and text != "_nolegend_"
+
+
+def _format_24h_tick(x: float, _pos: int | None = None) -> str:
+    """24時表記用のX軸ラベルを返す。"""
+
+    dt = mdates.num2date(x)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+        dt = dt - timedelta(days=1)
+        return dt.strftime("%m/%d 24:00")
+    return dt.strftime("%m/%d %H:%M")
+
+
+def _is_24h_time_display_mode(value: object) -> bool:
+    text = _coerce_text(value).lower()
+    return text in {"24h", "24時", "24時表記", "1時~24時", "1時〜24時"}

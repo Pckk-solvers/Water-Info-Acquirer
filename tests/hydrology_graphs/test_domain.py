@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -8,6 +8,7 @@ from hydrology_graphs.domain.logic import (
     annual_max_by_year,
     annual_max_series,
     build_output_target,
+    event_capture_window_bounds,
     event_window_bounds,
     expected_event_index,
     has_min_years,
@@ -21,6 +22,10 @@ def test_event_window_bounds_are_centered():
     assert start.isoformat() == "2025-01-01T00:00:00"
     assert end.isoformat() == "2025-01-04T00:00:00"
     assert len(expected_event_index(date(2025, 1, 2), 3)) == 72
+    capture_start, capture_end = event_capture_window_bounds(date(2025, 1, 2), 3, terminal_padding_hours=1)
+    assert capture_start == start
+    assert capture_end == end + timedelta(hours=1)
+    assert len(expected_event_index(date(2025, 1, 2), 3, terminal_padding_hours=1)) == 73
 
 
 def test_annual_max_helpers_work():

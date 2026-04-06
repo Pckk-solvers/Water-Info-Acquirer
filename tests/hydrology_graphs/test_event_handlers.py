@@ -11,9 +11,9 @@ class _Tree:
         self._rows_by_id: dict[str, tuple] = {}
         self._id_seq = 0
 
-    def insert(self, *_args, values):
+    def insert(self, *_args, iid=None, values=None):
         self._id_seq += 1
-        row_id = f"row{self._id_seq}"
+        row_id = iid or f"row{self._id_seq}"
         self.rows.append(values)
         self._rows_by_id[row_id] = values
         return row_id
@@ -28,6 +28,9 @@ def _dummy_app():
     app.result_tree = _Tree()
     app._result_row_ids = {}
     app._result_output_paths = {}
+    app._catalog_stations = [("jma", "111", "高幡橋")]
+    app.SOURCE_LABELS = {"jma": "気象庁"}
+    app.GRAPH_TYPE_LABELS = {"hydrograph_water_level": "ハイドログラフ（水位）"}
     app.batch_status = SimpleNamespace(value="")
     app.batch_status.set = lambda v: setattr(app.batch_status, "value", v)
     app.preview_message = SimpleNamespace(value="")
@@ -49,11 +52,20 @@ def _dummy_app():
 def test_handle_run_done_updates_rows_and_status():
     app = _dummy_app()
     result = SimpleNamespace(
-        items=[SimpleNamespace(target_id="t:3day", status="success", reason_message="", output_path="a.png")],
+        items=[
+            SimpleNamespace(
+                target_id="jma:111:hydrograph_water_level:2025-01-02:3day",
+                status="success",
+                reason_message="",
+                output_path="a.png",
+            )
+        ],
         summary=SimpleNamespace(success=1, failed=0, skipped=0),
     )
     event_handlers.handle_event(app, "run_done", result)
     assert len(app.result_tree.rows) == 1
+    assert app.result_tree.rows[0][0] == "高幡橋（気象庁:111） / ハイドログラフ（水位） / 2025-01-02 / 3日窓"
+    assert app.result_tree.rows[0][1] == "完了"
     assert app.batch_status.value.startswith("完了:")
 
 
