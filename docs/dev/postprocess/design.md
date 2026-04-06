@@ -6,7 +6,7 @@
 ### データフレーム構成（案A: 用途別テーブル分割）
 1. `df_hour_raw`  
    - 入力: _H系Excel（WH/QH/RH…）の「全期間」または年シートから先頭2列のみ読み込み。  
-   - 列: `display_dt` (datetime64[ns]), `value` (float). 読み込み後すぐに列名正規化。
+   - 列: `period_end_at` (datetime64[ns]) または `observed_at` (datetime64[ns]), `value` (float). 読み込み後すぐに列名正規化。
    - 備考: summaryシートは無視。  
 
 2. `df_daily_raw`  
@@ -15,7 +15,7 @@
 
 3. `df_hour_daily`（時間→日集計結果）  
    - 作成: `df_hour_raw` から以下を生成。  
-     - `hydro_date = (display_dt - 1h).dt.date`（1:00~0:00を同一日扱い）。  
+     - `hydro_date = (period_end_at - 1h).dt.date`（1:00~0:00を同一日扱い）。  
      - グループキー: `hydro_date`。  
      - 集計列:  
        - `hourly_daily_avg_var_den`: 可変分母平均（非NaNで割る）。  
@@ -39,9 +39,9 @@
 ### 読み込みと列正規化
 - Excel読み込み: 先頭2列のみ（A=日時, B=値）。`usecols=[0,1]`, `header=0`。  
 - シート選択: `"全期間"`があれば優先、無ければ `^\d{4}年$` を全て読み込みconcat。  
-- 列名統一: 時間データは `display_dt`, `value` にリネーム。日データは `datetime`, `value` にリネーム。  
+- 列名統一: 時間データは `period_end_at`, `value`（無ければ `observed_at` を時刻列に採用）。日データは `datetime`, `value` にリネーム。  
 - 日データの日付化: `hydro_date = datetime.dt.date` に変換し、マージ用キーにリネーム。  
-- 時間データの日付化: `hydro_date = (display_dt - 1h).dt.date` を追加。
+- 時間データの日付化: `hydro_date = (period_end_at - 1h).dt.date` を追加。
 
 ### 日次集計（時間データ -> 日平均）
 - グループキー: `hydro_date`。  

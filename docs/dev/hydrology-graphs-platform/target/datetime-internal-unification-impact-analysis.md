@@ -359,8 +359,8 @@ Role:
 
 ### 9.2 置換ルール
 - 旧 `display_dt` の用途は次で置換する。
-  - 表示時刻: `period_end_at` から生成
-  - 年判定: `period_end_at.year`
+  - 表示時刻: 瞬間値は `observed_at`、区間値は `period_end_at` から生成
+  - 年判定: 瞬間値は `observed_at.year`、区間値は `period_end_at.year`
   - 日次集計: `period_end_at` から日付を生成
   - Parquet保存: `period_start_at`/`period_end_at` を直接保存
 - 「表示のための+1h列」は常設列として持たない。必要時に出力直前で一時生成する。
@@ -368,8 +368,8 @@ Role:
 ### 9.3 境界データの扱い（年またぎ対策）
 - 余分取得（前月/翌月）は許容するが、正規化後に共通フィルタで切り落とす。
 - 共通フィルタ条件:
-  - `period_start_at >= user_start_at`
-  - `period_end_at <= user_end_at`
+  - 瞬間値: `user_start_at <= observed_at <= user_end_at`
+  - 区間値: `user_start_at <= period_end_at <= user_end_at`
 - このフィルタ結果を Parquet/CSV/Excel/Graph すべてで共通利用する。
 
 ### 9.4 実装順（廃止に特化）

@@ -7,7 +7,7 @@
 ### 2. 入出力と列スキーマ
 - 入力ファイル: _H系Excel（例: WH/QH/RH）、_D系Excel（例: WD/QD/RD）。  
 - 読み込み後の列名（正規化）:
-  - 時間: `display_dt`, `value`, `hydro_date` (=(display_dt - 1h).date)
+  - 時間: `period_end_at`（無ければ `observed_at`）, `value`, `hydro_date` (=(period_end_at - 1h).date)
   - 日: `datetime`, `daily_value`, `hydro_date` (=datetime.date)
 - 集計結果（df_hour_daily）:
   - `hydro_date`, `hourly_daily_avg_var_den`, `hourly_daily_avg_fixed_den`, `count_non_null`

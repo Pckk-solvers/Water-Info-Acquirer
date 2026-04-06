@@ -8,9 +8,9 @@
 - 必須: `--hour-file` で指定する _H 系 Excel。
 - 任意: `--daily-file` で指定する _D 系 Excel。未指定でも時間データだけで集計・ランク・位況を出力する。
 - Excel シート選択: `"全期間"` があれば優先。無ければ `^\d{4}年$` のシートを全件読み込み、連結して日時順に整列。
-- 読み込み列: 先頭2列を使用 (`usecols=[0,1]`)。時間は `display_dt`、日次は `datetime` として受け、値列は `value`/`daily_value` に正規化。
+- 読み込み列: 先頭2列を使用 (`usecols=[0,1]`)。時間は `period_end_at`（無ければ `observed_at`）、日次は `datetime` として受け、値列は `value`/`daily_value` に正規化。
 - 読み込み時丸め: 値列は `Decimal` + `ROUND_HALF_UP` で小数第3位 (0.001) に量子化。NaN 変換も許容。
-- 日付キー: `hydro_date = (display_dt - 1時間).date()` を作成し、1:00〜0:00 を同一日として扱う。
+- 日付キー: `hydro_date = (period_end_at - 1時間).date()` を作成し、1:00〜0:00 を同一日として扱う。
 
 ## 日次集計（時間→日）
 - グループキー: `hydro_date`。
@@ -42,7 +42,7 @@
 - 標準版: 欠損閾値・補正あり。参考版: 閾値なし・補正なし。
 
 ## ピーク抽出
-- `hydro_date` ごとに非欠損の最大値とその `display_dt` を取得。
+- `hydro_date` ごとに非欠損の最大値とその `period_end_at` を取得。
 - 列: `peak_max_value`, `peak_max_time`（時刻は水水DB基準）。値は後段で小数第2位に丸めて出力。
 
 ## 年次サマリ

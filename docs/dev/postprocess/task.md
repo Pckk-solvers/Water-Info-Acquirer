@@ -5,7 +5,7 @@
 - [ ] 出力先ルートの決定（例: `out/`、Parquetは `parquet/`）。
 
 ### 1. 読み込み・正規化
-- [ ] `load_hourly(path)` 実装: 先頭2列のみ読み込み（全期間>年シート）→列名を `display_dt`, `value` に正規化→`display_dt` を datetime64 へ→`hydro_date = (display_dt - 1h).dt.date` を追加。
+- [ ] `load_hourly(path)` 実装: 先頭2列のみ読み込み（全期間>年シート）→列名を `period_end_at`, `value` に正規化（無ければ `observed_at` を採用）→時刻列を datetime64 へ→`hydro_date = (period_end_at - 1h).dt.date` を追加。
 - [ ] `load_daily(path)` 実装: 先頭2列のみ読み込み（全期間>年シート）→列名を `datetime`, `value` に正規化→`hydro_date = datetime.dt.date` を追加→`daily_value` にリネーム。
 
 ### 2. 時間→日集計

@@ -35,8 +35,7 @@
    参照: `src/water_info/service/flow_write.py:40`, `src/water_info/service/flow_write.py:158`
 
 補足:
-- hourly で `display_dt = datetime + 1h` の表示用時刻を作っている。  
-  参照: `src/water_info/infra/dataframe_utils.py:14`
+- 現行は `display_dt` を保持せず、`observed_at` / `period_*` 契約で扱う。  
 - 取得値に `drop_last_each` など独自調整がある。  
   参照: `src/water_info/infra/fetching.py:34`
 

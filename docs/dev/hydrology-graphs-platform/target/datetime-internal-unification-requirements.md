@@ -1,7 +1,7 @@
 # 時刻契約統一: 内部表現 datetime 統一 要件定義
 
 Status: target
-Updated: 2026-04-01
+Updated: 2026-04-06
 Related:
 - `datetime-internal-unification-impact-analysis.md` (Where)
 - `datetime-internal-unification-task-breakdown.md` (How/When)
@@ -22,7 +22,8 @@ Related:
 
 ## 3. 基本方針
 - 内部表現は常に `datetime` を使用する。文字列時刻や疑似時刻（例: `24:00` 文字列）を内部状態に保持しない。
-- 1時間値は時点値ではなく区間値として扱い、`period_start_at` と `period_end_at` を必須とする。
+- 値の意味は `instantaneous`（瞬間値）と `interval`（区間値）を分離して扱う。
+- `water_info:S/R` は瞬間値、`water_info:U` と `JMA rainfall` は区間値として扱う。
 - 24時は `period_end_at == 翌日00:00:00` で表現する。
 - 外部表示（Excel/GUI）も内部契約に基づいて生成し、表示専用のごまかし変換に依存しない。
 
@@ -30,15 +31,19 @@ Related:
 
 ### R-DTU-01 単一時刻契約
 - 全モジュールで次の共通契約を採用する。
-  - `observed_at`: 観測区間の代表時刻（原則 `period_end_at` と同値）
-  - `period_start_at`: 観測区間の開始（含む）
-  - `period_end_at`: 観測区間の終了（含む/含まないは R-DTU-06 で定義）
+  - `observed_at`: 観測値の代表時刻（瞬間値は観測時刻、区間値は原則 `period_end_at`）
+  - `period_start_at`: 観測区間の開始（区間値で使用）
+  - `period_end_at`: 観測区間の終了（区間値で使用）
   - `interval`: `10min` / `1hour` / `1day`
-- 少なくとも `1hour` と `1day` では `period_start_at`/`period_end_at` を必須とする。
+- `period_start_at`/`period_end_at` の必須条件は値意味に従う。
+  - 瞬間値 (`water_info:S/R`): `period_*` は `NULL` 許容
+  - 区間値 (`water_info:U`, `JMA rainfall`): `period_*` は非 `NULL` 必須
 
 ### R-DTU-02 ソース正規化
 - JMAの `1-24時` は取得直後に `datetime` 区間へ正規化する。
-- water_infoの時間データも同一ルールで区間化する。
+- water_infoは mode ごとに正規化する。
+  - `S/R`: 瞬間値として正規化
+  - `U`: 区間値として正規化
 - 正規化ロジックは各モジュールに分散実装せず、共通関数として一元管理する。
 
 ### R-DTU-03 24時のデータ表現
@@ -55,9 +60,12 @@ Related:
   - `period_start_at`: `timestamp[ns]`（naive, local運用）
   - `period_end_at`: `timestamp[ns]`（naive, local運用）
 - Null許容は次で固定する。
-  - `period_start_at` / `period_end_at`: 非null必須（`1hour`/`1day`）
-  - `observed_at`: 互換期間のみnull許容（移行後は非null必須）
-- 旧形式読込時は `observed_at` を `period_end_at` 同義として扱い、`period_start_at` を `interval` から導出する。
+  - `observed_at`: 非null必須（互換期間を除く）
+  - 瞬間値 (`water_info:S/R`): `period_start_at` / `period_end_at` は `NULL` 許容
+  - 区間値 (`water_info:U`, `JMA rainfall`): `period_start_at` / `period_end_at` は非 `NULL` 必須
+- 旧形式読込時は次で扱う。
+  - 区間値: `observed_at` を `period_end_at` 同義として扱い、`period_start_at` を `interval` から導出する
+  - 瞬間値: `observed_at` を優先し、`period_*` は `NULL` を許容する
 
 ### R-DTU-05 出力契約更新
 - グラフ生成は `period_*` を入力として時刻軸を構成する。
@@ -69,10 +77,12 @@ Related:
 - 取得層、保存層、出力層すべてで同一境界定義を使用する。
 - 本要件では観測区間を半開区間 `[period_start_at, period_end_at)` と定義する。
 - ユーザー指定期間は半開区間 `[user_start_at, user_end_at)` と定義する。
-- 最終出力へ渡す共通フィルタ条件は次で固定する。
-  - `period_start_at >= user_start_at`
-  - `period_end_at <= user_end_at`
-- 日次（`1day`）の1レコードは `period_start_at=当日00:00:00`、`period_end_at=翌日00:00:00` を必須とする。
+- 最終出力へ渡す共通フィルタ条件は値意味に従って次で固定する。
+  - 瞬間値: `user_start_at <= observed_at <= user_end_at`
+  - 区間値: `user_start_at <= period_end_at <= user_end_at`
+- 日次（`1day`）の1レコードは次で扱う。
+  - 区間値: `period_start_at=当日00:00:00`、`period_end_at=翌日00:00:00`
+  - 瞬間値: `observed_at` を時刻キーとし `period_*` は `NULL` 許容
 
 ### R-DTU-07 廃止対象の明確化
 - 次の局所補正は最終的に廃止する。
@@ -113,11 +123,13 @@ Related:
 
 ### R-DTU-12 `display_dt` 廃止と出力生成
 - `display_dt` は内部契約・保存契約の列として保持しない。
-- 表示用時刻が必要な場合は、`period_end_at` から出力直前に派生生成する。
+- 表示用時刻が必要な場合は、値意味に応じて出力直前に派生生成する。
+  - 瞬間値: `observed_at`
+  - 区間値: `period_end_at`
 - Parquet/CSV/Excel/Graph に渡す前データは、共通境界フィルタ適用後の同一レコード集合を使用する。
-- 共通境界フィルタは次を満たす。
-  - `period_start_at >= user_start_at`
-  - `period_end_at <= user_end_at`
+- 共通境界フィルタは値意味に従って適用する。
+  - 瞬間値: `user_start_at <= observed_at <= user_end_at`
+  - 区間値: `user_start_at <= period_end_at <= user_end_at`
 - 24時表示が必要な場合の表示規約を次で固定する。
   - 表示対象時刻が `00:00:00` かつ「直前1日区間の終端」である場合のみ `24:00` として表示してよい。
   - それ以外の表示は `00:00` を維持する。

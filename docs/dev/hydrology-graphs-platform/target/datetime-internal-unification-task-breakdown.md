@@ -1,7 +1,7 @@
 # 時刻契約統一: 実装タスク分解
 
 Status: target
-Updated: 2026-04-01
+Updated: 2026-04-06
 Related:
 - `datetime-internal-unification-requirements.md` (Why/What)
 - `datetime-internal-unification-impact-analysis.md` (Where)
@@ -19,6 +19,8 @@ Related:
 - `quality` は `normal` / `missing` のみ
 - `display_dt` は廃止（内部・保存・中間で保持しない）
 - イベント窓判定とグラフ時刻軸は `period_end_at` 基準
+- `water_info:S/R` は瞬間値（`period_*` は `NULL` 許容）
+- `water_info:U` と `JMA rainfall` は区間値（`period_*` 非 `NULL`）
 
 ## 3. タスク一覧（T1〜T10）
 
@@ -26,7 +28,7 @@ Related:
 - 対象: `river_meta.rainfall` ドメイン契約
 - 変更:
   - `period_start_at` / `period_end_at` を正式契約に追加
-  - `observed_at` は `period_end_at` 同義で段階互換
+  - `observed_at` は瞬間値/区間値の双方で主時刻として保持
 - Done:
   - 型定義・契約文言・利用側前提が一致
 - 必須テスト:
@@ -46,7 +48,9 @@ Related:
 - 対象: request計画と最終フィルタ
 - 変更:
   - 取得窓拡張と出力対象フィルタを分離
-  - 共通フィルタ: `period_start_at >= user_start_at` かつ `period_end_at <= user_end_at`
+  - フィルタ:
+    - 瞬間値: `user_start_at <= observed_at <= user_end_at`
+    - 区間値: `user_start_at <= period_end_at <= user_end_at`
 - Done:
   - 余分取得が最終出力に混入しない
 - 必須テスト:
