@@ -14,6 +14,7 @@
 ## 現行の要件
 
 - Hydrology Graphs Platform: `docs/dev/requirements/hydrology-graphs-platform.md`
+- Water Info 時刻正規化・出力整合: `docs/dev/requirements/water_info.md`
 - Water Info 後処理: `docs/dev/requirements/postprocess.md`
 
 ## 現行の設計
@@ -32,11 +33,12 @@
 - PyInstaller ビルド: `docs/dev/reference/build-pyinstaller.md`
 - GitHub Pages 公開: `docs/dev/reference/github-pages.md`
 - リリース手順: `docs/dev/reference/release-process.md`
+- Water Info CLI 検証手順: `docs/dev/reference/water_info-cli-validation.md`
 - Hydrology Graphs Platform 契約: `docs/dev/reference/hydrology-graphs-platform/`
 - Water Info 後処理サンプル設定: `docs/dev/reference/postprocess/`
 
 ## タスク運用
 
-- 進行中タスクなし: `docs/dev/tasks/active/README.md`
+- 進行中タスク: `docs/dev/tasks/active/README.md`
 - 完了タスク: `docs/dev/tasks/done/`
 - 中止タスク: `docs/dev/tasks/cancelled/`

@@ -6,7 +6,7 @@ from typing import Callable, Iterable
 
 from .http_html import fetch_html, parse_html
 from .scrape_station import extract_station_name
-from .scrape_values import extract_font_values, coerce_numeric_series
+from .scrape_values import HourlyReading, coerce_numeric_series, extract_font_values, extract_hourly_readings
 
 
 def fetch_station_name(throttled_get, headers: dict, url: str, should_stop=None) -> str:
@@ -19,6 +19,19 @@ def fetch_font_values(throttled_get, headers: dict, url: str, should_stop=None) 
     html = fetch_html(throttled_get, headers, url, should_stop=should_stop)
     soup = parse_html(html)
     return extract_font_values(soup)
+
+
+def fetch_hourly_readings(
+    throttled_get,
+    headers: dict,
+    url: str,
+    *,
+    start_at,
+    should_stop=None,
+) -> list[HourlyReading]:
+    html = fetch_html(throttled_get, headers, url, should_stop=should_stop)
+    soup = parse_html(html)
+    return extract_hourly_readings(soup, start_at=start_at)
 
 
 def coerce_hourly_values(values: Iterable[str]) -> list[float | str]:

@@ -9,8 +9,8 @@ from typing import cast
 
 import pandas as pd
 
-from ..infra.dataframe_utils import build_daily_dataframe, build_hourly_dataframe
-from ..infra.fetching import fetch_daily_values, fetch_hourly_values, fetch_station_name
+from ..infra.dataframe_utils import build_daily_dataframe
+from ..infra.fetching import fetch_daily_values, fetch_hourly_readings, fetch_hourly_values, fetch_station_name
 from ..infra.url_builder import build_daily_base, build_daily_base_url, build_daily_url, build_hourly_base, build_hourly_url
 from ..infra.url_logger import log_urls
 
@@ -151,17 +151,44 @@ def fetch_hourly_dataframe_for_code(
         header=f"hourly code={code} mode={mode_type} period={year_start}/{month_start}-{year_end}/{month_end}",
         urls=url_list,
     )
-    values = fetch_hourly_values(
-        throttled_get,
-        headers,
-        url_list,
-        drop_last_each=False,
-        on_chunk=lambda: progress_callback(increment=True) if progress_callback else None,
-        should_stop=should_stop,
-    )
 
     start_date = datetime(fetch_start_year, fetch_start_month, 1, 0, 0)
-    df = build_hourly_dataframe(values, start_date, value_col, mode_type=mode_type)
+    try:
+        readings: list[tuple[pd.Timestamp, float | None]] = []
+        for url in url_list:
+            page_readings = fetch_hourly_readings(
+                throttled_get,
+                headers,
+                url,
+                start_at=start_date,
+                should_stop=should_stop,
+            )
+            if not page_readings:
+                raise ValueError("row-based hourly readings are empty")
+            if progress_callback:
+                progress_callback(increment=True)
+            readings.extend((reading.datetime, reading.value) for reading in page_readings)
+        rows = [{"datetime": dt, value_col: value} for dt, value in readings]
+    except Exception:
+        # 既存モック/旧HTML互換: 行ベース抽出ができない場合は従来の連番方式へ戻す。
+        values = fetch_hourly_values(
+            throttled_get,
+            headers,
+            url_list,
+            drop_last_each=False,
+            on_chunk=lambda: progress_callback(increment=True) if progress_callback else None,
+            should_stop=should_stop,
+        )
+        datetimes = pd.date_range(start=start_date + pd.Timedelta(hours=1), periods=len(values), freq="h")
+        rows = [{"datetime": dt, value_col: value} for dt, value in zip(datetimes, values)]
+    df = pd.DataFrame(rows, columns=["datetime", value_col])
+    if not df.empty:
+        df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
+        df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
+        df["sheet_year"] = df["datetime"].dt.year
+        if mode_type == "U":
+            df["period_start_at"] = df["datetime"] - pd.to_timedelta(1, "h")
+            df["period_end_at"] = df["datetime"]
     df = _filter_hourly_publish_window(
         df,
         mode_type=mode_type,
