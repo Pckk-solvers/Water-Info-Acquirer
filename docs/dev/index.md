@@ -20,6 +20,11 @@
 
 - リポジトリ全体アーキテクチャ: `docs/dev/architecture/overview.md`
 - 起動経路: `docs/dev/architecture/entrypoints.md`
+- Water Info アーキテクチャ: `docs/dev/architecture/water_info.md`
+- JMA 雨量パイプライン アーキテクチャ: `docs/dev/architecture/jma_rainfall_pipeline.md`
+- river_meta/rainfall アーキテクチャ: `docs/dev/architecture/river_meta_rainfall.md`
+- Hydrology Graphs アーキテクチャ: `docs/dev/architecture/hydrology_graphs.md`
+- water_info_acquirer アーキテクチャ: `docs/dev/architecture/water_info_acquirer.md`
 - 時間意味と境界ルール: `docs/dev/domain/time-semantics.md`
 
 ## 参照資料

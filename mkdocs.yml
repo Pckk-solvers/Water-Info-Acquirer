@@ -45,21 +45,42 @@ nav:
       - 気象庁側の設定（config.yml）: advanced/jma-config.md
   - 開発者向け:
       - 概要: dev/index.md
-      - アーキテクチャ概要: dev/architecture.md
-      - river_meta 雨量共通フォーマット化: dev/river-meta-rainfall-unified-design.md
-      - 時間意味と境界取得: dev/time-semantics-and-fetch-window-design.md
-      - PyInstallerビルド: dev/build-pyinstaller.md
-      - リリース手順: dev/release-process.md
-      - GitHub Pages公開: dev/github-pages.md
-      - リファクタリング計画: dev/refactoring-plan.md
-      - リファクタリング計画（元資料）: water_info_acquirer_リファクタリング計画書_v_1.md
-      - Water Info 後処理（設計資料）:
-          - 仕様書: dev/postprocess/specification.md
-          - 要件: dev/postprocess/requirements.md
-          - 設計方針: dev/postprocess/design.md
-          - 実装計画: dev/postprocess/implementation_plan.md
-          - タスク: dev/postprocess/task.md
-          - 削除計画: dev/postprocess/delete_plan.md
+      - Domain:
+          - 概要: dev/domain/README.md
+          - 時間意味と境界ルール: dev/domain/time-semantics.md
+      - Requirements:
+          - 概要: dev/requirements/README.md
+          - Hydrology Graphs Platform: dev/requirements/hydrology-graphs-platform.md
+          - Water Info 後処理: dev/requirements/postprocess.md
+      - Architecture:
+          - 概要: dev/architecture/README.md
+          - アーキテクチャ概要: dev/architecture/overview.md
+          - 起動経路: dev/architecture/entrypoints.md
+          - water_info: dev/architecture/water_info.md
+          - jma_rainfall_pipeline: dev/architecture/jma_rainfall_pipeline.md
+          - river_meta/rainfall: dev/architecture/river_meta_rainfall.md
+          - hydrology_graphs: dev/architecture/hydrology_graphs.md
+          - water_info_acquirer: dev/architecture/water_info_acquirer.md
+      - ADR:
+          - 概要: dev/adr/README.md
+      - Tasks:
+          - 概要: dev/tasks/README.md
+          - Active: dev/tasks/active/README.md
+          - Done: dev/tasks/done/README.md
+          - Cancelled: dev/tasks/cancelled/README.md
+      - Reference:
+          - 概要: dev/reference/README.md
+          - PyInstallerビルド: dev/reference/build-pyinstaller.md
+          - GitHub Pages公開: dev/reference/github-pages.md
+          - リリース手順: dev/reference/release-process.md
+          - Hydrology Graphs Platform:
+              - 概要: dev/reference/hydrology-graphs-platform/README.md
+              - Parquet契約: dev/reference/hydrology-graphs-platform/parquet-contract.md
+              - Style契約: dev/reference/hydrology-graphs-platform/style-contract.md
+              - Threshold契約: dev/reference/hydrology-graphs-platform/threshold-contract.md
+          - Water Info 後処理:
+              - 概要: dev/reference/postprocess/README.md
+              - サンプル設定: dev/reference/postprocess/config.sample.json
   - リリースノート:
       - releases/index.md
       - v1.3.0: releases/v1.3.0.md

@@ -2,7 +2,7 @@
 
 ## 1. 目的
 - 本ドキュメントは、Hydrology Graphs Platform が入力として受け付ける Parquet の契約（列・型・値・時刻ルール）を定義する。
-- 現行実装（JMA / water_info の GUI 出力）との整合を維持しつつ、将来拡張時の互換基準とする。
+- 現行実装（JMA / water_info の GUI 出力）に合わせた 11 列スキーマを正とし、将来拡張時の互換基準とする。
 
 ## 2. 適用範囲
 - 対象ソース: `jma`, `water_info`
@@ -12,17 +12,19 @@
   - 年最大グラフ（rainfall, water_level, discharge）
 
 ## 3. 必須カラム（共通時系列）
-以下 9 列を必須とする。
+以下 11 列を必須とする。
 
 1. `source`
 2. `station_key`
 3. `station_name`
-4. `observed_at`
-5. `metric`
-6. `value`
-7. `unit`
-8. `interval`
-9. `quality`
+4. `period_start_at`
+5. `period_end_at`
+6. `observed_at`
+7. `metric`
+8. `value`
+9. `unit`
+10. `interval`
+11. `quality`
 
 現行実装の根拠:
 - `src/jma_rainfall_pipeline/exporter/parquet_exporter.py` の `_UNIFIED_COLUMNS`
@@ -37,9 +39,19 @@
 - `station_name`: 文字列
   - 原則設定する（`jma` / `water_info` ともに観測所名を格納）
   - 取得失敗時は空文字を許容（フォールバック）
+- `period_start_at`: 日時
+  - JST 固定（タイムゾーン列は持たない）
+  - `jma` の区間値では必須
+  - `water_info` の `U` では必須、`S` / `R` では `null` を許容
+- `period_end_at`: 日時
+  - JST 固定（タイムゾーン列は持たない）
+  - `jma` の区間値では必須
+  - `water_info` の `U` では必須、`S` / `R` では `null` を許容
 - `observed_at`: 日時
   - JST 固定（タイムゾーン列は持たない）
   - 文字列/日時の入力は `pd.to_datetime(..., errors="coerce")` で解釈可能であること
+  - 区間値では `period_end_at` と同義の参照時刻
+  - 瞬間値では実観測時刻
 - `metric`: 文字列
   - 許容値: `rainfall`, `water_level`, `discharge`
 - `value`: 数値または null
@@ -59,6 +71,10 @@
 - `metric`: `rainfall`
 - `unit`: `mm`
 - `interval`: `daily -> 1day`, `hourly -> 1hour`, `10min -> 10min`
+- `period_start_at` / `period_end_at` / `observed_at`
+  - いずれも必須
+  - `observed_at` は区間終端時刻
+  - `10min` / `hourly` / `daily` の旧終端表現は保存前に正規化される
 
 ### water_info
 - `source`: `water_info`
@@ -66,15 +82,17 @@
 - `mode_type=R` -> `metric=discharge`, `unit=m3/s`
 - `mode_type=U` -> `metric=rainfall`, `unit=mm`
 - `interval`: 時間データは `1hour`、日データは `1day`
+- `period_start_at` / `period_end_at` / `observed_at`
+  - `U` は区間値として `period_start_at` / `period_end_at` / `observed_at` を保持
+  - `S` / `R` は瞬間値として `period_start_at` / `period_end_at` を `null` にし、`observed_at` を実観測時刻として保持
 
 ## 6. 時刻ルール
 - `observed_at` は JST で扱う（絶対ルール）。
 - 保持時に timezone 列は持たない。
 - 24:00 相当などの端数時刻は、保存前に実装側で正規化する。
-- 1時間値は Hydro時刻（`00:00`〜`23:00`）へ正規化して保持する。
-  - 1時値は当日 `00:00`
-  - 24時値（翌日 `00:00` 相当）は当日 `23:00`
-  - 旧JMA由来の `23:59:59.999999` は正規化対象として扱う
+- JMA の旧終端表現 `23:59:59.999999` は翌日 `00:00:00` として保持する。
+- 区間値は `period_end_at` を正、瞬間値は `observed_at` を正として扱う。
+- 表示用の `display_at` / `display_dt` は恒久保存しない。
 
 ## 7. グラフ機能側の最低入力条件
 ### ハイエトグラフ

@@ -6,7 +6,7 @@
 - GUI: Tkinter 2タブ構成
   - 条件設定・実行
   - スタイル調整
-- データ入力: 共通スキーマ Parquet（`source/station_key/...` 9列）
+- データ入力: 共通スキーマ Parquet（`source/station_key/...` 11列）
 - 出力: PNG（バッチ出力、プレビュー、開発者モードのサンプル出力）
 
 ## 2. グラフ種別（実装固定）
@@ -86,21 +86,21 @@
 - ルート禁止: `common`, `variants`
 - `graph_styles` は必須9キー固定
 
-詳細は [style-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/style-contract.md) を参照。
+詳細は [style-contract.md](../reference/hydrology-graphs-platform/style-contract.md) を参照。
 
 ## 7. 参照実装
-- [app.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/ui/app.py)
-- [tabs_execute.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/ui/tabs_execute.py)
-- [tabs_style.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/ui/tabs_style.py)
-- [usecases.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/services/usecases.py)
-- [parquet_store.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/io/parquet_store.py)
-- [style_store.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/io/style_store.py)
-- [threshold_store.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/io/threshold_store.py)
-- [plotter.py](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/src/hydrology_graphs/render/plotter.py)
+- `src/hydrology_graphs/ui/app.py`
+- `src/hydrology_graphs/ui/tabs_execute.py`
+- `src/hydrology_graphs/ui/tabs_style.py`
+- `src/hydrology_graphs/services/usecases.py`
+- `src/hydrology_graphs/io/parquet_store.py`
+- `src/hydrology_graphs/io/style_store.py`
+- `src/hydrology_graphs/io/threshold_store.py`
+- `src/hydrology_graphs/render/plotter.py`
 
 ## 8. 参照資料
 
-- [style-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/style-contract.md)
-- [parquet-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/parquet-contract.md)
-- [threshold-contract.md](/C:/Users/yuuta.ochiai/Documents/GitHub/Water-Info-Acquirer/docs/dev/reference/hydrology-graphs-platform/threshold-contract.md)
+- [style-contract.md](../reference/hydrology-graphs-platform/style-contract.md)
+- [parquet-contract.md](../reference/hydrology-graphs-platform/parquet-contract.md)
+- [threshold-contract.md](../reference/hydrology-graphs-platform/threshold-contract.md)
 

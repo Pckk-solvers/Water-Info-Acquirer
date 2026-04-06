@@ -13,5 +13,4 @@ uv run python -m water_info.postprocess `
 ```
 
 !!! tip "詳細仕様"
-    後処理の仕様は [開発 → Water Info 後処理（設計資料）](../dev/postprocess/specification.md) にまとめています。
-
+    後処理の要件は [開発 → Water Info 後処理](../dev/requirements/postprocess.md) にまとめています。
