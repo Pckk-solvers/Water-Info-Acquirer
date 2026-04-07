@@ -142,9 +142,17 @@ def refresh_preview_choices(app) -> None:
         graph_key_to_display=app._preview_graph_key_to_display,
     )
     current_station = app.preview_target_station.get().strip()
+    retained_station = _retained_preview_choice(current_station, base_choices.station_values)
+    selected_station_pair = base_choices.station_display_to_pair.get(retained_station)
+    station_choices = build_preview_choices(
+        ok_targets=app._precheck_ok_targets,
+        catalog_stations=app._catalog_stations,
+        graph_key_to_display=app._preview_graph_key_to_display,
+        selected_station_pair=selected_station_pair,
+    )
     current_date = app.preview_target_date.get().strip()
-    selected_station_pair = base_choices.station_display_to_pair.get(current_station)
-    selected_base_date = current_date if current_date in base_choices.date_values else None
+    retained_date = _retained_preview_choice(current_date, station_choices.date_values)
+    selected_base_date = retained_date if retained_date in station_choices.date_values else None
     choices = build_preview_choices(
         ok_targets=app._precheck_ok_targets,
         catalog_stations=app._catalog_stations,
@@ -156,8 +164,8 @@ def refresh_preview_choices(app) -> None:
     app._preview_graph_display_to_key = choices.graph_display_to_key
     app.preview_station_combo.configure(values=choices.station_values)
     app.preview_date_combo.configure(values=choices.date_values)
-    app.preview_target_station.set(_retained_preview_choice(current_station, choices.station_values))
-    app.preview_target_date.set(_retained_preview_choice(current_date, choices.date_values))
+    app.preview_target_station.set(_retained_preview_choice(retained_station, choices.station_values))
+    app.preview_target_date.set(_retained_preview_choice(retained_date, choices.date_values))
     preview_graph_combo = getattr(app, "preview_graph_combo", None)
     if preview_graph_combo is not None:
         preview_graph_combo.configure(values=choices.graph_values)

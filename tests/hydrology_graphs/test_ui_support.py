@@ -95,6 +95,7 @@ def test_build_preview_choices_filters_graphs_by_station_and_date():
         selected_station_pair=("jma", "001"),
         selected_base_date="2026-01-02",
     )
+    assert choices.date_values == ["2026-01-01", "2026-01-02"]
     assert choices.graph_values == ["ハイドログラフ（流量） 3日"]
 
 
@@ -200,4 +201,4 @@ def test_refresh_preview_choices_resets_invalid_selection_to_first_choice():
 
     assert app.preview_target_station.get() == "観測所A (jma:001)"
     assert app.preview_target_date.get() == "2026-01-01"
-    assert app.preview_target_graph.get() == "ハイドログラフ（流量） 3日"
+    assert app.preview_target_graph.get() == "ハイエトグラフ（雨量） 3日"

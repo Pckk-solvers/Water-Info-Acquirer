@@ -67,7 +67,7 @@ def test_build_preview_input_reads_time_display_mode_from_payload():
     assert preview_input.time_display_mode == "24h"
 
 
-def test_build_preview_input_falls_back_to_existing_precheck_target():
+def test_build_preview_input_rejects_mismatched_precheck_target():
     app = type("DummyApp", (), {})()
     app._style_payload = {
         "display": {"time_display_mode": "datetime"},
@@ -97,12 +97,9 @@ def test_build_preview_input_falls_back_to_existing_precheck_target():
     app._apply_style_form_values = lambda: True
     app._set_style_text_from_payload = lambda: None
     app._push_style_history = lambda payload: None
+    app.preview_message = _DummyVar("")
 
-    preview_input, threshold_file = _build_preview_input(app, silent_json_error=True)
+    built = _build_preview_input(app, silent_json_error=True)
 
-    assert threshold_file is None
-    assert preview_input is not None
-    assert preview_input.station_key == "001"
-    assert preview_input.base_datetime == "2026-01-02"
-    assert app.preview_target_station.get() == "観測所A (jma:001)"
-    assert app.preview_target_date.get() == "2026-01-02"
+    assert built is None
+    assert app.preview_message.value == "選択した観測所・基準日・対象グラフに一致するプレビュー候補がありません。"

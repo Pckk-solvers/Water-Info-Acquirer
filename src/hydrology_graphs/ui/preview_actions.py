@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from hydrology_graphs.services import PreviewInput
@@ -152,6 +152,14 @@ def _resolve_preview_target(
     """現在の選択に対応する precheck OK 対象を返す。"""
 
     station_pair = app._preview_station_display_to_pair.get(station_token)
+    if station_pair is None:
+        _set_preview_message(app, "プレビュー出力対象の観測所を選択してください。")
+        return None
+    try:
+        parsed_base_date = date.fromisoformat(base_date) if base_date is not None else None
+    except ValueError:
+        _set_preview_message(app, "基準日の形式が不正です。")
+        return None
     graph_candidates = [
         target
         for target in getattr(app, "_precheck_ok_targets", [])
@@ -161,16 +169,21 @@ def _resolve_preview_target(
         _set_preview_message(app, "プレビュー対象が見つかりません。先に実行前検証を行ってください。")
         return None
 
-    if station_pair is not None:
-        for target in graph_candidates:
-            if (target.source, target.station_key) != station_pair:
-                continue
-            if base_date is None and target.base_date is None:
-                return target
-            if base_date is not None and target.base_date is not None and target.base_date.isoformat() == base_date:
-                return target
+    exact_matches = [
+        target
+        for target in graph_candidates
+        if (target.source, target.station_key) == station_pair
+        and target.base_date == parsed_base_date
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
 
-    return graph_candidates[0]
+    if exact_matches:
+        _set_preview_message(app, "プレビュー対象が複数一致しました。観測所または基準日を絞ってください。")
+        return None
+
+    _set_preview_message(app, "選択した観測所・基準日・対象グラフに一致するプレビュー候補がありません。")
+    return None
 
 
 def _station_display_for_pair(app, source: str, station_key: str) -> str:

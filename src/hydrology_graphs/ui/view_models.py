@@ -119,10 +119,13 @@ def build_preview_choices(
         station_display_to_pair[display] = pair
 
     station_values = sorted(station_display_to_pair.keys())
-    date_values = sorted({t.base_date.isoformat() for t in ok_targets if t.base_date is not None})
-    graph_targets = ok_targets
+    station_scoped_targets = ok_targets
     if selected_station_pair is not None:
-        graph_targets = [t for t in graph_targets if (t.source, t.station_key) == selected_station_pair]
+        station_scoped_targets = [
+            t for t in station_scoped_targets if (t.source, t.station_key) == selected_station_pair
+        ]
+    date_values = sorted({t.base_date.isoformat() for t in station_scoped_targets if t.base_date is not None})
+    graph_targets = station_scoped_targets
     if selected_base_date:
         graph_targets = [t for t in graph_targets if t.base_date is not None and t.base_date.isoformat() == selected_base_date]
     graph_keys = sorted(
