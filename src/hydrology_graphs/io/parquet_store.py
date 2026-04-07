@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import threading
@@ -32,6 +32,12 @@ _ALLOWED_SOURCES = {"jma", "water_info"}
 _ALLOWED_METRICS = {"rainfall", "water_level", "discharge"}
 _ALLOWED_INTERVALS = {"10min", "1hour", "1day"}
 _ALLOWED_QUALITIES = {"normal", "missing"}
+_METRIC_LABELS = {
+    "rainfall": "雨量",
+    "discharge": "流量",
+    "water_level": "水位",
+}
+_METRIC_LABEL_ORDER = ("雨量", "流量", "水位")
 
 _LEGACY_VALUE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("rainfall_mm", "rainfall", "mm"),
@@ -78,6 +84,7 @@ class _FileScanResult:
     frame: pd.DataFrame
     errors: list[str]
     warning: str | None = None
+    metric_candidates: tuple[str, ...] = ()
 
 
 _CATALOG_CACHE: dict[str, _CatalogCacheEntry] = {}
@@ -92,6 +99,7 @@ class ParquetCatalog:
     data: pd.DataFrame
     invalid_files: dict[str, list[str]]
     warnings: list[str]
+    station_metric_labels: dict[tuple[str, str], tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def stations(self) -> list[tuple[str, str, str]]:
@@ -180,7 +188,12 @@ def scan_parquet_catalog(parquet_dir: str | Path) -> ParquetCatalog:
             warnings.append(result.warning)
 
     merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=pd.Index(_REQUIRED_COLUMNS))
-    catalog = ParquetCatalog(data=merged, invalid_files=invalid_files, warnings=warnings)
+    catalog = ParquetCatalog(
+        data=merged,
+        invalid_files=invalid_files,
+        warnings=warnings,
+        station_metric_labels=_build_station_metric_labels(merged),
+    )
     if not stat_errors:
         with _CATALOG_CACHE_LOCK:
             _CATALOG_CACHE[cache_key] = _CatalogCacheEntry(fingerprint=fingerprint, catalog=catalog)
@@ -216,8 +229,17 @@ def scan_parquet_station_index(parquet_dir: str | Path) -> ParquetCatalog:
         merged["source"] = merged["source"].astype(str)
         merged["station_key"] = merged["station_key"].astype(str)
         merged["station_name"] = merged["station_name"].fillna("").astype(str)
+        if "metric_candidates" in merged.columns:
+            merged["metric_candidates"] = merged["metric_candidates"].apply(_normalize_metric_candidates_cell)
+        else:
+            merged["metric_candidates"] = pd.Series([()] * len(merged), index=merged.index, dtype=object)
         merged = merged.loc[merged["source"].isin(list(_ALLOWED_SOURCES))].copy()
-    catalog = ParquetCatalog(data=merged, invalid_files=invalid_files, warnings=warnings)
+    catalog = ParquetCatalog(
+        data=merged,
+        invalid_files=invalid_files,
+        warnings=warnings,
+        station_metric_labels=_build_station_metric_labels(merged),
+    )
     if not stat_errors:
         with _CATALOG_CACHE_LOCK:
             _STATION_INDEX_CACHE[cache_key] = _CatalogCacheEntry(fingerprint=fingerprint, catalog=catalog)
@@ -271,6 +293,7 @@ def _scan_single_file(path: Path, *, columns: list[str] | None) -> _FileScanResu
     """1ファイルを読み込み、スキーマ検証後の結果を返す。"""
 
     path_str = str(path)
+    metric_candidates = _infer_metric_candidates_from_filename(path)
     try:
         # ファイル単位で読み込み、壊れた 1 件が全体を止めないようにする。
         raw = cast(pd.DataFrame, pd.read_parquet(path, engine="pyarrow", columns=columns))
@@ -279,9 +302,13 @@ def _scan_single_file(path: Path, *, columns: list[str] | None) -> _FileScanResu
             path=path_str,
             frame=pd.DataFrame(columns=pd.Index(_REQUIRED_COLUMNS)),
             errors=[f"read_error: {type(exc).__name__}: {exc}"],
+            metric_candidates=metric_candidates,
         )
 
     if columns is not None:
+        if not raw.empty:
+            raw = raw.copy()
+            raw["metric_candidates"] = [metric_candidates] * len(raw)
         validated, errors = _validate_station_columns(raw)
     else:
         validated, errors = _validate_and_normalize(raw)
@@ -291,18 +318,21 @@ def _scan_single_file(path: Path, *, columns: list[str] | None) -> _FileScanResu
             frame=validated,
             errors=[],
             warning=f"empty_parquet: {path}",
+            metric_candidates=metric_candidates,
         )
-    return _FileScanResult(path=path_str, frame=validated, errors=errors)
+    return _FileScanResult(path=path_str, frame=validated, errors=errors, metric_candidates=metric_candidates)
 
 
 def _validate_station_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """軽量走査用: 観測所一覧に必要な列だけを検証して返す。"""
 
     required = ("source", "station_key", "station_name")
+    optional = ("metric_candidates",)
     missing = [column for column in required if column not in df.columns]
     if missing:
         return pd.DataFrame(columns=pd.Index(required)), [f"missing_columns: {', '.join(missing)}"]
-    work = cast(pd.DataFrame, df[list(required)].copy())
+    keep_columns = [column for column in (*required, *optional) if column in df.columns]
+    work = cast(pd.DataFrame, df[keep_columns].copy())
     work["source"] = work["source"].astype(str)
     work["station_key"] = work["station_key"].astype(str)
     work["station_name"] = work["station_name"].fillna("").astype(str)
@@ -310,6 +340,8 @@ def _validate_station_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]
     if bool(bad_source.any()):
         work = work.loc[~bad_source].copy()
         return work, ["invalid_source"]
+    if "metric_candidates" in work.columns:
+        work["metric_candidates"] = work["metric_candidates"].apply(_normalize_metric_candidates_cell)
     return work, []
 
 
@@ -430,6 +462,133 @@ def _fill_period_columns_from_legacy(df: pd.DataFrame) -> pd.DataFrame:
             work.loc[missing_start, "interval"].map(_interval_hours), unit="h"
         )
     return work
+
+
+def _infer_metric_candidates_from_filename(path: Path) -> tuple[str, ...]:
+    """ファイル名からメトリクス候補を軽量推定する。"""
+
+    stem = path.stem
+    if stem.startswith("jma_"):
+        return ("雨量",)
+    if not stem.startswith("water_info_"):
+        return ()
+
+    remainder = stem[len("water_info_") :]
+    parts = remainder.split("_")
+    if len(parts) < 2:
+        return ()
+
+    metric_tokens = parts[1:]
+    if len(metric_tokens) >= 2 and metric_tokens[0] == "water" and metric_tokens[1] == "level":
+        metric = "water_level"
+    else:
+        metric = metric_tokens[0]
+    label = _METRIC_LABELS.get(metric)
+    if label is None:
+        return ()
+    return (label,)
+
+
+def _normalize_metric_candidates_cell(value: object) -> tuple[str, ...]:
+    """DataFrameセルに入った候補表現をタプルへ正規化する。"""
+
+    if value is None:
+        return ()
+    if isinstance(value, tuple):
+        items = value
+    elif isinstance(value, list):
+        items = tuple(value)
+    elif isinstance(value, set):
+        items = tuple(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ()
+        if text in _METRIC_LABELS.values():
+            return (text,)
+        return tuple(part.strip() for part in text.split("/") if part.strip())
+    else:
+        try:
+            if pd.isna(value):
+                return ()
+        except Exception:  # noqa: BLE001
+            pass
+        items = (str(value),)
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        label = str(item).strip()
+        if not label or label in seen:
+            continue
+        if label not in _METRIC_LABEL_ORDER:
+            # 想定外の候補はそのまま残さず、既知ラベルだけを採用する。
+            if label not in _METRIC_LABELS.values():
+                continue
+        seen.add(label)
+        normalized.append(label)
+
+    return tuple(sorted(normalized, key=_METRIC_LABEL_ORDER.index))
+
+
+def _metric_label_for_metric(metric: object) -> str | None:
+    """正規 metric 値を日本語ラベルへ変換する。"""
+
+    text = str(metric or "").strip()
+    return _METRIC_LABELS.get(text)
+
+
+def _station_metric_labels_for_row(source: object, metric: object, metric_candidates: object | None) -> tuple[str, ...]:
+    """1行分の候補ラベルを返す。"""
+
+    source_text = str(source or "").strip()
+    labels = list(_normalize_metric_candidates_cell(metric_candidates))
+    if not labels:
+        label = _metric_label_for_metric(metric)
+        if label:
+            labels.append(label)
+    if source_text == "jma" and "雨量" not in labels:
+        labels.insert(0, "雨量")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        if label in seen:
+            continue
+        seen.add(label)
+        normalized.append(label)
+    return tuple(sorted(normalized, key=_METRIC_LABEL_ORDER.index)) if normalized else ()
+
+
+def _build_station_metric_labels(df: pd.DataFrame) -> dict[tuple[str, str], tuple[str, ...]]:
+    """観測所ごとのメトリクス候補マップを構築する。"""
+
+    if df.empty or "source" not in df.columns or "station_key" not in df.columns:
+        return {}
+
+    labels_by_pair: dict[tuple[str, str], set[str]] = {}
+    has_metric = "metric" in df.columns
+    has_candidates = "metric_candidates" in df.columns
+    columns = ["source", "station_key"]
+    if has_metric:
+        columns.append("metric")
+    if has_candidates:
+        columns.append("metric_candidates")
+
+    for row in df[columns].itertuples(index=False, name=None):
+        source = row[0]
+        station_key = row[1]
+        metric = row[2] if has_metric else None
+        metric_candidates = row[3] if has_candidates and has_metric else (row[2] if has_candidates else None)
+        labels = _station_metric_labels_for_row(source, metric, metric_candidates)
+        if not labels:
+            continue
+        pair = (str(source), str(station_key))
+        labels_by_pair.setdefault(pair, set()).update(labels)
+
+    return {
+        pair: tuple(sorted(labels, key=_METRIC_LABEL_ORDER.index))
+        for pair, labels in labels_by_pair.items()
+    }
 
 
 def _expand_legacy_schema(df: pd.DataFrame) -> pd.DataFrame:

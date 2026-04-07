@@ -7,6 +7,7 @@ from hydrology_graphs.services.dto import PrecheckItem
 from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
+    format_station_display_text,
     format_result_target_display,
     format_result_target_display_from_target_id,
     format_result_status_display,
@@ -67,11 +68,46 @@ def test_build_preview_choices_creates_display_maps():
     choices = build_preview_choices(
         ok_targets=ok_targets,
         catalog_stations=stations,
-        graph_key_to_display={"hyetograph": "ハイエトグラフ（雨量）", "hydrograph_discharge": "ハイドログラフ（流量）"},
+        graph_key_to_display={
+            "hyetograph:3day": "ハイエトグラフ（雨量） 3日",
+            "hydrograph_discharge:3day": "ハイドログラフ（流量） 3日",
+        },
     )
     assert choices.station_values == ["観測所A (jma:001)"]
     assert choices.date_values == ["2026-01-01", "2026-01-02"]
-    assert set(choices.graph_values) == {"ハイエトグラフ（雨量）", "ハイドログラフ（流量）"}
+    assert set(choices.graph_values) == {"ハイエトグラフ（雨量） 3日", "ハイドログラフ（流量） 3日"}
+
+
+def test_build_preview_choices_filters_graphs_by_station_and_date():
+    ok_targets = [
+        GraphTarget(source="jma", station_key="001", graph_type="hyetograph", base_date=date(2026, 1, 1), event_window_days=3),
+        GraphTarget(source="jma", station_key="001", graph_type="hydrograph_discharge", base_date=date(2026, 1, 2), event_window_days=3),
+        GraphTarget(source="jma", station_key="002", graph_type="hydrograph_water_level", base_date=date(2026, 1, 2), event_window_days=3),
+    ]
+    choices = build_preview_choices(
+        ok_targets=ok_targets,
+        catalog_stations=[("jma", "001", "観測所A"), ("jma", "002", "観測所B")],
+        graph_key_to_display={
+            "hyetograph:3day": "ハイエトグラフ（雨量） 3日",
+            "hydrograph_discharge:3day": "ハイドログラフ（流量） 3日",
+            "hydrograph_water_level:3day": "ハイドログラフ（水位） 3日",
+        },
+        selected_station_pair=("jma", "001"),
+        selected_base_date="2026-01-02",
+    )
+    assert choices.graph_values == ["ハイドログラフ（流量） 3日"]
+
+
+def test_format_station_display_text_includes_metric_labels():
+    text = format_station_display_text(
+        source="water_info",
+        station_key="303",
+        station_name="高幡橋",
+        checked=False,
+        source_label_map={"jma": "気象庁", "water_info": "水文水質DB"},
+        metric_labels=("流量", "水位"),
+    )
+    assert text == "☐ 水文水質DB:303 (高幡橋) / 流量 / 水位"
 
 
 def test_build_batch_targets_converts_graph_target():
@@ -144,19 +180,24 @@ def test_refresh_preview_choices_resets_invalid_selection_to_first_choice():
     ]
     app._catalog_stations = [("jma", "001", "観測所A"), ("jma", "002", "観測所B")]
     app._preview_graph_key_to_display = {
-        "hyetograph": "ハイエトグラフ（雨量）",
-        "hydrograph_discharge": "ハイドログラフ（流量）",
+        "hyetograph:3day": "ハイエトグラフ（雨量） 3日",
+        "hydrograph_discharge:3day": "ハイドログラフ（流量） 3日",
     }
+    app._preview_station_display_to_pair = {}
     app.preview_station_combo = _DummyCombo()
     app.preview_date_combo = _DummyCombo()
     app.preview_graph_combo = _DummyCombo()
     app.preview_target_station = _DummyVar("無効な観測所")
     app.preview_target_date = _DummyVar("2099-12-31")
     app.preview_target_graph = _DummyVar("無効な種別")
+    app._preview_graph_display_to_key = {
+        "ハイエトグラフ（雨量） 3日": "hyetograph:3day",
+        "ハイドログラフ（流量） 3日": "hydrograph_discharge:3day",
+    }
     app._refresh_style_forms_from_payload = lambda: None
 
     refresh_preview_choices(app)
 
     assert app.preview_target_station.get() == "観測所A (jma:001)"
     assert app.preview_target_date.get() == "2026-01-01"
-    assert app.preview_target_graph.get() == "ハイドログラフ（流量）"
+    assert app.preview_target_graph.get() == "ハイドログラフ（流量） 3日"

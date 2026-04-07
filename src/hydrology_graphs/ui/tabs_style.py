@@ -97,30 +97,26 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
     app.style_scroll_canvas.bind("<Enter>", _bind_mousewheel)
     app.style_scroll_canvas.bind("<Leave>", _unbind_mousewheel)
 
-    style_target_box = ttk.LabelFrame(scroll_inner, text="スタイル編集対象")
-    style_target_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-    style_target_box.columnconfigure(1, weight=1)
-    app.style_target_box = style_target_box
-    ttk.Label(style_target_box, text="対象グラフ").grid(row=0, column=0, padx=6, pady=6, sticky="w")
-    style_target_values = [app.STYLE_TARGET_LABELS.get(key, key) for key in app.STYLE_TARGET_ORDER]
-    app._style_target_display_to_key = {
-        app.STYLE_TARGET_LABELS.get(key, key): key
-        for key in app.STYLE_TARGET_ORDER
-    }
-    app._style_target_key_to_display = {
-        key: app.STYLE_TARGET_LABELS.get(key, key)
-        for key in app.STYLE_TARGET_ORDER
-    }
-    app.style_target_combo = ttk.Combobox(
-        style_target_box,
-        textvariable=app.style_target_display,
-        values=style_target_values,
-        state="readonly",
-        width=36,
-    )
-    app.style_target_combo.grid(row=0, column=1, padx=6, pady=6, sticky="ew")
-    app.style_target_combo.bind("<<ComboboxSelected>>", app._on_style_target_selected)
-    app.style_target_display.set(style_target_values[0])
+    display_mode_box = ttk.LabelFrame(scroll_inner, text="共通設定")
+    display_mode_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+    display_mode_box.columnconfigure(0, weight=0)
+    display_mode_box.columnconfigure(1, weight=1)
+    app.display_mode_box = display_mode_box
+    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=0, padx=6, pady=6, sticky="w")
+    mode_buttons = ttk.Frame(display_mode_box)
+    mode_buttons.grid(row=0, column=1, padx=6, pady=6, sticky="w")
+    ttk.Radiobutton(
+        mode_buttons,
+        text="1時~24時",
+        variable=app.time_display_mode,
+        value="24h",
+    ).grid(row=0, column=0, padx=(0, 3), sticky="w")
+    ttk.Radiobutton(
+        mode_buttons,
+        text="datetime",
+        variable=app.time_display_mode,
+        value="datetime",
+    ).grid(row=0, column=1, sticky="w")
 
     app.graph_style_box = ttk.LabelFrame(scroll_inner, text="グラフ別設定")
     app.graph_style_box.grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -141,61 +137,61 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
     right = ttk.Frame(parent, padding=6)
     right.grid(row=0, column=1, sticky="nsew")
     right.columnconfigure(0, weight=1)
-    right.rowconfigure(2, weight=1)
-
-    display_mode_box = ttk.LabelFrame(right, text="表示モード")
-    display_mode_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-    display_mode_box.columnconfigure(1, weight=1)
-    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=0, padx=6, pady=6, sticky="w")
-    ttk.Radiobutton(
-        display_mode_box,
-        text="1時~24時",
-        variable=app.time_display_mode,
-        value="24h",
-    ).grid(row=0, column=1, padx=(0, 6), pady=6, sticky="w")
-    ttk.Radiobutton(
-        display_mode_box,
-        text="datetime",
-        variable=app.time_display_mode,
-        value="datetime",
-    ).grid(row=0, column=2, padx=(0, 6), pady=6, sticky="w")
+    right.rowconfigure(1, weight=1)
 
     preview_target = ttk.LabelFrame(right, text="プレビュー出力対象")
-    preview_target.grid(row=1, column=0, sticky="ew", pady=(0, 6))
-    ttk.Label(preview_target, text="観測所").grid(row=0, column=0, padx=6, pady=6)
+    preview_target.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+    preview_target.columnconfigure(1, weight=2)
+    preview_target.columnconfigure(3, weight=1)
+    preview_target.columnconfigure(5, weight=2)
     app.preview_station_combo = ttk.Combobox(
         preview_target,
         textvariable=app.preview_target_station,
         state="readonly",
         width=36,
     )
-    app.preview_station_combo.grid(row=0, column=1, padx=6, pady=6)
-    ttk.Label(preview_target, text="基準日").grid(row=0, column=2, padx=6, pady=6)
+    app.preview_station_combo.bind("<<ComboboxSelected>>", app._on_preview_target_selection_changed)
+    ttk.Label(preview_target, text="観測所").grid(row=0, column=0, padx=(6, 2), pady=6, sticky="w")
+    app.preview_station_combo.grid(row=0, column=1, padx=(0, 6), pady=6, sticky="ew")
+    ttk.Label(preview_target, text="基準日").grid(row=0, column=2, padx=6, pady=6, sticky="w")
     app.preview_date_combo = ttk.Combobox(
         preview_target,
         textvariable=app.preview_target_date,
         state="readonly",
         width=12,
     )
-    app.preview_date_combo.grid(row=0, column=3, padx=6, pady=6)
-    ttk.Button(preview_target, text="プレビュー更新", command=app._render_preview).grid(row=0, column=4, padx=6, pady=6)
+    app.preview_date_combo.bind("<<ComboboxSelected>>", app._on_preview_target_selection_changed)
+    app.preview_date_combo.grid(row=0, column=3, padx=(0, 6), pady=6, sticky="ew")
+    ttk.Label(preview_target, text="対象グラフ").grid(row=0, column=4, padx=6, pady=6, sticky="w")
+    app.preview_graph_combo = ttk.Combobox(
+        preview_target,
+        textvariable=app.preview_target_graph,
+        state="readonly",
+        width=28,
+    )
+    app.preview_graph_combo.grid(row=0, column=5, padx=(0, 6), pady=6, sticky="ew")
+    app.preview_graph_combo.bind("<<ComboboxSelected>>", app._on_preview_graph_selected)
+    button_col = 6
     if getattr(app, "developer_mode", False):
         sample_btn = ttk.Button(preview_target, text="サンプル出力", command=app._export_preview_sample)
-        sample_btn.grid(row=0, column=5, padx=6, pady=6)
+        sample_btn.grid(row=0, column=button_col, padx=(0, 6), pady=6)
         app._style_tooltips.append(
             ToolTip(
                 sample_btn,
                 "現在プレビュー中の1枚をPNG出力します。\n保存先は outputs/hydrology_graphs/dev_preview_samples 配下で自動採番されます。",
             )
         )
-    ttk.Label(
-        preview_target,
-        text="※ 出力グラフ種別は左側の「スタイル編集対象」に連動します。",
-        foreground="#475569",
-    ).grid(row=1, column=0, columnspan=6, sticky="w", padx=6, pady=(0, 6))
+        button_col += 1
+    ttk.Button(preview_target, text="プレビュー更新", command=app._render_preview).grid(
+        row=0,
+        column=button_col,
+        padx=(0, 6),
+        pady=6,
+        sticky="e",
+    )
 
     preview_box = ttk.LabelFrame(right, text="プレビュー")
-    preview_box.grid(row=2, column=0, sticky="nsew")
+    preview_box.grid(row=1, column=0, sticky="nsew")
     preview_box.columnconfigure(0, weight=1)
     preview_box.rowconfigure(0, weight=1)
     app.preview_viewport = tk.Frame(preview_box, bg="#4B5563")

@@ -12,6 +12,7 @@ def test_default_style_schema_2_0_has_9_graph_keys():
     assert "hyetograph:3day" in style["graph_styles"]
     assert "hyetograph:5day" in style["graph_styles"]
     assert "annual_max_rainfall" in style["graph_styles"]
+    assert style["display"]["time_display_mode"] == "datetime"
 
 
 def test_load_style_rejects_invalid_schema():
@@ -45,6 +46,26 @@ def test_load_style_allows_empty_title_and_axis_labels():
     result = load_style(payload=payload)
 
     assert result.is_valid
+
+
+def test_load_style_backfills_display_time_display_mode():
+    payload = default_style()
+    payload.pop("display", None)
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    assert result.style["display"]["time_display_mode"] == "datetime"
+
+
+def test_load_style_normalizes_invalid_display_time_display_mode():
+    payload = default_style()
+    payload["display"] = {"time_display_mode": "invalid"}
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    assert result.style["display"]["time_display_mode"] == "datetime"
 
 
 def test_save_style_writes_schema_2_0(tmp_path):

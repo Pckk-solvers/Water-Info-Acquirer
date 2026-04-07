@@ -16,6 +16,7 @@ ANNUAL_STYLE_KEYS: tuple[str, ...] = tuple(
     graph_type for graph_type in GRAPH_TYPES if graph_type not in EVENT_GRAPH_TYPES
 )
 STYLE_GRAPH_KEYS: tuple[str, ...] = EVENT_STYLE_KEYS + ANNUAL_STYLE_KEYS
+VALID_TIME_DISPLAY_MODES: frozenset[str] = frozenset({"datetime", "24h"})
 
 
 def _base_style() -> dict[str, Any]:
@@ -196,6 +197,7 @@ def _default_graph_styles() -> dict[str, dict[str, Any]]:
 DEFAULT_STYLE: dict[str, Any] = {
     "schema_version": "2.0",
     "graph_styles": _default_graph_styles(),
+    "display": {"time_display_mode": "datetime"},
 }
 
 
@@ -278,6 +280,7 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
 
     merged = default_style()
     _deep_merge(merged, raw)
+    merged["display"] = _normalize_display(merged.get("display"), warnings)
     graph_styles = merged["graph_styles"]
     for key in list(graph_styles.keys()):
         if key not in STYLE_GRAPH_KEYS:
@@ -288,6 +291,19 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
         _validate_graph_style(graph_styles[key], key, warnings)
 
     return merged, warnings
+
+
+def _normalize_display(display: Any, warnings: list[str]) -> dict[str, Any]:
+    if not isinstance(display, dict):
+        if display is not None:
+            warnings.append("warning:display_must_be_object")
+        return {"time_display_mode": "datetime"}
+
+    time_display_mode = str(display.get("time_display_mode", "datetime")).strip() or "datetime"
+    if time_display_mode not in VALID_TIME_DISPLAY_MODES:
+        warnings.append(f"warning:display_time_display_mode_unknown:{time_display_mode}")
+        time_display_mode = "datetime"
+    return {"time_display_mode": time_display_mode}
 
 
 def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict) -> None:

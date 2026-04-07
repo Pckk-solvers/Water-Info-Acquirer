@@ -16,7 +16,13 @@ import pandas as pd
 from hydrology_graphs.domain.constants import GRAPH_TYPES
 from hydrology_graphs.domain.models import GraphTarget
 from hydrology_graphs.io.parquet_store import ParquetCatalog
-from hydrology_graphs.io.style_store import STYLE_GRAPH_KEYS, default_style, load_style, save_style
+from hydrology_graphs.io.style_store import (
+    STYLE_GRAPH_KEYS,
+    VALID_TIME_DISPLAY_MODES,
+    default_style,
+    load_style,
+    save_style,
+)
 from hydrology_graphs.io.threshold_store import ThresholdCacheState, ThresholdLoadResult, load_thresholds_with_cache
 from hydrology_graphs.services import HydrologyGraphService, PreviewInput
 from water_info_acquirer.app_meta import get_module_title
@@ -43,6 +49,7 @@ from .preview_actions import export_preview_sample, render_preview
 from .style_payload import nested_value, set_nested_value
 from .tabs_execute import build_execute_tab
 from .tabs_style import build_style_tab
+from .view_models import format_station_display_text
 from .tooltip import ToolTip
 
 """水文グラフ生成 GUI の本体。
@@ -162,18 +169,15 @@ class HydrologyGraphsApp(tk.Toplevel):
         self.preview_message = tk.StringVar(value="")
         self.preview_target_station = tk.StringVar(value="")
         self.preview_target_date = tk.StringVar(value="")
-        self.preview_target_graph = tk.StringVar(value=GRAPH_TYPES[0])
+        self.preview_target_graph = tk.StringVar(value="")
         self.time_display_mode = tk.StringVar(value="datetime")
         self.base_date_year = tk.StringVar(value="")
         self.base_date_month = tk.StringVar(value="")
         self.base_date_candidate = tk.StringVar(value="")
-        self.style_target_display = tk.StringVar(value=STYLE_TARGET_LABELS[STYLE_TARGET_ORDER[0]])
-        self._style_target_display_to_key: dict[str, str] = {}
-        self._style_target_key_to_display: dict[str, str] = {}
         self._preview_station_display_to_pair: dict[str, tuple[str, str]] = {}
         self._preview_graph_display_to_key: dict[str, str] = {}
         self._preview_graph_key_to_display: dict[str, str] = {
-            key: GRAPH_TYPE_LABELS.get(key, key) for key in GRAPH_TYPES
+            key: STYLE_TARGET_LABELS.get(key, key) for key in STYLE_TARGET_ORDER
         }
 
         # 画面全体で共有する状態はここで初期化する。
@@ -185,6 +189,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._style_graph_controls: list[dict[str, Any]] = []
         self._style_field_tooltips: list[ToolTip] = []
         self._execute_tooltips: list[ToolTip] = []
+        self.display_mode_box: ttk.LabelFrame | None = None
         self._style_history: list[dict[str, Any]] = [deepcopy(self._style_payload)]
         self._style_history_index: int = 0
         self._style_history_applying = False
@@ -197,6 +202,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._preview_last_image_hash: int | None = None
         self._catalog: ParquetCatalog | None = None
         self._catalog_stations: list[tuple[str, str, str]] = []
+        self._station_metric_labels: dict[tuple[str, str], tuple[str, ...]] = {}
         self._station_row_pairs: list[tuple[str, str] | None] = []
         self._checked_station_pairs: set[tuple[str, str]] = set()
         self._station_selection_dirty = False
@@ -271,6 +277,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         catalog = self._build_dev_dummy_catalog()
         self._catalog = catalog
         self._catalog_stations = catalog.stations
+        self._station_metric_labels = dict(catalog.station_metric_labels)
         self._render_station_check_list()
         self._select_all_stations()
         self.selected_base_dates = [self._base_dates[2] if len(self._base_dates) > 2 else self._base_dates[0]] if self._base_dates else []
@@ -372,7 +379,12 @@ class HydrologyGraphsApp(tk.Toplevel):
                 )
 
         frame = pd.DataFrame.from_records(records)
-        return ParquetCatalog(data=frame, invalid_files={}, warnings=["dev_dummy_catalog"])
+        return ParquetCatalog(
+            data=frame,
+            invalid_files={},
+            warnings=["dev_dummy_catalog"],
+            station_metric_labels={("water_info", "DEV001"): ("雨量", "流量", "水位")},
+        )
 
     def _browse_parquet_dir(self) -> None:
         """Parquet ディレクトリをファイルダイアログから選ぶ。"""
@@ -423,6 +435,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._checked_station_pairs = set()
         self._station_selection_dirty = False
         self._reset_execution_state_for_new_scan()
+        self._station_metric_labels = dict(catalog.station_metric_labels)
         self._render_station_check_list()
         # スキャン直後は軽量情報のみ確定し、候補日探索は明示操作まで遅延させる。
         self._recompute_base_date_candidates_for_selected_stations()
@@ -510,10 +523,15 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _station_display_text(self, source: str, station_key: str, station_name: str, checked: bool) -> str:
         """観測所チェック行の表示テキストを返す。"""
 
-        mark = "☑" if checked else "☐"
-        source_label = self._source_label(source)
-        suffix = f" ({station_name})" if station_name else ""
-        return f"{mark} {source_label}:{station_key}{suffix}"
+        metric_labels = self._station_metric_labels.get((source, station_key), ())
+        return format_station_display_text(
+            source=source,
+            station_key=station_key,
+            station_name=station_name,
+            checked=checked,
+            source_label_map=self.SOURCE_LABELS,
+            metric_labels=metric_labels,
+        )
 
     def _render_station_check_list(self) -> None:
         """観測所一覧をチェック表現で再描画する。"""
@@ -608,7 +626,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._append_log(f"[STATION] apply checks selected={len(selected_pairs)} dates={len(self._base_dates)}")
 
     def _recompute_base_date_candidates_for_selected_stations(self) -> None:
-        """選択観測所（和集合）で基準日候補を更新する。"""
+        """選択条件に合う基準日候補を更新する。"""
 
         catalog = self._catalog
         if catalog is None or catalog.data.empty:
@@ -618,11 +636,11 @@ class HydrologyGraphsApp(tk.Toplevel):
             if not selected_pairs:
                 self._base_dates = []
             else:
-                pair_df = pd.DataFrame(selected_pairs, columns=["source", "station_key"]).drop_duplicates()
-                base_df = catalog.data.loc[:, ["source", "station_key", "observed_at"]]
-                joined = base_df.merge(pair_df, how="inner", on=["source", "station_key"])
-                observed = pd.to_datetime(joined["observed_at"], errors="coerce")
-                self._base_dates = sorted({ts.date().isoformat() for ts in observed.dropna()})
+                station_frame = catalog.data.loc[:, ["source", "station_key", "observed_at"]].copy()
+                selected_frame = pd.DataFrame(selected_pairs, columns=["source", "station_key"])
+                station_frame = station_frame.merge(selected_frame, on=["source", "station_key"], how="inner")
+                observed = pd.to_datetime(station_frame["observed_at"], errors="coerce").dropna()
+                self._base_dates = sorted({ts.date().isoformat() for ts in observed})
         self._refresh_base_date_ymd_controls()
 
     def _ensure_full_catalog_loaded(self) -> bool:
@@ -809,13 +827,21 @@ class HydrologyGraphsApp(tk.Toplevel):
         }
 
     def _current_style_graph_key(self) -> str:
-        """スタイル編集対象キー(9種)を返す。"""
+        """現在の編集対象グラフキーを返す。"""
 
-        display = self.style_target_display.get().strip()
-        key = self._style_target_display_to_key.get(display, display)
-        if key in STYLE_GRAPH_KEYS:
+        key = self._current_preview_graph_key()
+        if key is not None:
             return key
         return STYLE_TARGET_ORDER[0]
+
+    def _current_preview_graph_key(self) -> str | None:
+        """プレビュー出力対象で選ばれている graph key を返す。"""
+
+        display = self.preview_target_graph.get().strip()
+        key = self._preview_graph_display_to_key.get(display, display)
+        if key in STYLE_GRAPH_KEYS:
+            return key
+        return None
 
     def _graph_style_fields_for(self, graph_style: dict[str, Any]) -> list[dict[str, Any]]:
         """対象グラフに応じた編集項目定義を返す。"""
@@ -875,6 +901,11 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         self._style_form_updating = True
         try:
+            time_display_mode = str(nested_value(self._style_payload, "display.time_display_mode", "datetime")).strip() or "datetime"
+            if time_display_mode not in VALID_TIME_DISPLAY_MODES:
+                time_display_mode = "datetime"
+            if self.time_display_mode.get() != time_display_mode:
+                self.time_display_mode.set(time_display_mode)
             graph_key = self._current_style_graph_key()
             graph_styles = self._style_payload.setdefault("graph_styles", {})
             graph_style = graph_styles.get(graph_key)
@@ -890,9 +921,9 @@ class HydrologyGraphsApp(tk.Toplevel):
             label_col_minsize = self._style_label_column_minsize(fields)
             self.graph_style_box.columnconfigure(0, minsize=label_col_minsize)
             self.graph_style_box.columnconfigure(1, weight=1)
-            style_target_box = getattr(self, "style_target_box", None)
-            if style_target_box is not None:
-                style_target_box.columnconfigure(0, minsize=label_col_minsize)
+            display_mode_box = getattr(self, "display_mode_box", None)
+            if display_mode_box is not None:
+                display_mode_box.columnconfigure(0, minsize=label_col_minsize)
             self._style_graph_controls = []
             self._style_field_tooltips = []
             for row, field in enumerate(fields):
@@ -941,16 +972,13 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _on_preview_graph_selected(self, _event=None) -> None:
         """プレビュー対象グラフの変更に合わせて編集フォームを切り替える。"""
 
+        self._refresh_style_forms_from_payload()
         self._schedule_preview_refresh()
 
-    def _on_style_target_selected(self, _event=None) -> None:
-        """スタイル編集対象(9種)を切り替える。"""
+    def _on_preview_target_selection_changed(self, _event=None) -> None:
+        """観測所や基準日の変更に合わせてプレビュー候補を更新する。"""
 
-        selected = self.style_target_display.get().strip()
-        key = self._style_target_display_to_key.get(selected)
-        if key is not None:
-            self.style_target_display.set(self._style_target_key_to_display.get(key, key))
-        self._refresh_style_forms_from_payload()
+        self._refresh_preview_choices()
         self._schedule_preview_refresh()
 
     def _on_event_window_days_changed(self, *_args) -> None:
@@ -961,6 +989,8 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _on_time_display_mode_changed(self, *_args) -> None:
         """表示モードの切替時にプレビューを更新する。"""
 
+        if self._style_form_updating:
+            return
         self._schedule_preview_refresh()
 
     def _on_style_text_changed(self, _event=None) -> None:
@@ -1012,6 +1042,10 @@ class HydrologyGraphsApp(tk.Toplevel):
                 self.preview_message.set(error)
                 return False
             set_nested_value(graph_style, control["path"], value)
+        time_display_mode = str(self.time_display_mode.get()).strip() or "datetime"
+        if time_display_mode not in VALID_TIME_DISPLAY_MODES:
+            time_display_mode = "datetime"
+        set_nested_value(self._style_payload, "display.time_display_mode", time_display_mode)
         return True
 
     def _coerce_control_value(self, control: dict[str, Any], current_value: Any) -> tuple[Any, str | None]:

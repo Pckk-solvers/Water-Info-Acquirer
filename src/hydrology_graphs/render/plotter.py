@@ -317,8 +317,8 @@ def _format_24h_tick(x: float, _pos: int | None = None) -> str:
         dt = dt.replace(tzinfo=None)
     if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
         dt = dt - timedelta(days=1)
-        return dt.strftime("%m/%d 24:00")
-    return dt.strftime("%m/%d %H:%M")
+        return dt.strftime("%m/%d 24")
+    return dt.strftime("%m/%d %H")
 
 
 def _is_24h_time_display_mode(value: object) -> bool:

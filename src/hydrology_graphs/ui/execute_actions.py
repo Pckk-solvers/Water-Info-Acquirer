@@ -136,17 +136,26 @@ def refresh_preview_choices(app) -> None:
     if not app._precheck_ok_targets:
         app._clear_preview_choices()
         return
+    base_choices = build_preview_choices(
+        ok_targets=app._precheck_ok_targets,
+        catalog_stations=app._catalog_stations,
+        graph_key_to_display=app._preview_graph_key_to_display,
+    )
+    current_station = app.preview_target_station.get().strip()
+    current_date = app.preview_target_date.get().strip()
+    selected_station_pair = base_choices.station_display_to_pair.get(current_station)
+    selected_base_date = current_date if current_date in base_choices.date_values else None
     choices = build_preview_choices(
         ok_targets=app._precheck_ok_targets,
         catalog_stations=app._catalog_stations,
         graph_key_to_display=app._preview_graph_key_to_display,
+        selected_station_pair=selected_station_pair,
+        selected_base_date=selected_base_date,
     )
     app._preview_station_display_to_pair = choices.station_display_to_pair
     app._preview_graph_display_to_key = choices.graph_display_to_key
     app.preview_station_combo.configure(values=choices.station_values)
     app.preview_date_combo.configure(values=choices.date_values)
-    current_station = app.preview_target_station.get().strip()
-    current_date = app.preview_target_date.get().strip()
     app.preview_target_station.set(_retained_preview_choice(current_station, choices.station_values))
     app.preview_target_date.set(_retained_preview_choice(current_date, choices.date_values))
     preview_graph_combo = getattr(app, "preview_graph_combo", None)
