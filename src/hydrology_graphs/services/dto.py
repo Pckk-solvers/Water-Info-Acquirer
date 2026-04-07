@@ -64,6 +64,7 @@ class BatchRunInput:
     style_payload: dict | None
     targets: list[BatchTarget]
     event_window_terminal_padding: bool = False
+    time_display_mode: str = "datetime"
     should_stop: Callable[[], bool] | None = None
 
 

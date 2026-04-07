@@ -6,6 +6,8 @@ from pathlib import Path
 from hydrology_graphs.services import PreviewInput
 from .style_payload import nested_value
 
+_TIME_DISPLAY_MODE_24H = {"24h", "24時", "24時表記", "1時~24時", "1時〜24時"}
+
 
 def render_preview(app, *, silent_json_error: bool = False) -> None:
     """プレビュー画像を再生成して表示する。"""
@@ -135,7 +137,7 @@ def _build_preview_input(
         graph_type=graph_type,
         base_datetime=base_date,
         event_window_days=event_window_days,
-        event_window_terminal_padding=True,
+        event_window_terminal_padding=_uses_terminal_padding(time_display_mode),
         time_display_mode=time_display_mode,
     )
     return preview_input, threshold_file
@@ -197,6 +199,10 @@ def _set_preview_message(app, message: str) -> None:
     preview_message = getattr(app, "preview_message", None)
     if preview_message is not None:
         preview_message.set(message)
+
+
+def _uses_terminal_padding(time_display_mode: str) -> bool:
+    return str(time_display_mode).strip().lower() in _TIME_DISPLAY_MODE_24H
 
 
 def _build_sample_output_path(

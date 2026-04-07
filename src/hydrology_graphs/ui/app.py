@@ -536,6 +536,8 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _render_station_check_list(self) -> None:
         """観測所一覧をチェック表現で再描画する。"""
 
+        # 再描画時にスクロールが先頭へ戻らないよう、表示位置を保持する。
+        yview = self.station_list.yview()
         self.station_list.delete(0, "end")
         self._station_row_pairs = []
         total = len(self._catalog_stations)
@@ -549,6 +551,26 @@ class HydrologyGraphsApp(tk.Toplevel):
                 self.station_list.insert("end", " ")
                 self._station_row_pairs.append(None)
         self.station_list.selection_clear(0, "end")
+        if yview:
+            self.station_list.yview_moveto(float(yview[0]))
+
+    def _update_station_row_display(self, index: int) -> None:
+        """指定行の表示だけ更新する。"""
+
+        if index < 0 or index >= len(self._station_row_pairs):
+            return
+        pair = self._station_row_pairs[index]
+        if pair is None:
+            return
+        source, station_key = pair
+        station_name = ""
+        for s, k, name in self._catalog_stations:
+            if s == source and k == station_key:
+                station_name = name
+                break
+        checked = pair in self._checked_station_pairs
+        self.station_list.delete(index)
+        self.station_list.insert(index, self._station_display_text(source, station_key, station_name, checked))
 
     def _selected_station_pairs_in_order(self) -> list[tuple[str, str]]:
         """チェック済み観測所を表示順で返す。"""
@@ -568,7 +590,8 @@ class HydrologyGraphsApp(tk.Toplevel):
         else:
             self._checked_station_pairs.add(pair)
         self._station_selection_dirty = True
-        self._render_station_check_list()
+        # 1件トグル時は該当行だけ更新してスクロール位置を維持する。
+        self._update_station_row_display(index)
 
     def _station_checkbox_hit_width(self) -> int:
         """チェック記号として有効に扱うクリック幅(px)を返す。"""

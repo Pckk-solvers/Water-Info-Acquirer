@@ -98,7 +98,7 @@
   - `water_info` / `jma` の hourly データは datetime 正規化済みを前提とする
   - 対象窓（3日/5日）で欠損なし。24時相当を含む出力に対応するため、終端+1時間分を常時追加で確認する（`value` 欠損、`quality=missing` はNG）
 - 表示モード:
-  - `24時表記` と `datetime表記` は表示モードだが、プレビューとサンプル出力では切り出す範囲も mode に合わせて変える
+  - `24時表記` と `datetime表記` は表示モードだが、precheck / preview / batch で切り出す範囲も mode に合わせて変える
   - `24時表記` の X 軸ラベルは時分ではなく時だけを表示する
   - style JSON の `display.time_display_mode` が保存値の正本で、未指定なら `datetime` を既定とする
 - 年最大系:

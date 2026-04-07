@@ -65,6 +65,43 @@ def test_build_preview_input_reads_time_display_mode_from_payload():
     assert threshold_file is None
     assert preview_input is not None
     assert preview_input.time_display_mode == "24h"
+    assert preview_input.event_window_terminal_padding is True
+
+
+def test_build_preview_input_disables_terminal_padding_for_datetime_mode():
+    app = type("DummyApp", (), {})()
+    app._style_payload = {
+        "display": {"time_display_mode": "datetime"},
+        "graph_styles": {"hyetograph:3day": {}},
+    }
+    app._style_json_path = None
+    app.parquet_dir = _DummyVar("/tmp/input")
+    app.threshold_path = _DummyVar("")
+    app.preview_target_station = _DummyVar("観測所A (jma:001)")
+    app._preview_station_display_to_pair = {"観測所A (jma:001)": ("jma", "001")}
+    app.preview_target_date = _DummyVar("2026-01-02")
+    app.preview_target_graph = _DummyVar("ハイエトグラフ（雨量） 3日")
+    app._preview_graph_display_to_key = {"ハイエトグラフ（雨量） 3日": "hyetograph:3day"}
+    app._current_preview_graph_key = lambda: app._preview_graph_display_to_key.get(
+        app.preview_target_graph.get(),
+        app.preview_target_graph.get(),
+    )
+    app.preview_message = _DummyVar("")
+    app._precheck_ok_targets = [
+        type("Target", (), {"source": "jma", "station_key": "001", "graph_type": "hyetograph", "event_window_days": 3, "base_date": date(2026, 1, 2)})(),
+    ]
+    app._build_preview_style_payload = lambda payload: payload
+    app._style_from_editor = lambda silent=False: None
+    app._apply_style_form_values = lambda: True
+    app._set_style_text_from_payload = lambda: None
+    app._push_style_history = lambda payload: None
+
+    preview_input, threshold_file = _build_preview_input(app, silent_json_error=True)
+
+    assert threshold_file is None
+    assert preview_input is not None
+    assert preview_input.time_display_mode == "datetime"
+    assert preview_input.event_window_terminal_padding is False
 
 
 def test_build_preview_input_rejects_mismatched_precheck_target():

@@ -16,6 +16,7 @@ from hydrology_graphs.ui.view_models import (
 )
 
 _EVENT_GRAPH_TYPES = {"hyetograph", "hydrograph_discharge", "hydrograph_water_level"}
+_TIME_DISPLAY_MODE_24H = {"24h", "24時", "24時表記", "1時~24時", "1時〜24時"}
 
 
 def run_precheck(app) -> None:
@@ -44,6 +45,7 @@ def run_precheck(app) -> None:
         messagebox.showerror("入力エラー", "イベント系グラフを選択した場合は基準日を1つ以上追加してください。")
         return
 
+    time_display_mode = str(app.time_display_mode.get()).strip() or "datetime"
     precheck_input = PrecheckInput(
         parquet_dir=app.parquet_dir.get().strip(),
         threshold_file_path=app.threshold_path.get().strip() or None,
@@ -52,7 +54,7 @@ def run_precheck(app) -> None:
         base_dates=base_dates,
         event_window_days_list=event_windows,
         event_window_days_by_graph=event_windows_by_graph,
-        event_window_terminal_padding=True,
+        event_window_terminal_padding=_uses_terminal_padding(time_display_mode),
     )
     app._append_log(
         f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)} windows={event_windows}"
@@ -196,6 +198,7 @@ def start_batch_run(app) -> None:
     if not out_dir:
         return
     app._style_payload = payload
+    time_display_mode = str(payload.get("display", {}).get("time_display_mode", "datetime")).strip() or "datetime"
     batch_targets = build_batch_targets(app._precheck_ok_targets)
     run_input = BatchRunInput(
         parquet_dir=app.parquet_dir.get().strip(),
@@ -204,7 +207,8 @@ def start_batch_run(app) -> None:
         style_json_path=app._style_json_path,
         style_payload=payload,
         targets=batch_targets,
-        event_window_terminal_padding=True,
+        event_window_terminal_padding=_uses_terminal_padding(time_display_mode),
+        time_display_mode=time_display_mode,
         should_stop=app._stop_event.is_set if app._stop_event else None,
     )
     for target in batch_targets:
@@ -229,6 +233,10 @@ def start_batch_run(app) -> None:
             app._event_queue.put(("run_error", str(exc)))
 
     threading.Thread(target=worker, daemon=True).start()
+
+
+def _uses_terminal_padding(time_display_mode: str) -> bool:
+    return str(time_display_mode).strip().lower() in _TIME_DISPLAY_MODE_24H
 
 
 def add_base_date_from_candidate(app) -> None:

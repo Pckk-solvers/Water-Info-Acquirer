@@ -144,7 +144,7 @@ def _apply_common_axes_style(ax, graph_style: dict[str, Any]) -> None:
 def _plot_hyetograph(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     """ハイエトグラフを描く。"""
 
-    time_col = "period_end_at" if "period_end_at" in df.columns else "observed_at"
+    time_col = _time_column_for_plot(df)
     data = df.sort_values(time_col).copy()
     data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
     numeric_values = cast(pd.Series, pd.to_numeric(data["value"], errors="coerce"))
@@ -165,7 +165,7 @@ def _plot_hyetograph(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
 def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     """流量・水位の折れ線グラフを描く。"""
 
-    time_col = "period_end_at" if "period_end_at" in df.columns else "observed_at"
+    time_col = _time_column_for_plot(df)
     data = df.sort_values(time_col).copy()
     data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
     ax.plot(
@@ -324,3 +324,13 @@ def _format_24h_tick(x: float, _pos: int | None = None) -> str:
 def _is_24h_time_display_mode(value: object) -> bool:
     text = _coerce_text(value).lower()
     return text in {"24h", "24時", "24時表記", "1時~24時", "1時〜24時"}
+
+
+def _time_column_for_plot(df: pd.DataFrame) -> str:
+    """描画時に使う時刻列を返す。"""
+
+    if "period_end_at" in df.columns:
+        period_end = pd.to_datetime(df["period_end_at"], errors="coerce")
+        if not period_end.isna().all():
+            return "period_end_at"
+    return "observed_at"
