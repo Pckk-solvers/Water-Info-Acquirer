@@ -148,10 +148,6 @@
             }
           }
         },
-        "background_color": {
-          "type": "string",
-          "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
-        },
         "bar_color": {
           "type": [
             "string",
@@ -196,6 +192,41 @@
             "width": {
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            "edge_width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "edge_alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "cumulative_line": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "style": {
+              "type": "string",
+              "enum": [
+                "solid",
+                "dashed",
+                "dotted",
+                "dashdot"
+              ]
             }
           }
         },
@@ -203,6 +234,10 @@
           "type": "object",
           "additionalProperties": true,
           "properties": {
+            "max": {
+              "type": "number",
+              "minimum": 0
+            },
             "tick_step": {
               "type": "number",
               "exclusiveMinimum": 0
@@ -210,6 +245,50 @@
             "tick_count": {
               "type": "integer",
               "minimum": 1
+            }
+          }
+        },
+        "y2_axis": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "tick_step": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "missing_band": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "grid": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "x_enabled": {
+              "type": "boolean"
+            },
+            "y_enabled": {
+              "type": "boolean"
             }
           }
         },

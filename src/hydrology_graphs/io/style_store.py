@@ -36,7 +36,6 @@ def _base_style() -> dict[str, Any]:
         "legend": {"enabled": True, "position": "upper right"},
         "dpi": 120,
         "grid": {"enabled": True, "color": "#CBD5E1", "style": "--", "alpha": 0.7},
-        "background_color": "#FFFFFF",
         "font": {"title_size": 14, "label_size": 12, "tick_size": 10},
         "export": {"transparent_background": False},
     }
@@ -56,12 +55,16 @@ def _style_hyetograph() -> dict[str, Any]:
             "title": {"template": "{station_name} ハイエトグラフ"},
             "x_axis": {
                 "date_format": "%m/%d %H:%M",
-                "tick_rotation": 45,
+                "tick_rotation": 0,
                 "tick_interval_hours": 6,
                 "label_align": "center",
             },
-            "y_axis": {"number_format": "plain", "tick_count": 6},
-            "bar": {"width": 0.8},
+            "grid": {"enabled": True, "x_enabled": False, "y_enabled": True, "color": "#CBD5E1", "style": "--", "alpha": 0.7},
+            "y_axis": {"number_format": "plain", "tick_count": 6, "max": 80},
+            "y2_axis": {"max": 250, "tick_step": 25},
+            "bar": {"width": 0.25, "edge_width": 0.8, "edge_alpha": 0.8},
+            "cumulative_line": {"enabled": True, "color": "#1E3A8A", "width": 1.6, "style": "solid"},
+            "missing_band": {"enabled": True, "color": "#9CA3AF", "alpha": 0.28},
             "threshold": {
                 "label_enabled": True,
                 "label_offset": 0.02,
@@ -85,7 +88,7 @@ def _style_hydro_discharge() -> dict[str, Any]:
             "title": {"template": "{station_name} ハイドログラフ（流量）"},
             "x_axis": {
                 "date_format": "%m/%d %H:%M",
-                "tick_rotation": 45,
+                "tick_rotation": 0,
                 "tick_interval_hours": 6,
                 "label_align": "center",
             },
@@ -113,7 +116,7 @@ def _style_hydro_water_level() -> dict[str, Any]:
             "title": {"template": "{station_name} ハイドログラフ（水位）"},
             "x_axis": {
                 "date_format": "%m/%d %H:%M",
-                "tick_rotation": 45,
+                "tick_rotation": 0,
                 "tick_interval_hours": 6,
                 "label_align": "center",
             },
@@ -140,7 +143,7 @@ def _style_annual_rainfall() -> dict[str, Any]:
             "axis": {"x_label": "年", "y_label": "年最大雨量"},
             "bar_color": "#60A5FA",
             "title": {"template": "{station_name} 年最大雨量"},
-            "x_axis": {"tick_rotation": 90, "label_align": "center"},
+            "x_axis": {"tick_rotation": 0, "label_align": "center"},
             "y_axis": {"number_format": "plain", "tick_count": 8},
             "bar": {"width": 0.8},
             "series": {"zorder": 2},
@@ -159,7 +162,7 @@ def _style_annual_discharge() -> dict[str, Any]:
             "axis": {"x_label": "年", "y_label": "年最大流量"},
             "bar_color": "#34D399",
             "title": {"template": "{station_name} 年最大流量"},
-            "x_axis": {"tick_rotation": 90, "label_align": "center"},
+            "x_axis": {"tick_rotation": 0, "label_align": "center"},
             "y_axis": {"number_format": "comma", "tick_count": 8},
             "bar": {"width": 0.8},
             "series": {"zorder": 2},
@@ -178,7 +181,7 @@ def _style_annual_water_level() -> dict[str, Any]:
             "axis": {"x_label": "年", "y_label": "年最高水位"},
             "bar_color": "#A78BFA",
             "title": {"template": "{station_name} 年最高水位"},
-            "x_axis": {"tick_rotation": 90, "label_align": "center"},
+            "x_axis": {"tick_rotation": 0, "label_align": "center"},
             "y_axis": {"number_format": "plain", "tick_count": 8},
             "bar": {"width": 0.8},
             "series": {"zorder": 2},
@@ -285,8 +288,6 @@ def _schema_graph_style_validation_error_to_warning(path: list[Any], validator: 
     if validator == "pattern":
         if head == "series_color":
             return f"error:{style_key}_series_color_must_be_hex"
-        if head == "background_color":
-            return f"error:{style_key}_background_color_must_be_hex"
         if head == "bar_color":
             return f"error:{style_key}_bar_color_must_be_hex"
         if head == "secondary_series_color":
@@ -367,7 +368,13 @@ def _drop_optional_none_values_for_schema(raw: dict[str, Any]) -> None:
         ("x_axis", "date_boundary_line_enabled"),
         ("x_axis", "date_boundary_line_offset_hours"),
         ("bar", "width"),
+        ("bar", "edge_width"),
+        ("bar", "edge_alpha"),
         ("y_axis", "tick_step"),
+        ("y_axis", "max"),
+        ("y2_axis", "tick_step"),
+        ("y2_axis", "max"),
+        ("missing_band", "alpha"),
         ("y_axis", "tick_count"),
         ("threshold", "label_font_size"),
     )
@@ -380,6 +387,18 @@ def _drop_optional_none_values_for_schema(raw: dict[str, Any]) -> None:
                 continue
             if parent.get(leaf_key, object()) is None:
                 parent.pop(leaf_key, None)
+
+
+def _drop_removed_keys_for_schema(raw: dict[str, Any]) -> None:
+    """廃止済みキーを検証前に除去する。"""
+
+    graph_styles = raw.get("graph_styles")
+    if not isinstance(graph_styles, dict):
+        return
+    for graph_style in graph_styles.values():
+        if not isinstance(graph_style, dict):
+            continue
+        graph_style.pop("background_color", None)
 
 
 def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
@@ -397,6 +416,7 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
 
     schema_input = deepcopy(raw)
     schema_input["display"] = _normalize_display(schema_input.get("display"), warnings)
+    _drop_removed_keys_for_schema(schema_input)
     _drop_optional_none_values_for_schema(schema_input)
 
     graph_styles_raw = schema_input.get("graph_styles")
@@ -456,6 +476,10 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
     style["x_axis"].setdefault("range_margin_rate", 0)
     style["x_axis"].setdefault("date_boundary_line_enabled", False)
     style["x_axis"].setdefault("date_boundary_line_offset_hours", 0.0)
+    if "grid" not in style or not isinstance(style["grid"], dict):
+        style["grid"] = {}
+    style["grid"].setdefault("x_enabled", bool(style["grid"].get("enabled", True)))
+    style["grid"].setdefault("y_enabled", bool(style["grid"].get("enabled", True)))
 
 
 def _deep_merge(base: dict, incoming: dict) -> None:

@@ -15,6 +15,25 @@ def test_default_style_schema_2_0_has_9_graph_keys():
     assert style["display"]["time_display_mode"] == "datetime"
 
 
+def test_default_style_x_axis_defaults_are_zero():
+    style = default_style()
+    for graph_style in style["graph_styles"].values():
+        x_axis = graph_style.get("x_axis", {})
+        assert x_axis.get("range_margin_rate", 0) == 0
+        assert x_axis.get("tick_rotation", 0) == 0
+        assert "background_color" not in graph_style
+
+
+def test_load_style_drops_removed_background_color_key():
+    payload = default_style()
+    payload["graph_styles"]["hyetograph:3day"]["background_color"] = "#000000"
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    assert "background_color" not in result.style["graph_styles"]["hyetograph:3day"]
+
+
 def test_load_style_rejects_invalid_schema():
     payload = default_style()
     payload["schema_version"] = "1.0"
@@ -119,3 +138,29 @@ def test_load_style_backfills_date_boundary_line_defaults():
     x_axis = result.style["graph_styles"]["hyetograph:3day"]["x_axis"]
     assert x_axis["date_boundary_line_enabled"] is False
     assert x_axis["date_boundary_line_offset_hours"] == 0.0
+
+
+def test_default_hyetograph_style_contains_dual_axis_and_missing_band_defaults():
+    style = default_style()["graph_styles"]["hyetograph:3day"]
+    assert style["grid"]["x_enabled"] is False
+    assert style["grid"]["y_enabled"] is True
+    assert style["bar"]["edge_width"] > 0
+    assert style["bar"]["edge_alpha"] > 0
+    assert style["cumulative_line"]["enabled"] is True
+    assert style["missing_band"]["enabled"] is True
+    assert style["y2_axis"]["max"] > 0
+
+
+def test_load_style_accepts_hyetograph_added_keys():
+    payload = default_style()
+    hyeto = payload["graph_styles"]["hyetograph:3day"]
+    hyeto["grid"]["x_enabled"] = True
+    hyeto["bar"]["edge_width"] = 1.2
+    hyeto["bar"]["edge_alpha"] = 0.5
+    hyeto["cumulative_line"]["style"] = "dashdot"
+    hyeto["missing_band"]["alpha"] = 0.3
+    hyeto["y2_axis"]["tick_step"] = 20
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid

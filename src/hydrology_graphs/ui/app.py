@@ -8,7 +8,7 @@ import tkinter.font as tkfont
 from copy import deepcopy
 from datetime import date, datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Any
 
 import pandas as pd
@@ -103,7 +103,6 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
     {"path": "dpi", "label": "DPI", "kind": "int", "tooltip": "解像度（密度）。値を上げると同じ図幅・図高でも高精細になります。"},
     {"path": "font_family", "label": "フォント", "kind": "str"},
     {"path": "font_size", "label": "基本フォントサイズ", "kind": "int"},
-    {"path": "background_color", "label": "背景色(#RRGGBB)", "kind": "str"},
     {"path": "legend.enabled", "label": "凡例表示", "kind": "bool", "tooltip": "系列名・基準線ラベルの凡例を表示/非表示にします。"},
     {"path": "grid.enabled", "label": "グリッド表示", "kind": "bool"},
     {"path": "title.template", "label": "タイトルテンプレート", "kind": "str"},
@@ -137,7 +136,6 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
         "kind": "float",
         "tooltip": "日付境界 00:00 からの移動量（時間）。正値で右、負値で左に移動します。個別設定です。",
     },
-    {"path": "y_axis.tick_count", "label": "Y軸目盛数", "kind": "int", "tooltip": "Y軸の目盛り分割数の目安です。"},
     {
         "path": "y_axis.number_format",
         "label": "Y軸数値形式",
@@ -147,6 +145,7 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
 )
 
 _STYLE_EMPTY_NUMERIC = object()
+_LINE_STYLE_CHOICES: tuple[str, ...] = ("solid", "dashed", "dashdot", "dotted")
 
 
 class HydrologyGraphsApp(tk.Toplevel):
@@ -207,6 +206,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._style_text_syncing = False
         self._style_form_updating = False
         self._style_graph_controls: list[dict[str, Any]] = []
+        self._style_palette_rows: list[dict[str, Any]] = []
         self._style_field_tooltips: list[ToolTip] = []
         self._execute_tooltips: list[ToolTip] = []
         self.display_mode_box: ttk.LabelFrame | None = None
@@ -307,7 +307,8 @@ class HydrologyGraphsApp(tk.Toplevel):
                 self.base_date_list.insert("end", value)
         self._precheck_ok_targets = []
         base_date = date(2024, 9, 1)
-        event_windows = self._current_event_window_days_list() or [3]
+        # 開発者モードでは、スタイル調整対象を常に9種すべて出せるように固定する。
+        event_windows = [3, 5]
         for graph_type in GRAPH_TYPES:
             if graph_type in {"hyetograph", "hydrograph_discharge", "hydrograph_water_level"}:
                 for window_days in event_windows:
@@ -353,14 +354,25 @@ class HydrologyGraphsApp(tk.Toplevel):
             end="2024-09-03 23:00:00",
             freq="1h",
         )
+        def _dev_rainfall_value(hour_index: int) -> float:
+            # 現実寄りに、乾燥区間と短時間ピークを混在させる。
+            light_event = max(0.0, 6.0 - abs(hour_index - 18) * 1.2)
+            main_event = max(0.0, 38.0 - abs(hour_index - 49) * 2.4)
+            tail_event = max(0.0, 12.0 - abs(hour_index - 63) * 1.8)
+            # ごく小さい降雨は 0 に落として「降っていない時間」を作る。
+            value = light_event + main_event + tail_event
+            return 0.0 if value < 0.8 else float(value)
+
         for metric in ("rainfall", "water_level", "discharge"):
             for i, ts in enumerate(event_index):
                 if metric == "rainfall":
-                    value = max(0.0, 35.0 * (1.0 - abs(i - 48) / 60.0))
+                    value = _dev_rainfall_value(i)
                 elif metric == "water_level":
-                    value = 2.2 + max(0.0, 2.8 * (1.0 - abs(i - 52) / 72.0))
+                    rain = _dev_rainfall_value(max(0, i - 3))
+                    value = 2.2 + rain * 0.08
                 else:
-                    value = 150.0 + max(0.0, 620.0 * (1.0 - abs(i - 54) / 70.0))
+                    rain = _dev_rainfall_value(max(0, i - 5))
+                    value = 120.0 + rain * 14.0
                 records.append(
                     {
                         "source": source,
@@ -829,19 +841,21 @@ class HydrologyGraphsApp(tk.Toplevel):
         row: int,
         field: dict[str, Any],
     ) -> dict[str, Any]:
-        """スタイルフォームの 1 項目を構築して制御情報を返す。"""
+        """スタイルフォームの 1 項目を構築して制御情報を返す（3列固定）。"""
 
         kind = str(field.get("kind", "str"))
         label = str(field.get("label", ""))
         path = str(field.get("path", ""))
         label_widget = ttk.Label(parent, text=label)
-        label_widget.grid(row=row, column=0, sticky="w", padx=6, pady=3)
+        label_widget.grid(row=row, column=1, sticky="w", padx=(1, 6), pady=3)
 
         if kind == "bool":
             var: tk.Variable = tk.BooleanVar(value=False)
-            widget = ttk.Checkbutton(parent, variable=var, command=self._on_style_form_commit)
-            widget.grid(row=row, column=1, sticky="w", padx=6, pady=3)
+            widget = ttk.Checkbutton(parent, text="", width=1, variable=var, command=self._on_style_form_commit)
+            widget.grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+            ttk.Frame(parent, width=1).grid(row=row, column=2, sticky="ew", padx=6, pady=3)
         elif kind == "choice":
+            ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
             var = tk.StringVar(value="")
             widget = ttk.Combobox(
                 parent,
@@ -850,13 +864,14 @@ class HydrologyGraphsApp(tk.Toplevel):
                 values=tuple(field.get("values") or ()),
                 width=30,
             )
-            widget.grid(row=row, column=1, sticky="ew", padx=6, pady=3)
+            widget.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
             widget.bind("<<ComboboxSelected>>", self._on_style_form_commit_event)
             widget.bind("<Return>", self._on_style_form_commit_event)
         else:
+            ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
             var = tk.StringVar(value="")
             widget = ttk.Entry(parent, textvariable=var)
-            widget.grid(row=row, column=1, sticky="ew", padx=6, pady=3)
+            widget.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
             widget.bind("<Return>", self._on_style_form_commit_event)
 
         return {
@@ -925,6 +940,430 @@ class HydrologyGraphsApp(tk.Toplevel):
             )
         return fields
 
+    @staticmethod
+    def _is_hyetograph_style_key(graph_key: str) -> bool:
+        return graph_key.startswith("hyetograph:")
+
+    def _create_compact_style_row(
+        self,
+        parent: ttk.Frame,
+        *,
+        row: int,
+        row_label: str,
+        toggle: dict[str, Any] | None = None,
+        values: list[dict[str, Any]] | None = None,
+        detail_values: list[dict[str, Any]] | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """3列固定の行を構築する（必要なら詳細2行目も使う）。"""
+
+        controls: list[dict[str, Any]] = []
+        rows_used = 1
+        label_widget = ttk.Label(parent, text=row_label)
+        label_widget.grid(row=row, column=1, sticky="w", padx=(1, 6), pady=3)
+        toggle_path: str | None = None
+        if isinstance(toggle, dict) and str(toggle.get("path", "")).strip():
+            toggle_path = str(toggle.get("path", "")).strip()
+            var: tk.Variable = tk.BooleanVar(value=False)
+            widget = ttk.Checkbutton(parent, text="", width=1, variable=var, command=self._on_style_form_commit)
+            widget.grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+            controls.append(
+                {
+                    "path": toggle_path,
+                    "label": f"{row_label}:toggle",
+                    "kind": "bool",
+                    "var": var,
+                    "label_widget": label_widget,
+                    "widget": widget,
+                    "tooltip": str(toggle.get("tooltip", "")).strip(),
+                    "is_group_toggle": True,
+                }
+            )
+        else:
+            ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+
+        value_defs = values or []
+        if value_defs:
+            value_frame = ttk.Frame(parent)
+            value_frame.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
+            value_frame.columnconfigure(0, weight=1)
+            for i, field in enumerate(value_defs):
+                caption = str(field.get("label", "")).strip()
+                base_col = i * 2
+                if caption:
+                    ttk.Label(value_frame, text=caption).grid(row=0, column=base_col, sticky="w", padx=(0, 2))
+                    widget_col = base_col + 1
+                else:
+                    widget_col = base_col
+                is_single_full_width = (len(value_defs) == 1 and caption == "")
+                controls.append(
+                    self._create_compact_input_control(
+                        container=value_frame,
+                        field=field,
+                        row_label=row_label,
+                        label_widget=label_widget,
+                        group_toggle_path=toggle_path,
+                        grid_row=0,
+                        widget_col=widget_col,
+                        is_last=(i == len(value_defs) - 1),
+                        is_single_full_width=is_single_full_width,
+                        label_prefix=f"{row_label}:{field.get('label', '')}",
+                    )
+                )
+
+        detail_defs = detail_values or []
+        if detail_defs:
+            rows_used += 1
+            detail_label = ttk.Label(parent, text="└ 詳細")
+            detail_label.grid(row=row + 1, column=1, sticky="w", padx=(1, 6), pady=(0, 3))
+            ttk.Frame(parent, width=1).grid(row=row + 1, column=0, sticky="w", padx=(6, 0), pady=(0, 3))
+            detail_frame = ttk.Frame(parent)
+            detail_frame.grid(row=row + 1, column=2, sticky="ew", padx=6, pady=(0, 3))
+            for i, field in enumerate(detail_defs):
+                caption = str(field.get("label", "")).strip()
+                base_col = i * 2
+                if caption:
+                    ttk.Label(detail_frame, text=caption).grid(row=0, column=base_col, sticky="w", padx=(0, 2))
+                    widget_col = base_col + 1
+                else:
+                    widget_col = base_col
+                controls.append(
+                    self._create_compact_input_control(
+                        container=detail_frame,
+                        field=field,
+                        row_label=row_label,
+                        label_widget=detail_label,
+                        group_toggle_path=toggle_path,
+                        grid_row=0,
+                        widget_col=widget_col,
+                        is_last=(i == len(detail_defs) - 1),
+                        is_single_full_width=False,
+                        label_prefix=f"{row_label}:detail:{field.get('label', '')}",
+                    )
+                )
+
+        return controls, rows_used
+
+    def _create_compact_input_control(
+        self,
+        *,
+        container: ttk.Frame,
+        field: dict[str, Any],
+        row_label: str,
+        label_widget: tk.Widget,
+        group_toggle_path: str | None,
+        grid_row: int,
+        widget_col: int,
+        is_last: bool,
+        is_single_full_width: bool,
+        label_prefix: str,
+    ) -> dict[str, Any]:
+        """compact行の入力ウィジェットを1つ生成して配置する。"""
+
+        kind = str(field.get("kind", "str"))
+        input_width = int(field.get("width", 10))
+        var: tk.Variable
+        if kind == "bool":
+            var = tk.BooleanVar(value=False)
+            widget = ttk.Checkbutton(container, text="", width=1, variable=var, command=self._on_style_form_commit)
+        elif kind == "choice":
+            var = tk.StringVar(value="")
+            widget = ttk.Combobox(
+                container,
+                textvariable=var,
+                state="readonly",
+                values=tuple(field.get("values") or ()),
+                width=input_width if not is_single_full_width else 30,
+            )
+            widget.bind("<<ComboboxSelected>>", self._on_style_form_commit_event)
+            widget.bind("<Return>", self._on_style_form_commit_event)
+        else:
+            var = tk.StringVar(value="")
+            widget = ttk.Entry(container, textvariable=var, width=input_width if not is_single_full_width else 30)
+            widget.bind("<Return>", self._on_style_form_commit_event)
+
+        pad_right = 0 if is_last else 8
+        if kind in {"str", "int", "float", "choice"} and (is_last or is_single_full_width):
+            container.columnconfigure(widget_col, weight=1)
+        sticky = "ew" if kind in {"str", "int", "float", "choice"} else "w"
+        widget.grid(row=grid_row, column=widget_col, sticky=sticky, padx=(0, pad_right))
+
+        return {
+            "path": str(field.get("path", "")),
+            "label": label_prefix or row_label,
+            "kind": kind,
+            "var": var,
+            "label_widget": label_widget,
+            "widget": widget,
+            "tooltip": str(field.get("tooltip", "")).strip(),
+            "group_toggle_path": group_toggle_path,
+        }
+
+    def _create_palette_style_row(
+        self,
+        parent: ttk.Frame,
+        *,
+        row: int,
+        row_label: str,
+        graph_style: dict[str, Any],
+        palette_fields: list[dict[str, Any]],
+        toggle: dict[str, Any] | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """col2 にサマリ + 設定ボタンを置く行を構築する。"""
+
+        controls: list[dict[str, Any]] = []
+        rows_used = 1
+        label_widget = ttk.Label(parent, text=row_label)
+        label_widget.grid(row=row, column=1, sticky="w", padx=(1, 6), pady=3)
+
+        toggle_path: str | None = None
+        if isinstance(toggle, dict) and str(toggle.get("path", "")).strip():
+            toggle_path = str(toggle.get("path", "")).strip()
+            var: tk.Variable = tk.BooleanVar(value=False)
+            toggle_widget = ttk.Checkbutton(parent, text="", width=1, variable=var, command=self._on_style_form_commit)
+            toggle_widget.grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+            controls.append(
+                {
+                    "path": toggle_path,
+                    "label": f"{row_label}:toggle",
+                    "kind": "bool",
+                    "var": var,
+                    "label_widget": label_widget,
+                    "widget": toggle_widget,
+                    "tooltip": str(toggle.get("tooltip", "")).strip(),
+                    "is_group_toggle": True,
+                }
+            )
+        else:
+            ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+
+        area = ttk.Frame(parent)
+        area.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
+        area.columnconfigure(0, weight=1)
+        summary_var = tk.StringVar(value=self._build_palette_summary(graph_style, palette_fields))
+        summary_label = ttk.Label(area, textvariable=summary_var, foreground="#334155")
+        summary_label.grid(row=0, column=0, sticky="w")
+        button = ttk.Button(
+            area,
+            text="設定...",
+            command=lambda: self._open_palette_dialog(
+                title=row_label,
+                fields=palette_fields,
+                group_toggle_path=toggle_path,
+            ),
+        )
+        button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        controls.append(
+            {
+                "path": f"__palette__:{row_label}",
+                "label": row_label,
+                "kind": "button",
+                "var": tk.StringVar(value=""),
+                "label_widget": label_widget,
+                "widget": button,
+                "group_toggle_path": toggle_path,
+                "widget_state_on": "normal",
+            }
+        )
+        self._style_palette_rows.append(
+            {
+                "row_label": row_label,
+                "summary_var": summary_var,
+                "fields": palette_fields,
+                "group_toggle_path": toggle_path,
+                "button": button,
+            }
+        )
+        return controls, rows_used
+
+    def _build_palette_summary(self, graph_style: dict[str, Any], fields: list[dict[str, Any]]) -> str:
+        parts: list[str] = []
+        for field in fields:
+            path = str(field.get("path", "")).strip()
+            if not path:
+                continue
+            label = str(field.get("label", "")).strip() or path.split(".")[-1]
+            value = nested_value(graph_style, path, None)
+            if value is None or value == "":
+                continue
+            parts.append(f"{label}:{value}")
+        summary = " / ".join(parts) if parts else "未設定"
+        if len(summary) > 56:
+            return summary[:56] + "..."
+        return summary
+
+    def _open_palette_dialog(self, *, title: str, fields: list[dict[str, Any]], group_toggle_path: str | None = None) -> None:
+        graph_key = self._current_style_graph_key()
+        graph_styles = self._style_payload.setdefault("graph_styles", {})
+        graph_style = graph_styles.get(graph_key)
+        if not isinstance(graph_style, dict):
+            return
+
+        if group_toggle_path:
+            enabled = bool(nested_value(graph_style, group_toggle_path, False))
+            if not enabled:
+                self.preview_message.set(f"{title} は無効です（チェックをONにしてください）。")
+                return
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"{title} の設定")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.columnconfigure(1, weight=1)
+
+        controls: list[dict[str, Any]] = []
+        for row, field in enumerate(fields):
+            label = str(field.get("label", "")).strip()
+            kind = str(field.get("kind", "str"))
+            path = str(field.get("path", "")).strip()
+            ttk.Label(dialog, text=label).grid(row=row, column=0, sticky="w", padx=(10, 6), pady=6)
+            if kind == "choice":
+                var = tk.StringVar(value=str(nested_value(graph_style, path, "") or ""))
+                widget = ttk.Combobox(dialog, textvariable=var, state="readonly", values=tuple(field.get("values") or ()), width=20)
+                widget.grid(row=row, column=1, sticky="ew", padx=(0, 10), pady=6)
+            elif kind == "bool":
+                var = tk.BooleanVar(value=bool(nested_value(graph_style, path, False)))
+                widget = ttk.Checkbutton(dialog, text="", variable=var)
+                widget.grid(row=row, column=1, sticky="w", padx=(0, 10), pady=6)
+            elif kind == "color":
+                raw = str(nested_value(graph_style, path, "") or "").strip()
+                initial = raw if self._is_hex_color(raw) else "#000000"
+                var = tk.StringVar(value=initial)
+                row_frame = ttk.Frame(dialog)
+                row_frame.grid(row=row, column=1, sticky="ew", padx=(0, 10), pady=6)
+                row_frame.columnconfigure(0, weight=1)
+                entry = ttk.Entry(row_frame, textvariable=var, width=16, state="readonly")
+                entry.grid(row=0, column=0, sticky="w", padx=(0, 6))
+                chip = tk.Label(row_frame, width=3, relief="solid", bg=initial)
+                chip.grid(row=0, column=1, sticky="w", padx=(0, 6))
+
+                def _pick_color(target_var=var, target_chip=chip) -> None:
+                    current = str(target_var.get()).strip()
+                    chosen = colorchooser.askcolor(color=current if self._is_hex_color(current) else "#000000", parent=dialog)
+                    if not chosen or not chosen[1]:
+                        return
+                    hex_color = str(chosen[1]).upper()
+                    target_var.set(hex_color)
+                    target_chip.configure(bg=hex_color)
+
+                choose_btn = ttk.Button(row_frame, text="選択...", command=_pick_color)
+                choose_btn.grid(row=0, column=2, sticky="w")
+                widget = choose_btn
+            else:
+                raw = nested_value(graph_style, path, "")
+                var = tk.StringVar(value="" if raw is None else str(raw))
+                widget = ttk.Entry(dialog, textvariable=var, width=22)
+                widget.grid(row=row, column=1, sticky="ew", padx=(0, 10), pady=6)
+            controls.append({"path": path, "kind": kind, "label": label or path, "var": var})
+
+        buttons = ttk.Frame(dialog)
+        buttons.grid(row=len(fields), column=0, columnspan=2, sticky="e", padx=10, pady=(4, 10))
+        ttk.Button(buttons, text="キャンセル", command=dialog.destroy).grid(row=0, column=0, padx=(0, 6))
+
+        def _apply() -> None:
+            current_graph_styles = self._style_payload.setdefault("graph_styles", {})
+            current_graph_style = current_graph_styles.get(graph_key)
+            if not isinstance(current_graph_style, dict):
+                current_graph_style = {}
+                current_graph_styles[graph_key] = current_graph_style
+            for control in controls:
+                path = str(control["path"])
+                kind = str(control["kind"])
+                label = str(control["label"])
+                var = control["var"]
+                if kind == "bool":
+                    value = bool(var.get())
+                elif kind == "choice":
+                    value = str(var.get()).strip()
+                elif kind == "float":
+                    text = str(var.get()).strip()
+                    if text == "":
+                        delete_nested_value(current_graph_style, path)
+                        continue
+                    try:
+                        value = float(text)
+                    except ValueError:
+                        messagebox.showerror("入力エラー", f"{label} は数値で入力してください。", parent=dialog)
+                        return
+                elif kind == "int":
+                    text = str(var.get()).strip()
+                    if text == "":
+                        delete_nested_value(current_graph_style, path)
+                        continue
+                    try:
+                        parsed = float(text)
+                    except ValueError:
+                        messagebox.showerror("入力エラー", f"{label} は整数で入力してください。", parent=dialog)
+                        return
+                    if not parsed.is_integer():
+                        messagebox.showerror("入力エラー", f"{label} は整数で入力してください。", parent=dialog)
+                        return
+                    value = int(parsed)
+                elif kind == "color":
+                    text = str(var.get()).strip().upper()
+                    if text == "":
+                        delete_nested_value(current_graph_style, path)
+                        continue
+                    if not self._is_hex_color(text):
+                        messagebox.showerror("入力エラー", f"{label} は #RRGGBB 形式の色を選択してください。", parent=dialog)
+                        return
+                    value = text
+                else:
+                    value = str(var.get()).strip()
+                set_nested_value(current_graph_style, path, value)
+
+            self._apply_group_toggle_states()
+            self._set_style_text_from_payload()
+            self._push_style_history(self._style_payload)
+            self._refresh_style_forms_from_payload()
+            self._render_preview(silent_json_error=True)
+
+        ttk.Button(buttons, text="適用", command=_apply).grid(row=0, column=1)
+
+    @staticmethod
+    def _is_hex_color(value: str) -> bool:
+        text = str(value).strip()
+        if len(text) not in (7, 9):
+            return False
+        if not text.startswith("#"):
+            return False
+        try:
+            int(text[1:], 16)
+            return True
+        except ValueError:
+            return False
+
+    def _apply_group_toggle_states(self) -> None:
+        """グループトグルに応じて編集可否を切り替える。"""
+
+        toggles: dict[str, bool] = {}
+        for control in self._style_graph_controls:
+            if not bool(control.get("is_group_toggle")):
+                continue
+            path = str(control.get("path", "")).strip()
+            toggles[path] = bool(control["var"].get())
+
+        for control in self._style_graph_controls:
+            group_path = str(control.get("group_toggle_path", "")).strip()
+            if not group_path:
+                continue
+            enabled = toggles.get(group_path, True)
+            widget = control.get("widget")
+            if widget is None:
+                continue
+            kind = str(control.get("kind", "str"))
+            if kind == "choice":
+                widget.configure(state="readonly" if enabled else "disabled")
+            elif kind == "button":
+                widget.configure(state="normal" if enabled else "disabled")
+            elif kind == "bool":
+                if enabled:
+                    widget.state(["!disabled"])
+                else:
+                    widget.state(["disabled"])
+            else:
+                widget.configure(state="normal" if enabled else "disabled")
+
     def _style_label_column_minsize(self, fields: list[dict[str, Any]]) -> int:
         """スタイルフォームのラベル列最小幅を返す。"""
 
@@ -961,18 +1400,115 @@ class HydrologyGraphsApp(tk.Toplevel):
             for child in self.graph_style_box.winfo_children():
                 child.destroy()
             fields = self._graph_style_fields_for(graph_style)
+            excluded: set[str] = set()
+            if self._is_hyetograph_style_key(graph_key):
+                excluded.update(
+                    {
+                        "grid.enabled",
+                        "bar.width",
+                        "bar_color",
+                        "series_color",
+                        "series_width",
+                        "series_style",
+                    }
+                )
+            fields = [field for field in fields if str(field.get("path")) not in excluded]
             label_col_minsize = self._style_label_column_minsize(fields)
-            self.graph_style_box.columnconfigure(0, minsize=label_col_minsize)
-            self.graph_style_box.columnconfigure(1, weight=1)
+            self.graph_style_box.columnconfigure(0, minsize=44)
+            self.graph_style_box.columnconfigure(1, minsize=label_col_minsize)
+            self.graph_style_box.columnconfigure(2, weight=1)
             display_mode_box = getattr(self, "display_mode_box", None)
             if display_mode_box is not None:
                 display_mode_box.columnconfigure(0, minsize=label_col_minsize)
             self._style_graph_controls = []
+            self._style_palette_rows = []
             self._style_field_tooltips = []
-            for row, field in enumerate(fields):
+            current_row = 0
+            field_by_path = {str(field.get("path", "")): field for field in fields}
+            for field in fields:
+                path = str(field.get("path", ""))
+                if (
+                    path == "threshold.label_enabled"
+                    and "threshold.label_offset" in field_by_path
+                ):
+                    # 基準線ラベルは「オフセット」行にチェックを統合して1行にする。
+                    continue
+                if path == "threshold.label_offset" and "threshold.label_enabled" in field_by_path:
+                    toggle_field = field_by_path["threshold.label_enabled"]
+                    controls, rows_used = self._create_compact_style_row(
+                        self.graph_style_box,
+                        row=current_row,
+                        row_label=str(field.get("label", "")),
+                        toggle={
+                            "path": "threshold.label_enabled",
+                            "tooltip": str(toggle_field.get("tooltip", "")).strip(),
+                        },
+                        values=[
+                            {
+                                "path": "threshold.label_offset",
+                                "label": "",
+                                "kind": str(field.get("kind", "float")),
+                                "tooltip": str(field.get("tooltip", "")).strip(),
+                            }
+                        ],
+                    )
+                    for control in controls:
+                        value = nested_value(graph_style, control["path"], None)
+                        self._set_control_var(control, value)
+                        tip = str(control.get("tooltip", "")).strip()
+                        if tip:
+                            label_widget = control.get("label_widget")
+                            widget = control.get("widget")
+                            if label_widget is not None:
+                                self._style_field_tooltips.append(ToolTip(label_widget, tip))
+                            if widget is not None:
+                                self._style_field_tooltips.append(ToolTip(widget, tip))
+                        self._style_graph_controls.append(control)
+                    current_row += rows_used
+                    continue
+                if (
+                    path == "x_axis.date_boundary_line_enabled"
+                    and "x_axis.date_boundary_line_offset_hours" in field_by_path
+                ):
+                    # 日付境界線は「オフセット」行にチェックを統合して1行にする。
+                    continue
+                if path == "x_axis.date_boundary_line_offset_hours" and "x_axis.date_boundary_line_enabled" in field_by_path:
+                    toggle_field = field_by_path["x_axis.date_boundary_line_enabled"]
+                    controls, rows_used = self._create_compact_style_row(
+                        self.graph_style_box,
+                        row=current_row,
+                        row_label=str(field.get("label", "")),
+                        toggle={
+                            "path": "x_axis.date_boundary_line_enabled",
+                            "tooltip": str(toggle_field.get("tooltip", "")).strip(),
+                        },
+                        values=[
+                            {
+                                "path": "x_axis.date_boundary_line_offset_hours",
+                                "label": "",
+                                "kind": str(field.get("kind", "float")),
+                                "tooltip": str(field.get("tooltip", "")).strip(),
+                            }
+                        ],
+                    )
+                    for control in controls:
+                        value = nested_value(graph_style, control["path"], None)
+                        self._set_control_var(control, value)
+                        tip = str(control.get("tooltip", "")).strip()
+                        if tip:
+                            label_widget = control.get("label_widget")
+                            widget = control.get("widget")
+                            if label_widget is not None:
+                                self._style_field_tooltips.append(ToolTip(label_widget, tip))
+                            if widget is not None:
+                                self._style_field_tooltips.append(ToolTip(widget, tip))
+                        self._style_graph_controls.append(control)
+                    current_row += rows_used
+                    continue
+
                 control = self._create_style_control(
                     self.graph_style_box,
-                    row=row,
+                    row=current_row,
                     field=field,
                 )
                 value = nested_value(graph_style, control["path"], None)
@@ -986,6 +1522,104 @@ class HydrologyGraphsApp(tk.Toplevel):
                     if widget is not None:
                         self._style_field_tooltips.append(ToolTip(widget, tip))
                 self._style_graph_controls.append(control)
+                current_row += 1
+
+            if self._is_hyetograph_style_key(graph_key):
+                compact_rows = [
+                    {
+                        "row_label": "累積雨量線",
+                        "toggle": {"path": "cumulative_line.enabled"},
+                        "palette_fields": [
+                            {"path": "cumulative_line.width", "label": "太さ", "kind": "float"},
+                            {
+                                "path": "cumulative_line.style",
+                                "label": "線種",
+                                "kind": "choice",
+                                "values": _LINE_STYLE_CHOICES,
+                            },
+                            {"path": "cumulative_line.color", "label": "色", "kind": "color"},
+                        ],
+                    },
+                    {
+                        "row_label": "欠測帯",
+                        "toggle": {"path": "missing_band.enabled"},
+                        "palette_fields": [
+                            {"path": "missing_band.alpha", "label": "濃さ", "kind": "float"},
+                            {"path": "missing_band.color", "label": "色", "kind": "color"},
+                        ],
+                    },
+                    {
+                        "row_label": "グリッド",
+                        "toggle": None,
+                        "values": [
+                            {"path": "grid.x_enabled", "label": "X(縦線)", "kind": "bool"},
+                            {"path": "grid.y_enabled", "label": "Y(横線)", "kind": "bool"},
+                        ],
+                    },
+                    {
+                        "row_label": "棒設定",
+                        "toggle": None,
+                        "palette_fields": [
+                            {"path": "bar_color", "label": "棒色", "kind": "color"},
+                            {"path": "bar.width", "label": "棒幅", "kind": "float"},
+                            {"path": "bar.edge_width", "label": "外枠太さ", "kind": "float"},
+                            {"path": "bar.edge_alpha", "label": "外枠濃さ", "kind": "float"},
+                        ],
+                    },
+                    {
+                        "row_label": "系列設定",
+                        "toggle": None,
+                        "palette_fields": [
+                            {"path": "series_color", "label": "色", "kind": "color"},
+                            {"path": "series_width", "label": "太さ", "kind": "float"},
+                            {"path": "series_style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES},
+                        ],
+                    },
+                    {
+                        "row_label": "Y軸(時間雨量)",
+                        "toggle": None,
+                        "values": [
+                            {"path": "y_axis.max", "label": "上限", "kind": "float"},
+                            {"path": "y_axis.tick_step", "label": "刻み", "kind": "float"},
+                        ],
+                    },
+                ]
+                for row_def in compact_rows:
+                    palette_fields = list(row_def.get("palette_fields") or [])
+                    if palette_fields:
+                        controls, rows_used = self._create_palette_style_row(
+                            self.graph_style_box,
+                            row=current_row,
+                            row_label=str(row_def["row_label"]),
+                            graph_style=graph_style,
+                            palette_fields=palette_fields,
+                            toggle=row_def.get("toggle"),
+                        )
+                    else:
+                        controls, rows_used = self._create_compact_style_row(
+                            self.graph_style_box,
+                            row=current_row,
+                            row_label=str(row_def["row_label"]),
+                            toggle=row_def.get("toggle"),
+                            values=list(row_def.get("values") or []),
+                            detail_values=list(row_def.get("detail_values") or []),
+                        )
+                    for control in controls:
+                        value = nested_value(graph_style, control["path"], None)
+                        self._set_control_var(control, value)
+                        tip = str(control.get("tooltip", "")).strip()
+                        if tip:
+                            label_widget = control.get("label_widget")
+                            widget = control.get("widget")
+                            if label_widget is not None:
+                                self._style_field_tooltips.append(ToolTip(label_widget, tip))
+                            if widget is not None:
+                                self._style_field_tooltips.append(ToolTip(widget, tip))
+                        self._style_graph_controls.append(control)
+                    current_row += rows_used
+            for row_meta in self._style_palette_rows:
+                row_meta["summary_var"].set(self._build_palette_summary(graph_style, list(row_meta.get("fields") or [])))
+            self._apply_group_toggle_states()
         finally:
             self._style_form_updating = False
 
@@ -1065,7 +1699,9 @@ class HydrologyGraphsApp(tk.Toplevel):
             self._style_payload = payload
         if not self._apply_style_form_values():
             return
+        self._apply_group_toggle_states()
         self._set_style_text_from_payload()
+        self._refresh_style_forms_from_payload()
         self._push_style_history(self._style_payload)
         self._render_preview(silent_json_error=True)
 
@@ -1079,6 +1715,9 @@ class HydrologyGraphsApp(tk.Toplevel):
             graph_style = {}
             graph_styles[graph_key] = graph_style
         for control in self._style_graph_controls:
+            path = str(control.get("path", "")).strip()
+            if not path or path.startswith("__palette__"):
+                continue
             current_value = nested_value(graph_style, control["path"], None)
             value, error = self._coerce_control_value(control, current_value)
             if error:

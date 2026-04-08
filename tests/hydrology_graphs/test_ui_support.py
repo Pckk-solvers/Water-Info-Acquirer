@@ -99,6 +99,24 @@ def test_build_preview_choices_filters_graphs_by_station_and_date():
     assert choices.graph_values == ["ハイドログラフ（流量） 3日"]
 
 
+def test_build_preview_choices_keeps_annual_graph_when_date_selected():
+    ok_targets = [
+        GraphTarget(source="jma", station_key="001", graph_type="hyetograph", base_date=date(2026, 1, 2), event_window_days=3),
+        GraphTarget(source="jma", station_key="001", graph_type="annual_max_rainfall", base_date=None, event_window_days=None),
+    ]
+    choices = build_preview_choices(
+        ok_targets=ok_targets,
+        catalog_stations=[("jma", "001", "観測所A")],
+        graph_key_to_display={
+            "hyetograph:3day": "ハイエトグラフ（雨量） 3日",
+            "annual_max_rainfall": "年最大雨量",
+        },
+        selected_station_pair=("jma", "001"),
+        selected_base_date="2026-01-02",
+    )
+    assert set(choices.graph_values) == {"ハイエトグラフ（雨量） 3日", "年最大雨量"}
+
+
 def test_format_station_display_text_includes_metric_labels():
     text = format_station_display_text(
         source="water_info",

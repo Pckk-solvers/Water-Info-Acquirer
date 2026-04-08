@@ -127,7 +127,11 @@ def build_preview_choices(
     date_values = sorted({t.base_date.isoformat() for t in station_scoped_targets if t.base_date is not None})
     graph_targets = station_scoped_targets
     if selected_base_date:
-        graph_targets = [t for t in graph_targets if t.base_date is not None and t.base_date.isoformat() == selected_base_date]
+        graph_targets = [
+            t
+            for t in graph_targets
+            if t.base_date is None or t.base_date.isoformat() == selected_base_date
+        ]
     graph_keys = sorted(
         {
             t.graph_type if t.event_window_days is None else f"{t.graph_type}:{t.event_window_days}day"

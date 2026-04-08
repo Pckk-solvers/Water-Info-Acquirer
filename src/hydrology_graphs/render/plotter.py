@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from io import BytesIO
+import math
 from typing import Any, cast
 import warnings
 
@@ -32,6 +33,7 @@ from ..domain.logic import annual_max_by_year
 from ..domain.models import ThresholdRecord
 
 _LINESTYLE_MAP = {"solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-."}
+_FIXED_BACKGROUND_COLOR = "#FFFFFF"
 
 warnings.filterwarnings(
     "ignore",
@@ -66,18 +68,28 @@ def render_graph_png(
     figure_width = float(graph_style.get("figure_width", 12))
     figure_height = float(graph_style.get("figure_height", 6))
     dpi = int(graph_style.get("dpi", 120))
+    if graph_type == GRAPH_HYETOGRAPH:
+        return _render_hyetograph_png(
+            station_name=station_name,
+            df=df,
+            graph_style=graph_style,
+            thresholds=thresholds,
+            time_display_mode=time_display_mode,
+            figure_width=figure_width,
+            figure_height=figure_height,
+            dpi=dpi,
+        )
+
     fig, ax = plt.subplots(
         figsize=(figure_width, figure_height),
         dpi=dpi,
     )
-    fig.patch.set_facecolor(graph_style.get("background_color", "#FFFFFF"))
-    ax.set_facecolor(graph_style.get("background_color", "#FFFFFF"))
-    _apply_common_axes_style(ax, graph_style)
+    fig.patch.set_facecolor(_FIXED_BACKGROUND_COLOR)
+    ax.set_facecolor(_FIXED_BACKGROUND_COLOR)
+    _apply_common_axes_style(ax, graph_style, graph_type=graph_type)
 
     # グラフ種別ごとに描画方法を切り替える。イベント系は折れ線/棒、年最大系は年次棒。
-    if graph_type == GRAPH_HYETOGRAPH:
-        _plot_hyetograph(ax, df, graph_style)
-    elif graph_type in (GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL):
+    if graph_type in (GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL):
         _plot_hydro(ax, df, graph_style)
     elif graph_type in (GRAPH_ANNUAL_RAINFALL, GRAPH_ANNUAL_DISCHARGE, GRAPH_ANNUAL_WATER_LEVEL):
         _plot_annual(ax, df, graph_style)
@@ -123,44 +135,238 @@ def render_graph_png(
     return buf.getvalue()
 
 
-def _apply_common_axes_style(ax, graph_style: dict[str, Any]) -> None:
+def _render_hyetograph_png(
+    *,
+    station_name: str,
+    df: pd.DataFrame,
+    graph_style: dict[str, Any],
+    thresholds: list[ThresholdRecord],
+    time_display_mode: str,
+    figure_width: float,
+    figure_height: float,
+    dpi: int,
+) -> bytes:
+    """ハイエトグラフ専用の単一プロット+右軸描画。"""
+
+    fig, ax_rain = plt.subplots(
+        figsize=(figure_width, figure_height),
+        dpi=dpi,
+    )
+    fig.patch.set_facecolor(_FIXED_BACKGROUND_COLOR)
+    ax_rain.set_facecolor(_FIXED_BACKGROUND_COLOR)
+    _apply_common_axes_style(ax_rain, graph_style, graph_type=GRAPH_HYETOGRAPH, allow_invert=True)
+
+    full_time, bar_values, missing_mask = _prepare_hyetograph_data(df)
+    bar_cfg = graph_style.get("bar", {})
+    width_hours = float(graph_style.get("x_axis", {}).get("tick_interval_hours", 1))
+    width = float(bar_cfg.get("width", 0.8)) / max(width_hours, 1.0)
+    ax_rain.bar(
+        full_time,
+        bar_values,
+        width=width,
+        color=graph_style.get("bar_color", "#60A5FA"),
+        edgecolor=(0.0, 0.0, 0.0, float(bar_cfg.get("edge_alpha", 1.0))),
+        linewidth=float(bar_cfg.get("edge_width", 0.0)),
+        label="時間雨量",
+        zorder=float(graph_style.get("series", {}).get("zorder", 2)),
+    )
+    _plot_missing_bands(ax_rain, full_time, missing_mask, graph_style)
+
+    _plot_thresholds(ax_rain, thresholds, graph_style)
+    _plot_date_boundaries(ax_rain, df, graph_style, graph_type=GRAPH_HYETOGRAPH)
+    ax_cum = ax_rain.twinx()
+    ax_cum.set_facecolor((1, 1, 1, 0))
+    ax_cum.grid(False)
+
+    cumulative_cfg = graph_style.get("cumulative_line", {})
+    if bool(cumulative_cfg.get("enabled", False)):
+        cumulative = bar_values.cumsum().where(~missing_mask)
+        ax_cum.plot(
+            full_time,
+            cumulative,
+            color=str(cumulative_cfg.get("color", graph_style.get("secondary_series_color", "#1E3A8A"))),
+            linewidth=float(cumulative_cfg.get("width", 1.6)),
+            linestyle=_line_style(str(cumulative_cfg.get("style", "solid"))),
+            label="累積雨量",
+            zorder=float(graph_style.get("series", {}).get("zorder", 2)) + 0.2,
+        )
+        peak = float(pd.to_numeric(cumulative, errors="coerce").max(skipna=True) or 0.0)
+    else:
+        peak = 0.0
+
+    _apply_axis_details(
+        ax_rain,
+        graph_style,
+        time_display_mode=time_display_mode,
+        fixed_y_min=0.0,
+        y_axis_override=graph_style.get("y_axis", {}),
+        apply_x_axis=True,
+    )
+    y2_axis = graph_style.get("y2_axis", {})
+    y2_max = y2_axis.get("max")
+    if y2_max is None:
+        tick_step = y2_axis.get("tick_step")
+        if tick_step is not None:
+            step = max(float(tick_step), 1e-6)
+            upper = (math.ceil(peak / step) * step) if peak > 0 else step * 5
+        else:
+            upper = _nice_upper_bound(peak)
+    else:
+        upper = float(y2_max)
+        if peak > upper:
+            upper = _nice_upper_bound(peak)
+    ax_cum.set_ylim(bottom=0.0, top=max(upper, 1.0))
+    _sync_secondary_ticks_from_primary(ax_rain, ax_cum)
+    _apply_y_axis_number_format(ax_cum, graph_style.get("y_axis", {}).get("number_format", "plain"))
+
+    _apply_title_axis_labels(ax_rain, graph_style, station_name)
+    y2_label = _coerce_text(graph_style.get("y2_axis", {}).get("label", "累積雨量"))
+    ax_cum.set_ylabel(y2_label)
+    if graph_style.get("invert_y_axis"):
+        # 軸範囲調整後に反転を再適用し、棒・累積線の両方へ確実に反映する。
+        ax_rain.invert_yaxis()
+        ax_cum.invert_yaxis()
+        ax_rain.xaxis.tick_top()
+
+    legend_cfg = graph_style.get("legend", {})
+    if legend_cfg.get("enabled", True):
+        loc = str(legend_cfg.get("position", "upper right"))
+        anchor = legend_cfg.get("fixed_anchor")
+        handles_r, labels_r = ax_rain.get_legend_handles_labels()
+        handles_c, labels_c = ax_cum.get_legend_handles_labels()
+        handles = handles_r + handles_c
+        labels = labels_r + labels_c
+        filtered = [(h, label) for h, label in zip(handles, labels, strict=False) if _legend_label_visible(label)]
+        handles = [h for h, _ in filtered]
+        labels = [label for _, label in filtered]
+        if isinstance(anchor, dict) and "x" in anchor and "y" in anchor:
+            if handles:
+                ax_rain.legend(handles, labels, loc=loc, bbox_to_anchor=(float(anchor["x"]), float(anchor["y"])))
+        elif handles:
+            ax_rain.legend(handles, labels, loc=loc)
+
+    margin = graph_style.get("margin", {})
+    fig.subplots_adjust(
+        left=float(margin.get("left", 0.08)),
+        right=1.0 - float(margin.get("right", 0.04)),
+        top=1.0 - float(margin.get("top", 0.08)),
+        bottom=float(margin.get("bottom", 0.12)),
+    )
+
+    buf = BytesIO()
+    fig.savefig(
+        buf,
+        format="png",
+        transparent=bool(graph_style.get("export", {}).get("transparent_background", False)),
+    )
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _nice_upper_bound(value: float) -> float:
+    """値を見やすい上限へ丸める。"""
+
+    if value <= 0:
+        return 10.0
+    scale = 1.0
+    while value / scale > 10:
+        scale *= 10
+    for factor in (1.0, 2.0, 5.0, 10.0):
+        candidate = factor * scale
+        if value <= candidate:
+            return candidate
+    return 10.0 * scale
+
+
+def _sync_secondary_ticks_from_primary(primary_ax, secondary_ax) -> None:
+    """右軸目盛を左軸目盛に連動させる。"""
+
+    left_min, left_max = primary_ax.get_ylim()
+    right_min, right_max = secondary_ax.get_ylim()
+    if left_max <= left_min or right_max <= right_min:
+        return
+    left_ticks_all = primary_ax.get_yticks()
+    left_ticks = [tick for tick in left_ticks_all if left_min <= tick <= left_max]
+    if not left_ticks:
+        return
+    mapped_ticks = [
+        right_min + ((tick - left_min) / (left_max - left_min)) * (right_max - right_min)
+        for tick in left_ticks
+    ]
+    secondary_ax.set_yticks(mapped_ticks)
+
+
+def _apply_common_axes_style(
+    ax,
+    graph_style: dict[str, Any],
+    *,
+    graph_type: str,
+    allow_invert: bool = True,
+) -> None:
     """全グラフ共通の軸スタイルを当てる。"""
 
     font = graph_style.get("font", {})
     tick_size = float(font.get("tick_size", graph_style.get("font_size", 11)))
     ax.tick_params(labelsize=tick_size)
     grid = graph_style.get("grid", {})
-    if grid.get("enabled", True):
+    x_grid_enabled = bool(grid.get("x_enabled", grid.get("enabled", True)))
+    y_grid_enabled = bool(grid.get("y_enabled", grid.get("enabled", True)))
+    if graph_type == GRAPH_HYETOGRAPH:
+        if y_grid_enabled:
+            ax.grid(
+                True,
+                axis="y",
+                linestyle=str(grid.get("style", "--")),
+                color=str(grid.get("color", "#CBD5E1")),
+                alpha=float(grid.get("alpha", 0.7)),
+            )
+        else:
+            ax.grid(False, axis="y")
+        if x_grid_enabled:
+            ax.grid(
+                True,
+                axis="x",
+                linestyle=str(grid.get("style", "--")),
+                color=str(grid.get("color", "#CBD5E1")),
+                alpha=float(grid.get("alpha", 0.7)),
+            )
+        else:
+            ax.grid(False, axis="x")
+    elif grid.get("enabled", True):
         ax.grid(
             True,
             linestyle=str(grid.get("style", "--")),
             color=str(grid.get("color", "#CBD5E1")),
             alpha=float(grid.get("alpha", 0.7)),
         )
-    if graph_style.get("invert_y_axis"):
+    if allow_invert and graph_style.get("invert_y_axis"):
         ax.invert_yaxis()
         ax.xaxis.tick_top()
 
 
-def _plot_hyetograph(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
-    """ハイエトグラフを描く。"""
+def _prepare_hyetograph_data(df: pd.DataFrame) -> tuple[pd.DatetimeIndex, pd.Series, pd.Series]:
+    """ハイエト描画用の時系列（全時刻・値・欠測マスク）を作る。"""
 
+    if df.empty:
+        return pd.DatetimeIndex([]), pd.Series(dtype="float64"), pd.Series(dtype="bool")
     time_col = _time_column_for_plot(df)
     data = df.sort_values(time_col).copy()
     data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
-    numeric_values = cast(pd.Series, pd.to_numeric(data["value"], errors="coerce"))
-    data["value"] = numeric_values.fillna(0.0)
-    bar_cfg = graph_style.get("bar", {})
-    width_hours = float(graph_style.get("x_axis", {}).get("tick_interval_hours", 1))
-    width = float(bar_cfg.get("width", 0.8)) / max(width_hours, 1.0)
-    ax.bar(
-        data[time_col],
-        data["value"],
-        width=width,
-        color=graph_style.get("bar_color", "#60A5FA"),
-        label="時間雨量",
-        zorder=float(graph_style.get("series", {}).get("zorder", 2)),
-    )
+    data = data.dropna(subset=[time_col]).reset_index(drop=True)
+    if data.empty:
+        return pd.DatetimeIndex([]), pd.Series(dtype="float64"), pd.Series(dtype="bool")
+    full_time = pd.date_range(start=data[time_col].min(), end=data[time_col].max(), freq="1h")
+    value_series = cast(pd.Series, pd.to_numeric(data["value"], errors="coerce"))
+    indexed_values = pd.Series(value_series.values, index=data[time_col]).groupby(level=0).last()
+    values = indexed_values.reindex(full_time)
+    quality_missing = pd.Series(False, index=full_time)
+    if "quality" in data.columns:
+        q_series = data.set_index(time_col)["quality"]
+        q_missing = q_series.eq("missing")
+        quality_missing = q_missing.groupby(level=0).last().reindex(full_time).fillna(False).astype(bool)
+    missing_mask = values.isna() | quality_missing
+    bar_values = values.fillna(0.0)
+    return full_time, bar_values, missing_mask
 
 
 def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
@@ -286,30 +492,40 @@ def _apply_title_axis_labels(ax, graph_style: dict[str, Any], station_name: str)
         ax.set_ylabel(y_label)
 
 
-def _apply_axis_details(ax, graph_style: dict[str, Any], *, time_display_mode: str = "datetime") -> None:
+def _apply_axis_details(
+    ax,
+    graph_style: dict[str, Any],
+    *,
+    time_display_mode: str = "datetime",
+    fixed_y_min: float | None = None,
+    y_axis_override: dict[str, Any] | None = None,
+    apply_x_axis: bool = True,
+) -> None:
     """日時目盛りや数値フォーマットなどの細部を調整する。"""
 
     x_axis = graph_style.get("x_axis", {})
-    y_axis = graph_style.get("y_axis", {})
-    if x_axis.get("tick_interval_hours"):
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(float(x_axis["tick_interval_hours"])))))
-    if _is_24h_time_display_mode(time_display_mode):
-        ax.xaxis.set_major_formatter(mticker.FuncFormatter(_format_24h_tick))
-    elif x_axis.get("date_format"):
-        ax.xaxis.set_major_formatter(mdates.DateFormatter(str(x_axis["date_format"])))
-    rotation = float(x_axis.get("tick_rotation", 0))
-    align = str(x_axis.get("label_align", "center"))
-    for tick in ax.get_xticklabels():
-        tick.set_rotation(rotation)
-        tick.set_horizontalalignment(align)
-    try:
-        x_margin_rate = float(x_axis.get("range_margin_rate", 0))
-    except Exception:  # noqa: BLE001
-        x_margin_rate = 0.0
-    if x_margin_rate >= 0:
-        ax.margins(x=x_margin_rate)
+    y_axis = y_axis_override if isinstance(y_axis_override, dict) else graph_style.get("y_axis", {})
+    if apply_x_axis:
+        if x_axis.get("tick_interval_hours"):
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(float(x_axis["tick_interval_hours"]))))
+            )
+        if _is_24h_time_display_mode(time_display_mode):
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(_format_24h_tick))
+        elif x_axis.get("date_format"):
+            ax.xaxis.set_major_formatter(mdates.DateFormatter(str(x_axis["date_format"])))
+        rotation = float(x_axis.get("tick_rotation", 0))
+        align = str(x_axis.get("label_align", "center"))
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(rotation)
+            tick.set_horizontalalignment(align)
+        try:
+            x_margin_rate = float(x_axis.get("range_margin_rate", 0))
+        except Exception:  # noqa: BLE001
+            x_margin_rate = 0.0
+        if x_margin_rate >= 0:
+            ax.margins(x=x_margin_rate)
 
-    y_min = y_axis.get("min")
+    y_min = fixed_y_min if fixed_y_min is not None else y_axis.get("min")
     y_max = y_axis.get("max")
     if y_min is not None or y_max is not None:
         ax.set_ylim(bottom=y_min, top=y_max)
@@ -319,15 +535,58 @@ def _apply_axis_details(ax, graph_style: dict[str, Any], *, time_display_mode: s
         tick_step = float(tick_step)
         low, high = ax.get_ylim()
         if tick_step > 0 and high > low:
+            eps = max(abs(low), abs(high), 1.0) * 1e-9
             ticks: list[float] = []
             value = low
-            while value <= high + tick_step:
+            while value <= high + eps:
                 ticks.append(value)
                 value += tick_step
+            if ticks and abs(ticks[-1] - high) <= eps * 10:
+                ticks[-1] = high
             ax.set_yticks(ticks)
 
-    if y_axis.get("number_format") == "comma":
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _pos: f"{int(x):,}"))
+    _apply_y_axis_number_format(ax, y_axis.get("number_format", "plain"))
+
+
+def _apply_y_axis_number_format(ax, number_format: object) -> None:
+    """Y軸値形式を適用する。"""
+
+    fmt = _coerce_text(number_format).lower() or "plain"
+    if fmt == "comma":
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _pos: f"{int(round(x)):,}"))
+        return
+    if fmt == "percent":
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _pos: f"{x:g}%"))
+        return
+    scalar = mticker.ScalarFormatter(useOffset=False)
+    scalar.set_scientific(False)
+    ax.yaxis.set_major_formatter(scalar)
+
+
+def _plot_missing_bands(ax, x_values: pd.DatetimeIndex, missing_mask: pd.Series, graph_style: dict[str, Any]) -> None:
+    """欠測区間をグレー帯で重ねる。"""
+
+    cfg = graph_style.get("missing_band", {})
+    if not bool(cfg.get("enabled", False)):
+        return
+    if x_values.empty:
+        return
+    width_hours = float(graph_style.get("x_axis", {}).get("tick_interval_hours", 1))
+    half = pd.Timedelta(hours=max(width_hours, 1.0) / 2.0)
+    band_color = str(cfg.get("color", "#9CA3AF"))
+    band_alpha = float(cfg.get("alpha", 0.28))
+    mask = missing_mask.fillna(False).astype(bool)
+    start = None
+    for i, is_missing in enumerate(mask.tolist()):
+        if is_missing and start is None:
+            start = x_values[i]
+        if (not is_missing) and start is not None:
+            end = x_values[i - 1]
+            ax.axvspan(start - half, end + half, color=band_color, alpha=band_alpha, zorder=1.4)
+            start = None
+    if start is not None:
+        end = x_values[-1]
+        ax.axvspan(start - half, end + half, color=band_color, alpha=band_alpha, zorder=1.4)
 
 
 def _line_style(name: str | None) -> str:

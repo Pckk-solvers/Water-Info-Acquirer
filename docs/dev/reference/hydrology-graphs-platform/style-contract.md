@@ -32,7 +32,6 @@ Schema Version: 2.0
 
 - `figure_width`, `figure_height`, `dpi`
 - `font_family`, `font_size`
-- `background_color`
 - `margin`, `legend`, `grid`, `font`, `export`
 - `series_color`, `series_width`, `series_style`
 - `axis.x_label`, `axis.y_label`
@@ -40,6 +39,7 @@ Schema Version: 2.0
   - `x_axis.range_margin_rate` を指定した場合は X軸データ範囲の余白率として扱う（例: `0.05` で両端5%）
   - `x_axis.date_boundary_line_enabled` を指定した場合は日付境界線表示のON/OFFとして扱う
   - `x_axis.date_boundary_line_offset_hours` を指定した場合は日付境界線の位置オフセット（時間）として扱う
+  - `y_axis.number_format` は `plain|comma|percent` を受け付ける（ハイエトグラフでは左右Y軸に同一適用）
 
 ## 4. 値制約（要点）
 
@@ -53,6 +53,7 @@ Schema Version: 2.0
 - `x_axis.date_boundary_line_enabled` 未指定時は `false` を既定として扱う
 - `x_axis.date_boundary_line_offset_hours` は number のみ許可
 - `x_axis.date_boundary_line_offset_hours` 未指定時は `0.0` を既定として扱う
+- 背景色は固定（白）で、スタイル項目としては扱わない
 
 ## 5. 備考
 
