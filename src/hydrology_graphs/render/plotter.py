@@ -86,6 +86,7 @@ def render_graph_png(
 
     # 基準線は最後に重ねることで、主系列の見た目を邪魔しにくくする。
     _plot_thresholds(ax, thresholds, graph_style)
+    _plot_date_boundaries(ax, df, graph_style, graph_type=graph_type)
     _apply_title_axis_labels(ax, graph_style, station_name)
     _apply_axis_details(ax, graph_style, time_display_mode=time_display_mode)
 
@@ -234,6 +235,39 @@ def _plot_thresholds(ax, thresholds: list[ThresholdRecord], graph_style: dict[st
             )
 
 
+def _plot_date_boundaries(ax, df: pd.DataFrame, graph_style: dict[str, Any], *, graph_type: str) -> None:
+    """日付境界線を描画する。"""
+
+    if graph_type not in {GRAPH_HYETOGRAPH, GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL}:
+        return
+    x_axis = graph_style.get("x_axis", {})
+    if not bool(x_axis.get("date_boundary_line_enabled", False)):
+        return
+    try:
+        offset_hours = float(x_axis.get("date_boundary_line_offset_hours", 0.0))
+    except Exception:  # noqa: BLE001
+        offset_hours = 0.0
+    time_col = _time_column_for_plot(df)
+    observed = pd.to_datetime(df[time_col], errors="coerce").dropna()
+    if observed.empty:
+        return
+    start = observed.min().floor("D")
+    end = observed.max().ceil("D")
+    boundaries = pd.date_range(start=start, end=end, freq="D")
+    offset = pd.Timedelta(hours=offset_hours)
+    for ts in boundaries:
+        boundary = ts + offset
+        if observed.min() < boundary < observed.max():
+            ax.axvline(
+                boundary,
+                color="#94A3B8",
+                linestyle=":",
+                linewidth=0.9,
+                alpha=0.9,
+                zorder=1.5,
+            )
+
+
 def _apply_title_axis_labels(ax, graph_style: dict[str, Any], station_name: str) -> None:
     """タイトルと軸ラベルを反映する。"""
 
@@ -268,6 +302,12 @@ def _apply_axis_details(ax, graph_style: dict[str, Any], *, time_display_mode: s
     for tick in ax.get_xticklabels():
         tick.set_rotation(rotation)
         tick.set_horizontalalignment(align)
+    try:
+        x_margin_rate = float(x_axis.get("range_margin_rate", 0))
+    except Exception:  # noqa: BLE001
+        x_margin_rate = 0.0
+    if x_margin_rate >= 0:
+        ax.margins(x=x_margin_rate)
 
     y_min = y_axis.get("min")
     y_max = y_axis.get("max")

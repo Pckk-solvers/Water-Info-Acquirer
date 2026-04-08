@@ -46,7 +46,7 @@ from .preview_canvas import (
     show_preview_placeholder,
 )
 from .preview_actions import export_preview_sample, render_preview
-from .style_payload import nested_value, set_nested_value
+from .style_payload import delete_nested_value, nested_value, set_nested_value
 from .tabs_execute import build_execute_tab
 from .tabs_style import build_style_tab
 from .view_models import format_station_display_text
@@ -119,6 +119,24 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
         "tooltip": "折れ線の線種です。",
     },
     {"path": "x_axis.tick_rotation", "label": "X軸角度", "kind": "float"},
+    {
+        "path": "x_axis.range_margin_rate",
+        "label": "X軸範囲マージン率",
+        "kind": "float",
+        "tooltip": "X軸データ範囲の両端に付ける余白率。0で余白なし、0.05で両端5%。",
+    },
+    {
+        "path": "x_axis.date_boundary_line_enabled",
+        "label": "日付境界線表示",
+        "kind": "bool",
+        "tooltip": "このグラフで日付境界線を表示します。境界位置は個別設定のオフセットで調整します。",
+    },
+    {
+        "path": "x_axis.date_boundary_line_offset_hours",
+        "label": "日付境界線オフセット(時間)",
+        "kind": "float",
+        "tooltip": "日付境界 00:00 からの移動量（時間）。正値で右、負値で左に移動します。個別設定です。",
+    },
     {"path": "y_axis.tick_count", "label": "Y軸目盛数", "kind": "int", "tooltip": "Y軸の目盛り分割数の目安です。"},
     {
         "path": "y_axis.number_format",
@@ -127,6 +145,8 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
         "values": ("plain", "comma", "percent"),
     },
 )
+
+_STYLE_EMPTY_NUMERIC = object()
 
 
 class HydrologyGraphsApp(tk.Toplevel):
@@ -1064,6 +1084,9 @@ class HydrologyGraphsApp(tk.Toplevel):
             if error:
                 self.preview_message.set(error)
                 return False
+            if value is _STYLE_EMPTY_NUMERIC:
+                delete_nested_value(graph_style, control["path"])
+                continue
             set_nested_value(graph_style, control["path"], value)
         time_display_mode = str(self.time_display_mode.get()).strip() or "datetime"
         if time_display_mode not in VALID_TIME_DISPLAY_MODES:
@@ -1083,6 +1106,8 @@ class HydrologyGraphsApp(tk.Toplevel):
         if kind == "str" or kind == "choice":
             return text, None
         if text == "":
+            if kind in {"int", "float"}:
+                return _STYLE_EMPTY_NUMERIC, None
             return current_value, None
         if kind == "int":
             try:

@@ -16,7 +16,6 @@ from hydrology_graphs.ui.view_models import (
 )
 
 _EVENT_GRAPH_TYPES = {"hyetograph", "hydrograph_discharge", "hydrograph_water_level"}
-_TIME_DISPLAY_MODE_24H = {"24h", "24時", "24時表記", "1時~24時", "1時〜24時"}
 
 
 def run_precheck(app) -> None:
@@ -236,7 +235,7 @@ def start_batch_run(app) -> None:
 
 
 def _uses_terminal_padding(time_display_mode: str) -> bool:
-    return str(time_display_mode).strip().lower() in _TIME_DISPLAY_MODE_24H
+    return True
 
 
 def add_base_date_from_candidate(app) -> None:

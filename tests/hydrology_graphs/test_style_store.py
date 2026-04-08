@@ -76,3 +76,46 @@ def test_save_style_writes_schema_2_0(tmp_path):
     assert saved["schema_version"] == "2.0"
     assert "common" not in saved
     assert "variants" not in saved
+
+
+def test_load_style_rejects_negative_x_axis_range_margin_rate():
+    payload = default_style()
+    payload["graph_styles"]["hyetograph:3day"].setdefault("x_axis", {})["range_margin_rate"] = -0.01
+
+    result = load_style(payload=payload)
+
+    assert not result.is_valid
+    assert "error:hyetograph:3day_x_axis_range_margin_rate_must_be_non_negative" in result.warnings
+
+
+def test_load_style_rejects_invalid_series_style_by_schema():
+    payload = default_style()
+    payload["graph_styles"]["hyetograph:3day"]["series_style"] = "invalid-style"
+
+    result = load_style(payload=payload)
+
+    assert not result.is_valid
+    assert "error:hyetograph:3day_series_style_invalid" in result.warnings
+
+
+def test_load_style_backfills_null_optional_x_axis_margin_rate():
+    payload = default_style()
+    payload["graph_styles"]["annual_max_rainfall"].setdefault("x_axis", {})["range_margin_rate"] = None
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    assert result.style["graph_styles"]["annual_max_rainfall"]["x_axis"]["range_margin_rate"] == 0
+
+
+def test_load_style_backfills_date_boundary_line_defaults():
+    payload = default_style()
+    payload["graph_styles"]["hyetograph:3day"]["x_axis"].pop("date_boundary_line_enabled", None)
+    payload["graph_styles"]["hyetograph:3day"]["x_axis"].pop("date_boundary_line_offset_hours", None)
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    x_axis = result.style["graph_styles"]["hyetograph:3day"]["x_axis"]
+    assert x_axis["date_boundary_line_enabled"] is False
+    assert x_axis["date_boundary_line_offset_hours"] == 0.0

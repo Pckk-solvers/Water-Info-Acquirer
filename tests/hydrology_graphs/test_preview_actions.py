@@ -68,7 +68,7 @@ def test_build_preview_input_reads_time_display_mode_from_payload():
     assert preview_input.event_window_terminal_padding is True
 
 
-def test_build_preview_input_disables_terminal_padding_for_datetime_mode():
+def test_build_preview_input_enables_terminal_padding_for_datetime_mode():
     app = type("DummyApp", (), {})()
     app._style_payload = {
         "display": {"time_display_mode": "datetime"},
@@ -101,7 +101,7 @@ def test_build_preview_input_disables_terminal_padding_for_datetime_mode():
     assert threshold_file is None
     assert preview_input is not None
     assert preview_input.time_display_mode == "datetime"
-    assert preview_input.event_window_terminal_padding is False
+    assert preview_input.event_window_terminal_padding is True
 
 
 def test_build_preview_input_rejects_mismatched_precheck_target():

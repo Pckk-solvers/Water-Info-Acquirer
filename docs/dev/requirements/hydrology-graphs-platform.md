@@ -68,15 +68,20 @@
   - 9種（イベント3種×3日/5日 + 年最大3種）を切替
 - 共通設定:
   - `24時表記` / `datetime表記` を切替できる
+  - `x_axis.range_margin_rate` で X軸データ範囲マージン率を設定できる（既定 `0`）
   - 共通設定はスタイル調整タブの左側、`スタイル編集対象` の直下に配置する
   - 表示モードは `style JSON` に保存し、読み込み時に復元する
-  - 選択した表示モードに応じて、プレビューおよびサンプル出力の時刻表示とデータ範囲を切り替える
+  - 選択した表示モードに応じて、プレビューおよびサンプル出力の時刻表示を切り替える
   - `datetime` 表記は通常の `00:00` 境界を使う
-  - `24時表記` は翌日 `24` が自然に見えるように、表示データ範囲も 1 時間ぶんずらして扱う
+  - イベント系の表示データ範囲は、`datetime` / `24時表記` に関わらず終端+1時間余白を常時適用する
   - 表示モードは Parquet の保存契約を変えず、画面表示・描画の見え方だけを切り替える
   - 表示モードの選択は style JSON の `display.time_display_mode` を正とする
 - 編集手段:
   - フォーム編集 + JSON直接編集（相互同期）
+  - フォーム編集項目に `X軸範囲マージン率` を含める（`x_axis.range_margin_rate`）
+  - フォーム編集項目に `日付境界線表示` を含める（`graph_styles.<key>.x_axis.date_boundary_line_enabled`）
+  - フォーム編集項目に `日付境界線オフセット(時間)` を含める（`graph_styles.<key>.x_axis.date_boundary_line_offset_hours`）
+  - `日付境界線表示` / `日付境界線オフセット(時間)` のツールチップで、どちらも個別設定であることを案内する
   - `反映` または Enter でフォーム値をスタイルへ適用
   - Undo/Redo（`Ctrl+Z`, `Ctrl+Y`, `Ctrl+Shift+Z`）
 - プレビュー:
@@ -98,9 +103,21 @@
   - `water_info` / `jma` の hourly データは datetime 正規化済みを前提とする
   - 対象窓（3日/5日）で欠損なし。24時相当を含む出力に対応するため、終端+1時間分を常時追加で確認する（`value` 欠損、`quality=missing` はNG）
 - 表示モード:
-  - `24時表記` と `datetime表記` は表示モードだが、precheck / preview / batch で切り出す範囲も mode に合わせて変える
+  - `24時表記` と `datetime表記` は表示モードで、時刻ラベル表示のみ切り替える
   - `24時表記` の X 軸ラベルは時分ではなく時だけを表示する
   - style JSON の `display.time_display_mode` が保存値の正本で、未指定なら `datetime` を既定とする
+- 日付境界線:
+  - style JSON の `graph_styles.<key>.x_axis.date_boundary_line_enabled` を正本とする
+  - 未指定時は `false` を既定として扱う
+  - オフセットは style JSON の `graph_styles.<key>.x_axis.date_boundary_line_offset_hours` を正本とする
+  - 未指定時の既定値は `0.0` とする
+  - `date_boundary_line_enabled=true` の場合、対象グラフに日付境界線を描画する
+  - 境界線の基準位置は `datetime` の日付境界 `00:00` とする
+  - 実際の描画位置は `00:00 + graph_styles.<key>.x_axis.date_boundary_line_offset_hours` で決める
+- X軸範囲マージン率:
+  - style JSON の `graph_styles.<key>.x_axis.range_margin_rate` を正本とする
+  - 未指定時は `0` を既定として扱う
+  - 値は `0` 以上の数値のみ許可する
 - 年最大系:
   - `metric` 一致データから年最大を算出
   - 年最大系列が10年以上必須
@@ -112,6 +129,8 @@
 - ルート必須: `graph_styles`
 - ルート禁止: `common`, `variants`
 - `graph_styles` は必須9キー固定
+- スタイルJSONの正本スキーマは `src/hydrology_graphs/io/schemas/style_schema_2_0.json` とする
+- style 読込/保存時は正本スキーマで検証し、互換正規化（例: `display.time_display_mode`）を適用する
 
 詳細は [style-contract.md](../reference/hydrology-graphs-platform/style-contract.md) を参照。
 
@@ -128,6 +147,7 @@
 ## 8. 参照資料
 
 - [style-contract.md](../reference/hydrology-graphs-platform/style-contract.md)
+- [style-json-schema-design.md](../reference/hydrology-graphs-platform/style-json-schema-design.md)
 - [parquet-contract.md](../reference/hydrology-graphs-platform/parquet-contract.md)
 - [threshold-contract.md](../reference/hydrology-graphs-platform/threshold-contract.md)
 

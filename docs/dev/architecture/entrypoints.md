@@ -5,14 +5,15 @@
 
 - リポジトリ直下の `main.py` は、アプリ本体ではなくランチャー起動用の薄いラッパー。
 - `--dev` がある場合は `developer_mode=True` をランチャーへ渡す。
+- `--app <key>` または位置引数 `<key>` がある場合は、指定アプリをランチャー画面なしで直接起動する。
 - 実際の処理本体は `src/water_info_acquirer/launcher.py` にある。
 
 起動の流れ:
 
-1. `main.py` が `argparse` で `--dev` を読む
-2. `src.water_info_acquirer.launcher.main(developer_mode=...)` を呼ぶ
-3. ランチャーが Tk root を作る
-4. アプリカードから各アプリを選択する
+1. `main.py` が `argparse` で `--dev` / `--app` / 位置引数を読む
+2. `src.water_info_acquirer.launcher.main(developer_mode=..., launch_target=...)` を呼ぶ
+3. `launch_target` が指定されていれば、ランチャー画面を出さず直接対象アプリを開く
+4. 指定がなければ従来どおりランチャーを表示し、アプリカードから選択する
 
 ## 2. ランチャー本体
 
@@ -30,6 +31,10 @@
   - 雨量整理・抽出の直接起動入口。
 - `python main.py`
   - アプリ選択ランチャー起動入口。
+- `python main.py --app hydrology_graphs`
+  - 指定アプリの直接起動入口。
+- `python main.py hydrology_graphs`
+  - 指定アプリの直接起動入口（位置引数）。
 
 ## 4. 実態として欠けていないもの
 

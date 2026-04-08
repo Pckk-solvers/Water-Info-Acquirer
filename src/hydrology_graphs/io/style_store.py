@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Any
+
+from jsonschema import Draft202012Validator
 
 from ..domain.constants import EVENT_GRAPH_TYPES, GRAPH_TYPES
 
@@ -17,6 +22,8 @@ ANNUAL_STYLE_KEYS: tuple[str, ...] = tuple(
 )
 STYLE_GRAPH_KEYS: tuple[str, ...] = EVENT_STYLE_KEYS + ANNUAL_STYLE_KEYS
 VALID_TIME_DISPLAY_MODES: frozenset[str] = frozenset({"datetime", "24h"})
+SCHEMA_PACKAGE = "hydrology_graphs.io"
+SCHEMA_FILE = "schemas/style_schema_2_0.json"
 
 
 def _base_style() -> dict[str, Any]:
@@ -252,6 +259,129 @@ def save_style(path: str | Path, style: dict) -> None:
     file_path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+@lru_cache(maxsize=1)
+def _load_style_schema() -> dict[str, Any]:
+    schema_text = resources.files(SCHEMA_PACKAGE).joinpath(SCHEMA_FILE).read_text(encoding="utf-8")
+    return json.loads(schema_text)
+
+
+@lru_cache(maxsize=1)
+def _style_schema_validator() -> Draft202012Validator:
+    return Draft202012Validator(_load_style_schema())
+
+
+def _schema_missing_required_key(message: str) -> str | None:
+    matched = re.match(r"^'([^']+)' is a required property$", message)
+    if not matched:
+        return None
+    return matched.group(1)
+
+
+def _schema_graph_style_validation_error_to_warning(path: list[Any], validator: str, style_key: str) -> str | None:
+    if len(path) < 3:
+        return None
+    suffix = path[2:]
+    head = suffix[0]
+    if validator == "pattern":
+        if head == "series_color":
+            return f"error:{style_key}_series_color_must_be_hex"
+        if head == "background_color":
+            return f"error:{style_key}_background_color_must_be_hex"
+        if head == "bar_color":
+            return f"error:{style_key}_bar_color_must_be_hex"
+        if head == "secondary_series_color":
+            return f"error:{style_key}_secondary_series_color_must_be_hex"
+    if validator == "enum" and head == "series_style":
+        return f"error:{style_key}_series_style_invalid"
+    if validator == "exclusiveMinimum":
+        if head in {"font_size", "figure_width", "figure_height", "dpi", "series_width"}:
+            return f"error:{style_key}_{head}_must_be_positive"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "tick_interval_hours":
+            return f"error:{style_key}_x_axis_tick_interval_hours_must_be_positive"
+        if head == "bar" and len(suffix) >= 2 and suffix[1] == "width":
+            return f"error:{style_key}_bar_width_must_be_positive"
+        if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "tick_step":
+            return f"error:{style_key}_y_axis_tick_step_must_be_positive"
+        if head == "threshold" and len(suffix) >= 2 and suffix[1] == "label_font_size":
+            return f"error:{style_key}_threshold_label_font_size_must_be_positive"
+    if validator == "minimum":
+        if head == "margin" and len(suffix) >= 2 and suffix[1] in {"top", "right", "bottom", "left"}:
+            return f"error:{style_key}_margin_{suffix[1]}_must_be_non_negative"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "range_margin_rate":
+            return f"error:{style_key}_x_axis_range_margin_rate_must_be_non_negative"
+        if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "tick_count":
+            return f"error:{style_key}_y_axis_tick_count_must_be_positive_int"
+    if validator == "type":
+        if head == "axis":
+            return f"error:{style_key}_axis_invalid"
+        if head == "margin":
+            return f"error:{style_key}_margin_must_be_object"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "date_boundary_line_enabled":
+            return f"error:{style_key}_x_axis_date_boundary_line_enabled_must_be_boolean"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "date_boundary_line_offset_hours":
+            return f"error:{style_key}_x_axis_date_boundary_line_offset_hours_must_be_number"
+        if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "tick_count":
+            return f"error:{style_key}_y_axis_tick_count_must_be_positive_int"
+    return None
+
+
+def _schema_error_to_warning(error: Any) -> str:
+    path = list(error.absolute_path)
+    if error.validator == "required":
+        missing_key = _schema_missing_required_key(error.message)
+        if missing_key is None:
+            return "error:style_schema_validation_failed"
+        if path == ["graph_styles"]:
+            return f"error:missing_graph_style:{missing_key}"
+        if len(path) == 2 and path[0] == "graph_styles" and isinstance(path[1], str):
+            return f"error:missing_graph_style_keys:{path[1]}:{missing_key}"
+    if error.validator == "additionalProperties":
+        if path == []:
+            return "error:style_root_unknown_property"
+        if path == ["graph_styles"]:
+            return "error:graph_styles_unknown_property"
+    if len(path) >= 2 and path[0] == "graph_styles" and isinstance(path[1], str):
+        mapped = _schema_graph_style_validation_error_to_warning(path, error.validator, path[1])
+        if mapped is not None:
+            return mapped
+    return f"error:style_schema_validation_failed:{error.message}"
+
+
+def _validate_style_contract_with_schema(raw: dict) -> str | None:
+    validator = _style_schema_validator()
+    errors = sorted(validator.iter_errors(raw), key=lambda err: (len(err.absolute_path), list(err.absolute_path)))
+    if not errors:
+        return None
+    return _schema_error_to_warning(errors[0])
+
+
+def _drop_optional_none_values_for_schema(raw: dict[str, Any]) -> None:
+    """互換のため、任意数値キーの null を検証前に除去する。"""
+
+    graph_styles = raw.get("graph_styles")
+    if not isinstance(graph_styles, dict):
+        return
+    optional_paths = (
+        ("x_axis", "range_margin_rate"),
+        ("x_axis", "tick_interval_hours"),
+        ("x_axis", "date_boundary_line_enabled"),
+        ("x_axis", "date_boundary_line_offset_hours"),
+        ("bar", "width"),
+        ("y_axis", "tick_step"),
+        ("y_axis", "tick_count"),
+        ("threshold", "label_font_size"),
+    )
+    for graph_style in graph_styles.values():
+        if not isinstance(graph_style, dict):
+            continue
+        for parent_key, leaf_key in optional_paths:
+            parent = graph_style.get(parent_key)
+            if not isinstance(parent, dict):
+                continue
+            if parent.get(leaf_key, object()) is None:
+                parent.pop(leaf_key, None)
+
+
 def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
     warnings: list[str] = []
     if not isinstance(raw, dict):
@@ -265,22 +395,21 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
     if "variants" in raw:
         return default_style(), ["error:variants_removed_in_schema_2_0"]
 
-    graph_styles_raw = raw.get("graph_styles")
-    if not isinstance(graph_styles_raw, dict):
-        return default_style(), ["error:graph_styles_must_be_object"]
+    schema_input = deepcopy(raw)
+    schema_input["display"] = _normalize_display(schema_input.get("display"), warnings)
+    _drop_optional_none_values_for_schema(schema_input)
 
-    required_graph_keys = ("series_color", "series_width", "series_style", "axis")
-    for key in STYLE_GRAPH_KEYS:
-        raw_graph = graph_styles_raw.get(key)
-        if not isinstance(raw_graph, dict):
-            return default_style(), [f"error:missing_graph_style:{key}"]
-        missing_graph = [item for item in required_graph_keys if item not in raw_graph]
-        if missing_graph:
-            return default_style(), [f"error:missing_graph_style_keys:{key}:{', '.join(missing_graph)}"]
+    graph_styles_raw = schema_input.get("graph_styles")
+    if not isinstance(graph_styles_raw, dict):
+        return default_style(), [*warnings, "error:graph_styles_must_be_object"]
+
+    schema_error = _validate_style_contract_with_schema(schema_input)
+    if schema_error is not None:
+        return default_style(), [*warnings, schema_error]
 
     merged = default_style()
-    _deep_merge(merged, raw)
-    merged["display"] = _normalize_display(merged.get("display"), warnings)
+    _deep_merge(merged, schema_input)
+    merged["display"] = schema_input["display"]
     graph_styles = merged["graph_styles"]
     for key in list(graph_styles.keys()):
         if key not in STYLE_GRAPH_KEYS:
@@ -288,7 +417,6 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
             graph_styles.pop(key, None)
     for key in STYLE_GRAPH_KEYS:
         _normalize_graph_style(graph_styles[key], warnings, raw_graph=graph_styles_raw[key])
-        _validate_graph_style(graph_styles[key], key, warnings)
 
     return merged, warnings
 
@@ -323,80 +451,11 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
         style["axis"] = {"x_label": "", "y_label": ""}
     style["axis"].setdefault("x_label", "")
     style["axis"].setdefault("y_label", "")
-
-
-def _validate_graph_style(style: dict, style_key: str, warnings: list[str]) -> None:
-    if not _is_hex_color(style.get("series_color")):
-        warnings.append(f"error:{style_key}_series_color_must_be_hex")
-    if not _is_positive_number(style.get("series_width")):
-        warnings.append(f"error:{style_key}_series_width_must_be_positive")
-    if style.get("series_style") not in {"solid", "dashed", "dotted", "dashdot"}:
-        warnings.append(f"error:{style_key}_series_style_invalid")
-    for key in ("font_size", "figure_width", "figure_height", "dpi"):
-        if key in style and style[key] is not None and not _is_positive_number(style[key]):
-            warnings.append(f"error:{style_key}_{key}_must_be_positive")
-
-    margin = style.get("margin", {})
-    if not isinstance(margin, dict):
-        warnings.append(f"error:{style_key}_margin_must_be_object")
-    else:
-        for key in ("top", "right", "bottom", "left"):
-            if not _is_non_negative_number(margin.get(key)):
-                warnings.append(f"error:{style_key}_margin_{key}_must_be_non_negative")
-
-    axis = style.get("axis", {})
-    if not isinstance(axis, dict):
-        warnings.append(f"error:{style_key}_axis_invalid")
-
-    if "background_color" in style and not _is_hex_color(style.get("background_color")):
-        warnings.append(f"error:{style_key}_background_color_must_be_hex")
-    if "bar_color" in style and style["bar_color"] is not None and not _is_hex_color(style["bar_color"]):
-        warnings.append(f"error:{style_key}_bar_color_must_be_hex")
-    if (
-        "secondary_series_color" in style
-        and style["secondary_series_color"] is not None
-        and not _is_hex_color(style["secondary_series_color"])
-    ):
-        warnings.append(f"error:{style_key}_secondary_series_color_must_be_hex")
-
-    x_axis = style.get("x_axis", {})
-    if isinstance(x_axis, dict) and x_axis.get("tick_interval_hours") is not None:
-        if not _is_positive_number(x_axis.get("tick_interval_hours")):
-            warnings.append(f"error:{style_key}_x_axis_tick_interval_hours_must_be_positive")
-    bar = style.get("bar", {})
-    if isinstance(bar, dict) and bar.get("width") is not None and not _is_positive_number(bar.get("width")):
-        warnings.append(f"error:{style_key}_bar_width_must_be_positive")
-    y_axis = style.get("y_axis", {})
-    if isinstance(y_axis, dict):
-        if y_axis.get("tick_step") is not None and not _is_positive_number(y_axis.get("tick_step")):
-            warnings.append(f"error:{style_key}_y_axis_tick_step_must_be_positive")
-        if y_axis.get("tick_count") is not None and (not isinstance(y_axis.get("tick_count"), int) or y_axis.get("tick_count") <= 0):
-            warnings.append(f"error:{style_key}_y_axis_tick_count_must_be_positive_int")
-    threshold = style.get("threshold", {})
-    if isinstance(threshold, dict) and threshold.get("label_font_size") is not None:
-        if not _is_positive_number(threshold.get("label_font_size")):
-            warnings.append(f"error:{style_key}_threshold_label_font_size_must_be_positive")
-
-
-def _is_hex_color(value: Any) -> bool:
-    if not isinstance(value, str) or not value.startswith("#"):
-        return False
-    hex_part = value[1:]
-    return len(hex_part) in (6, 8) and all(ch in "0123456789ABCDEFabcdef" for ch in hex_part)
-
-
-def _is_positive_number(value: Any) -> bool:
-    try:
-        return float(value) > 0
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _is_non_negative_number(value: Any) -> bool:
-    try:
-        return float(value) >= 0
-    except Exception:  # noqa: BLE001
-        return False
+    if "x_axis" not in style or not isinstance(style["x_axis"], dict):
+        style["x_axis"] = {}
+    style["x_axis"].setdefault("range_margin_rate", 0)
+    style["x_axis"].setdefault("date_boundary_line_enabled", False)
+    style["x_axis"].setdefault("date_boundary_line_offset_hours", 0.0)
 
 
 def _deep_merge(base: dict, incoming: dict) -> None:
