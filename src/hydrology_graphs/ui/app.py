@@ -4,7 +4,6 @@ import json
 import queue
 import threading
 import tkinter as tk
-import tkinter.font as tkfont
 from copy import deepcopy
 from datetime import date, datetime
 from pathlib import Path
@@ -38,6 +37,14 @@ from .execute_actions import (
     run_precheck,
     start_batch_run,
 )
+from .base_date_selection import (
+    current_base_date_candidate_iso,
+    ensure_full_catalog_loaded,
+    on_base_date_month_changed,
+    on_base_date_year_changed,
+    recompute_base_date_candidates_for_selected_stations,
+    refresh_base_date_ymd_controls,
+)
 from .preview_canvas import (
     current_preview_canvas_size,
     display_preview_image,
@@ -64,7 +71,18 @@ from .style_form_actions import (
 from .style_palette_dialog import is_hex_color, open_palette_dialog
 from .tabs_execute import build_execute_tab
 from .tabs_style import build_style_tab
-from .view_models import format_station_display_text
+from .station_selection import (
+    apply_station_checks,
+    clear_all_stations,
+    on_station_list_click,
+    render_station_check_list,
+    select_all_stations,
+    selected_station_pairs_in_order,
+    station_checkbox_hit_width,
+    station_display_text,
+    toggle_station_at_index,
+    update_station_row_display,
+)
 from .tooltip import ToolTip
 
 """水文グラフ生成 GUI の本体。
@@ -586,246 +604,67 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _station_display_text(self, source: str, station_key: str, station_name: str, checked: bool) -> str:
         """観測所チェック行の表示テキストを返す。"""
-
-        metric_labels = self._station_metric_labels.get((source, station_key), ())
-        return format_station_display_text(
-            source=source,
-            station_key=station_key,
-            station_name=station_name,
-            checked=checked,
-            source_label_map=self.SOURCE_LABELS,
-            metric_labels=metric_labels,
-        )
+        return station_display_text(self, source, station_key, station_name, checked)
 
     def _render_station_check_list(self) -> None:
         """観測所一覧をチェック表現で再描画する。"""
-
-        # 再描画時にスクロールが先頭へ戻らないよう、表示位置を保持する。
-        yview = self.station_list.yview()
-        self.station_list.delete(0, "end")
-        self._station_row_pairs = []
-        total = len(self._catalog_stations)
-        for idx, (source, station_key, station_name) in enumerate(self._catalog_stations):
-            pair = (source, station_key)
-            checked = pair in self._checked_station_pairs
-            self.station_list.insert("end", self._station_display_text(source, station_key, station_name, checked))
-            self._station_row_pairs.append(pair)
-            # Listbox は行間調整 API が薄いため、空行スペーサーを挟んで視認性を上げる。
-            if idx < total - 1:
-                self.station_list.insert("end", " ")
-                self._station_row_pairs.append(None)
-        self.station_list.selection_clear(0, "end")
-        if yview:
-            self.station_list.yview_moveto(float(yview[0]))
+        render_station_check_list(self)
 
     def _update_station_row_display(self, index: int) -> None:
         """指定行の表示だけ更新する。"""
-
-        if index < 0 or index >= len(self._station_row_pairs):
-            return
-        pair = self._station_row_pairs[index]
-        if pair is None:
-            return
-        source, station_key = pair
-        station_name = ""
-        for s, k, name in self._catalog_stations:
-            if s == source and k == station_key:
-                station_name = name
-                break
-        checked = pair in self._checked_station_pairs
-        self.station_list.delete(index)
-        self.station_list.insert(index, self._station_display_text(source, station_key, station_name, checked))
+        update_station_row_display(self, index)
 
     def _selected_station_pairs_in_order(self) -> list[tuple[str, str]]:
         """チェック済み観測所を表示順で返す。"""
-
-        return [pair for pair in self._station_row_pairs if pair is not None and pair in self._checked_station_pairs]
+        return selected_station_pairs_in_order(self)
 
     def _toggle_station_at_index(self, index: int) -> None:
         """指定行の観測所チェックをトグルし、候補日を再計算する。"""
-
-        if index < 0 or index >= len(self._station_row_pairs):
-            return
-        pair = self._station_row_pairs[index]
-        if pair is None:
-            return
-        if pair in self._checked_station_pairs:
-            self._checked_station_pairs.remove(pair)
-        else:
-            self._checked_station_pairs.add(pair)
-        self._station_selection_dirty = True
-        # 1件トグル時は該当行だけ更新してスクロール位置を維持する。
-        self._update_station_row_display(index)
+        toggle_station_at_index(self, index)
 
     def _station_checkbox_hit_width(self) -> int:
         """チェック記号として有効に扱うクリック幅(px)を返す。"""
-
-        try:
-            font = tkfont.nametofont(str(self.station_list.cget("font")))
-            # "☐ " ぶんの描画幅 + 余裕を当たり判定に使う。
-            return max(18, int(font.measure("☐ ")) + 6)
-        except Exception:  # noqa: BLE001
-            return 24
+        return station_checkbox_hit_width(self)
 
     def _on_station_list_click(self, event) -> str:
         """観測所リストクリックでチェック状態を切り替える。"""
-
-        try:
-            index = int(self.station_list.nearest(event.y))
-        except Exception:  # noqa: BLE001
-            return "break"
-        bbox = self.station_list.bbox(index)
-        if not bbox:
-            return "break"
-        pair = self._station_row_pairs[index] if 0 <= index < len(self._station_row_pairs) else None
-        if pair is None:
-            return "break"
-        x, _y, _w, _h = bbox
-        if int(getattr(event, "x", 0)) > x + self._station_checkbox_hit_width():
-            # ラベル領域クリックではトグルせず、チェック記号だけを当たり判定にする。
-            return "break"
-        self._toggle_station_at_index(index)
-        return "break"
+        return on_station_list_click(self, event)
 
     def _select_all_stations(self) -> None:
         """観測所を全選択する。"""
-
-        self._checked_station_pairs = {(source, key) for source, key, _name in self._catalog_stations}
-        self._station_selection_dirty = True
-        self._render_station_check_list()
+        select_all_stations(self)
 
     def _clear_all_stations(self) -> None:
         """観測所選択を全解除する。"""
-
-        self._checked_station_pairs.clear()
-        self._station_selection_dirty = True
-        self._render_station_check_list()
+        clear_all_stations(self)
 
     def _apply_station_checks(self) -> None:
         """観測所チェックを基準日候補へ反映する。"""
-
-        selected_pairs = self._selected_station_pairs_in_order()
-        if selected_pairs:
-            if not self._ensure_full_catalog_loaded():
-                return
-        self._recompute_base_date_candidates_for_selected_stations()
-        self._station_selection_dirty = False
-        self._append_log(f"[STATION] apply checks selected={len(selected_pairs)} dates={len(self._base_dates)}")
+        apply_station_checks(self)
 
     def _recompute_base_date_candidates_for_selected_stations(self) -> None:
         """選択条件に合う基準日候補を更新する。"""
-
-        catalog = self._catalog
-        if catalog is None or catalog.data.empty:
-            self._base_dates = []
-        else:
-            selected_pairs = self._selected_station_pairs_in_order()
-            if not selected_pairs:
-                self._base_dates = []
-            else:
-                station_frame = catalog.data.loc[:, ["source", "station_key", "observed_at"]].copy()
-                selected_frame = pd.DataFrame(
-                    {
-                        "source": [source for source, _ in selected_pairs],
-                        "station_key": [station_key for _, station_key in selected_pairs],
-                    }
-                )
-                station_frame = station_frame.merge(selected_frame, on=["source", "station_key"], how="inner")
-                observed = pd.to_datetime(station_frame["observed_at"], errors="coerce").dropna()
-                self._base_dates = sorted({ts.date().isoformat() for ts in observed})
-        self._refresh_base_date_ymd_controls()
+        recompute_base_date_candidates_for_selected_stations(self)
 
     def _ensure_full_catalog_loaded(self) -> bool:
         """詳細読込が必要な処理向けにフルカタログを確保する。"""
-
-        if self._catalog is not None and not self._catalog.data.empty:
-            return True
-        parquet_dir = self.parquet_dir.get().strip()
-        if not parquet_dir:
-            messagebox.showerror("入力エラー", "Parquet ディレクトリを指定してください。")
-            return False
-        try:
-            self._append_log(f"[SCAN] detailed load start {parquet_dir}")
-            catalog = self.service.scan_catalog(parquet_dir)
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("読込エラー", str(exc))
-            return False
-        self._catalog = catalog
-        self._append_log(
-            f"[SCAN] detailed load done rows={len(catalog.data)} invalid_files={len(catalog.invalid_files)}"
-        )
-        return True
+        return ensure_full_catalog_loaded(self)
 
     def _refresh_base_date_ymd_controls(self) -> None:
         """基準日候補を YYYY/MM/DD の3プルダウンへ反映する。"""
-
-        year_to_months: dict[str, set[str]] = {}
-        year_month_to_days: dict[tuple[str, str], set[str]] = {}
-        for iso_date in self._base_dates:
-            if len(iso_date) < 10:
-                continue
-            year = iso_date[0:4]
-            month = iso_date[5:7]
-            day = iso_date[8:10]
-            year_to_months.setdefault(year, set()).add(month)
-            year_month_to_days.setdefault((year, month), set()).add(day)
-
-        self._base_date_year_to_months = {k: sorted(v) for k, v in year_to_months.items()}
-        self._base_date_year_month_to_days = {k: sorted(v) for k, v in year_month_to_days.items()}
-
-        years = sorted(self._base_date_year_to_months.keys())
-        year_combo = getattr(self, "base_date_year_combo", None)
-        if year_combo is not None:
-            year_combo.configure(values=years)
-        selected_year = self.base_date_year.get().strip()
-        if selected_year not in years:
-            selected_year = years[0] if years else ""
-            self.base_date_year.set(selected_year)
-
-        months = self._base_date_year_to_months.get(selected_year, [])
-        month_combo = getattr(self, "base_date_month_combo", None)
-        if month_combo is not None:
-            month_combo.configure(values=months)
-        selected_month = self.base_date_month.get().strip()
-        if selected_month not in months:
-            selected_month = months[0] if months else ""
-            self.base_date_month.set(selected_month)
-
-        days = self._base_date_year_month_to_days.get((selected_year, selected_month), [])
-        day_combo = getattr(self, "base_date_candidate_combo", None)
-        if day_combo is not None:
-            day_combo.configure(values=days)
-        selected_day = self.base_date_candidate.get().strip()
-        if selected_day not in days:
-            selected_day = days[0] if days else ""
-            self.base_date_candidate.set(selected_day)
+        refresh_base_date_ymd_controls(self)
 
     def _on_base_date_year_changed(self, _event=None) -> None:
         """年変更時に月/日候補を更新する。"""
-
-        self.base_date_month.set("")
-        self.base_date_candidate.set("")
-        self._refresh_base_date_ymd_controls()
+        on_base_date_year_changed(self, _event)
 
     def _on_base_date_month_changed(self, _event=None) -> None:
         """月変更時に日候補を更新する。"""
-
-        self.base_date_candidate.set("")
-        self._refresh_base_date_ymd_controls()
+        on_base_date_month_changed(self, _event)
 
     def _current_base_date_candidate_iso(self) -> str | None:
         """現在選択の YYYY-MM-DD を返す。"""
-
-        year = self.base_date_year.get().strip()
-        month = self.base_date_month.get().strip()
-        day = self.base_date_candidate.get().strip()
-        if not (year and month and day):
-            return None
-        if (year not in self._base_date_year_to_months) or (month not in self._base_date_year_to_months.get(year, [])):
-            return None
-        if day not in self._base_date_year_month_to_days.get((year, month), []):
-            return None
-        return f"{year}-{month}-{day}"
+        return current_base_date_candidate_iso(self)
 
     def _add_base_date_from_candidate(self) -> None:
         """基準日候補を追加する。"""

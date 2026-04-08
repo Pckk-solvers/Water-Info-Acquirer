@@ -95,6 +95,21 @@
   - 観測所選択、基準日候補反映、CSV入出力の挙動が維持される。
   - 部分テストが通る。
 
+#### Task 5 実施結果
+- 実施日: 2026-04-08
+- 追加:
+  - `src/hydrology_graphs/ui/station_selection.py`
+  - `src/hydrology_graphs/ui/base_date_selection.py`
+- 変更:
+  - `src/hydrology_graphs/ui/app.py` の実行タブ選択UI系を委譲化
+    - 観測所選択: 描画/トグル/クリック判定/全選択/全解除/チェック反映
+    - 基準日候補: 候補再計算/年月日候補更新/候補ISO解決
+    - 詳細読込確保: `_ensure_full_catalog_loaded`
+- 確認:
+  - `uv run ruff check ...` は通過
+  - `uv run pyright ...` は通過（0 errors）
+  - `uv run pytest -q tests/hydrology_graphs/test_ui_support.py tests/hydrology_graphs/test_preview_actions.py` は通過
+
 ### Task 6: 後処理（ラッパ削減）
 - 各切り出し後に不要なラッパを削減し、`app.py` を coordinator 中心へ整理する。
 - 完了条件:
@@ -162,3 +177,14 @@
 - 観点3: テスト範囲
   - 判定: OK
   - 理由: `test_ui_support.py` と `test_preview_actions.py` の回帰確認に加え、`ruff/pyright` で静的検証を行う。
+
+## 実装着手前の自己レビュー結果（Task 5）
+- 観点1: 分割境界
+  - 判定: OK
+  - 理由: 観測所選択UIと基準日候補UIは実行タブ内の表示/選択責務でまとまっており、`app` 本体から切り離せる。
+- 観点2: 互換性
+  - 判定: OK
+  - 理由: `app.py` 側に同名ラッパを残し、イベントバインド先や既存呼び出しを変更しない。
+- 観点3: テスト範囲
+  - 判定: OK
+  - 理由: `test_ui_support.py` / `test_preview_actions.py` で選択UIとプレビュー候補回帰を確認できる。
