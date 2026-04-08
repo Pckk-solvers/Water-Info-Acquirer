@@ -39,6 +39,12 @@
   - イベント窓補正は GUI から外し、常時有効の条件として `services/` へ渡す。
   - 表示モードに関わらず、イベント系の対象窓には終端+1時間余白を常時適用する。
   - `24時表記` の X 軸は時だけを表示し、`24` が前日終端として自然に見えるようにする。
+  - UIリファクタ時は `app.py` を coordinator とし、以下へ責務分割する。
+    - style form builder（フォーム構築）
+    - style form actions（フォーム値反映）
+    - style palette dialog（設定ダイアログ）
+    - station/base date selection（実行タブの選択UI）
+  - 分割は段階的に実施し、各段階で挙動同等をテストで確認する。
 - `services/`
   - UI からの要求をビジネスルールへ変換する。
 - `domain/`
