@@ -116,6 +116,23 @@
   - `app.py` が「画面状態 + 委譲」に集中している。
   - 挙動差分がない。
 
+#### Task 6 実施結果
+- 実施日: 2026-04-08
+- 変更:
+  - `src/hydrology_graphs/ui/app.py` から以下の不要ラッパを削除
+    - `_create_style_control`
+    - `_create_compact_style_row`
+    - `_create_compact_input_control`
+    - `_create_palette_style_row`
+    - `_build_palette_summary`
+    - `_style_label_column_minsize`
+  - `app.py` 内の呼び出しは `style_form_builder` 関数の直接呼び出しへ統一
+  - 未使用 import（`create_compact_input_control`）を削除
+- 確認:
+  - `uv run ruff check src/hydrology_graphs/ui/app.py src/hydrology_graphs/ui/style_form_builder.py docs/dev/tasks/active/20260408_hydrology_graphs_ui_app_refactoring_plan.md` は通過
+  - `uv run pyright src/hydrology_graphs/ui/app.py src/hydrology_graphs/ui/style_form_builder.py` は通過（0 errors）
+  - `uv run pytest -q tests/hydrology_graphs/test_ui_support.py tests/hydrology_graphs/test_preview_actions.py` は通過（16 passed）
+
 ## 完了条件
 - 分割後もユーザー向け挙動（UIレイアウト、反映、プレビュー、実行）が変わらない。
 - `app.py` の責務が coordinator 中心に縮小されている。
@@ -188,3 +205,14 @@
 - 観点3: テスト範囲
   - 判定: OK
   - 理由: `test_ui_support.py` / `test_preview_actions.py` で選択UIとプレビュー候補回帰を確認できる。
+
+## 実装着手前の自己レビュー結果（Task 6）
+- 観点1: 分割後の責務
+  - 判定: OK
+  - 理由: wrapper 削減は「委譲済み関数の直接呼び出し」へ寄せるのみで、責務境界を壊さない。
+- 観点2: 互換性リスク
+  - 判定: OK
+  - 理由: 外部参照されるコールバック名（バインド先）は維持し、内部専用の薄いラッパのみ削減する。
+- 観点3: 検証可能性
+  - 判定: OK
+  - 理由: `ruff / pyright / test_ui_support / test_preview_actions` で回帰確認が可能。

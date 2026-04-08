@@ -56,7 +56,6 @@ from .preview_actions import export_preview_sample, render_preview
 from .style_payload import nested_value
 from .style_form_builder import (
     build_palette_summary,
-    create_compact_input_control,
     create_compact_style_row,
     create_palette_style_row,
     create_style_control,
@@ -712,15 +711,6 @@ class HydrologyGraphsApp(tk.Toplevel):
         """プレビューで選べる対象候補を更新する。"""
         refresh_preview_choices(self)
 
-    def _create_style_control(
-        self,
-        parent: tk.Misc,
-        *,
-        row: int,
-        field: dict[str, Any],
-    ) -> dict[str, Any]:
-        return create_style_control(self, parent, row=row, field=field)
-
     def _current_style_graph_key(self) -> str:
         """現在の編集対象グラフキーを返す。"""
 
@@ -781,77 +771,6 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _is_hyetograph_style_key(graph_key: str) -> bool:
         return graph_key.startswith("hyetograph:")
 
-    def _create_compact_style_row(
-        self,
-        parent: tk.Misc,
-        *,
-        row: int,
-        row_label: str,
-        toggle: dict[str, Any] | None = None,
-        values: list[dict[str, Any]] | None = None,
-        detail_values: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[dict[str, Any]], int]:
-        return create_compact_style_row(
-            self,
-            parent,
-            row=row,
-            row_label=row_label,
-            toggle=toggle,
-            values=values,
-            detail_values=detail_values,
-        )
-
-    def _create_compact_input_control(
-        self,
-        *,
-        container: ttk.Frame,
-        field: dict[str, Any],
-        row_label: str,
-        label_widget: tk.Widget,
-        group_toggle_path: str | None,
-        grid_row: int,
-        widget_col: int,
-        is_last: bool,
-        is_single_full_width: bool,
-        label_prefix: str,
-    ) -> dict[str, Any]:
-        return create_compact_input_control(
-            self,
-            container=container,
-            field=field,
-            row_label=row_label,
-            label_widget=label_widget,
-            group_toggle_path=group_toggle_path,
-            grid_row=grid_row,
-            widget_col=widget_col,
-            is_last=is_last,
-            is_single_full_width=is_single_full_width,
-            label_prefix=label_prefix,
-        )
-
-    def _create_palette_style_row(
-        self,
-        parent: tk.Misc,
-        *,
-        row: int,
-        row_label: str,
-        graph_style: dict[str, Any],
-        palette_fields: list[dict[str, Any]],
-        toggle: dict[str, Any] | None = None,
-    ) -> tuple[list[dict[str, Any]], int]:
-        return create_palette_style_row(
-            self,
-            parent,
-            row=row,
-            row_label=row_label,
-            graph_style=graph_style,
-            palette_fields=palette_fields,
-            toggle=toggle,
-        )
-
-    def _build_palette_summary(self, graph_style: dict[str, Any], fields: list[dict[str, Any]]) -> str:
-        return build_palette_summary(graph_style, fields)
-
     def _open_palette_dialog(self, *, title: str, fields: list[dict[str, Any]], group_toggle_path: str | None = None) -> None:
         open_palette_dialog(self, title=title, fields=fields, group_toggle_path=group_toggle_path)
 
@@ -861,9 +780,6 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _apply_group_toggle_states(self) -> None:
         apply_group_toggle_states(self)
-
-    def _style_label_column_minsize(self, fields: list[dict[str, Any]]) -> int:
-        return style_label_column_minsize(fields)
 
     def _refresh_style_forms_from_payload(self) -> None:
         """現在のスタイル payload からフォーム表示を更新する。"""
@@ -900,7 +816,7 @@ class HydrologyGraphsApp(tk.Toplevel):
                     }
                 )
             fields = [field for field in fields if str(field.get("path")) not in excluded]
-            label_col_minsize = self._style_label_column_minsize(fields)
+            label_col_minsize = style_label_column_minsize(fields)
             self.graph_style_box.columnconfigure(0, minsize=44)
             self.graph_style_box.columnconfigure(1, minsize=label_col_minsize)
             self.graph_style_box.columnconfigure(2, weight=1)
@@ -922,7 +838,8 @@ class HydrologyGraphsApp(tk.Toplevel):
                     continue
                 if path == "threshold.label_offset" and "threshold.label_enabled" in field_by_path:
                     toggle_field = field_by_path["threshold.label_enabled"]
-                    controls, rows_used = self._create_compact_style_row(
+                    controls, rows_used = create_compact_style_row(
+                        self,
                         self.graph_style_box,
                         row=current_row,
                         row_label=str(field.get("label", "")),
@@ -961,7 +878,8 @@ class HydrologyGraphsApp(tk.Toplevel):
                     continue
                 if path == "x_axis.date_boundary_line_offset_hours" and "x_axis.date_boundary_line_enabled" in field_by_path:
                     toggle_field = field_by_path["x_axis.date_boundary_line_enabled"]
-                    controls, rows_used = self._create_compact_style_row(
+                    controls, rows_used = create_compact_style_row(
+                        self,
                         self.graph_style_box,
                         row=current_row,
                         row_label=str(field.get("label", "")),
@@ -993,7 +911,8 @@ class HydrologyGraphsApp(tk.Toplevel):
                     current_row += rows_used
                     continue
 
-                control = self._create_style_control(
+                control = create_style_control(
+                    self,
                     self.graph_style_box,
                     row=current_row,
                     field=field,
@@ -1074,7 +993,8 @@ class HydrologyGraphsApp(tk.Toplevel):
                 for row_def in compact_rows:
                     palette_fields = list(row_def.get("palette_fields") or [])
                     if palette_fields:
-                        controls, rows_used = self._create_palette_style_row(
+                        controls, rows_used = create_palette_style_row(
+                            self,
                             self.graph_style_box,
                             row=current_row,
                             row_label=str(row_def["row_label"]),
@@ -1083,7 +1003,8 @@ class HydrologyGraphsApp(tk.Toplevel):
                             toggle=row_def.get("toggle"),
                         )
                     else:
-                        controls, rows_used = self._create_compact_style_row(
+                        controls, rows_used = create_compact_style_row(
+                            self,
                             self.graph_style_box,
                             row=current_row,
                             row_label=str(row_def["row_label"]),
@@ -1105,7 +1026,7 @@ class HydrologyGraphsApp(tk.Toplevel):
                         self._style_graph_controls.append(control)
                     current_row += rows_used
             for row_meta in self._style_palette_rows:
-                row_meta["summary_var"].set(self._build_palette_summary(graph_style, list(row_meta.get("fields") or [])))
+                row_meta["summary_var"].set(build_palette_summary(graph_style, list(row_meta.get("fields") or [])))
             self._apply_group_toggle_states()
         finally:
             self._style_form_updating = False
