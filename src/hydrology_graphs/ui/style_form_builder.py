@@ -10,7 +10,7 @@ from .style_payload import nested_value
 
 def create_style_control(
     app,
-    parent: ttk.Frame,
+    parent: tk.Misc,
     *,
     row: int,
     field: dict[str, Any],
@@ -117,7 +117,7 @@ def create_compact_input_control(
 
 def create_compact_style_row(
     app,
-    parent: ttk.Frame,
+    parent: tk.Misc,
     *,
     row: int,
     row_label: str,
@@ -219,7 +219,7 @@ def create_compact_style_row(
 
 def create_palette_style_row(
     app,
-    parent: ttk.Frame,
+    parent: tk.Misc,
     *,
     row: int,
     row_label: str,

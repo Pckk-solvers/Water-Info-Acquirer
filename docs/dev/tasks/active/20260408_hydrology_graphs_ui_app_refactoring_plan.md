@@ -54,6 +54,22 @@
   - `反映/Enter/JSON同期` の動作が維持される。
   - 部分テストが通る。
 
+#### Task 3 実施結果
+- 実施日: 2026-04-08
+- 追加:
+  - `src/hydrology_graphs/ui/style_form_actions.py`
+- 変更:
+  - `src/hydrology_graphs/ui/app.py` の以下を actions へ委譲化
+    - `_set_control_var`
+    - `_apply_group_toggle_states`
+    - `_apply_style_form_values`
+    - `_coerce_control_value`
+- 確認:
+  - `uv run ruff check ...` は通過
+  - `uv run python -m py_compile ...` は通過
+  - `uv run pytest -q tests/hydrology_graphs/test_ui_support.py tests/hydrology_graphs/test_preview_actions.py` は通過
+  - `uv run pyright src/hydrology_graphs/ui/app.py src/hydrology_graphs/ui/style_form_builder.py src/hydrology_graphs/ui/style_form_actions.py` は通過（0 errors）
+
 ### Task 4: palette dialog の切り出し
 - カラーパレット/設定ダイアログ処理を `ui/style_palette_dialog.py` へ分離する。
 - 完了条件:
@@ -111,3 +127,14 @@
 - 観点3: テスト範囲
   - 判定: OK
   - 理由: `test_ui_support.py` と `test_preview_actions.py` を最低ラインとして回帰確認可能。
+
+## 実装着手前の自己レビュー結果（Task 3）
+- 観点1: 分割境界
+  - 判定: OK
+  - 理由: 値反映・型変換・group toggle のみを `style_form_actions` に分離し、UIレイアウト構築は builder 側に残す。
+- 観点2: 互換性
+  - 判定: OK
+  - 理由: `app.py` 側メソッド名は維持し、内部で actions 関数へ委譲するため既存呼び出しを崩さない。
+- 観点3: テスト範囲
+  - 判定: OK
+  - 理由: 既存の UI 部分テストでフォーム反映・プレビューアクション回帰を確認できる。

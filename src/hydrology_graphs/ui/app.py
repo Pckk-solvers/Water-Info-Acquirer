@@ -9,7 +9,7 @@ from copy import deepcopy
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -54,6 +54,12 @@ from .style_form_builder import (
     create_palette_style_row,
     create_style_control,
     style_label_column_minsize,
+)
+from .style_form_actions import (
+    apply_group_toggle_states,
+    apply_style_form_values,
+    coerce_control_value,
+    set_control_var,
 )
 from .tabs_execute import build_execute_tab
 from .tabs_style import build_style_tab
@@ -250,6 +256,23 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._stop_event: threading.Event | None = None
         self._execution_disable_widgets: list[tk.Widget] = []
         self._graph_type_checkbuttons: list[ttk.Checkbutton] = []
+        # _build_ui 以降で束縛される UI 属性を先に宣言して、型検査時の属性未定義を避ける。
+        self.base_date_list: tk.Listbox
+        self.precheck_summary: tk.StringVar
+        self.result_tree: ttk.Treeview
+        self.preview_station_combo: ttk.Combobox
+        self.preview_date_combo: ttk.Combobox
+        self.preview_graph_combo: ttk.Combobox
+        self.run_btn: ttk.Button
+        self.stop_btn: ttk.Button
+        self.station_list: tk.Listbox
+        self.graph_style_box: ttk.LabelFrame
+        self.style_text: tk.Text
+        self.log_text: tk.Text
+        self.base_date_candidate_combo: ttk.Combobox
+        self.base_date_year_combo: ttk.Combobox
+        self.base_date_month_combo: ttk.Combobox
+        self.graph_cell_vars: dict[str, tk.BooleanVar]
         self.event_window_3.trace_add("write", self._on_event_window_days_changed)
         self.event_window_5.trace_add("write", self._on_event_window_days_changed)
         self.time_display_mode.trace_add("write", self._on_time_display_mode_changed)
@@ -543,13 +566,13 @@ class HydrologyGraphsApp(tk.Toplevel):
         state = "disabled" if running else "normal"
         for widget in self._execution_disable_widgets:
             try:
-                widget.configure(state=state)
+                cast(Any, widget).configure(state=state)
             except tk.TclError:
                 pass
         for chk in self._graph_type_checkbuttons:
-            chk.configure(state=state)
-        self.run_btn.configure(state="disabled" if running else "normal")
-        self.stop_btn.configure(state="disabled")
+            cast(Any, chk).configure(state=state)
+        cast(Any, self.run_btn).configure(state="disabled" if running else "normal")
+        cast(Any, self.stop_btn).configure(state="disabled")
 
     def _run_precheck(self) -> None:
         """選択条件に対して実行前検証を行う。"""
@@ -700,7 +723,12 @@ class HydrologyGraphsApp(tk.Toplevel):
                 self._base_dates = []
             else:
                 station_frame = catalog.data.loc[:, ["source", "station_key", "observed_at"]].copy()
-                selected_frame = pd.DataFrame(selected_pairs, columns=["source", "station_key"])
+                selected_frame = pd.DataFrame(
+                    {
+                        "source": [source for source, _ in selected_pairs],
+                        "station_key": [station_key for _, station_key in selected_pairs],
+                    }
+                )
                 station_frame = station_frame.merge(selected_frame, on=["source", "station_key"], how="inner")
                 observed = pd.to_datetime(station_frame["observed_at"], errors="coerce").dropna()
                 self._base_dates = sorted({ts.date().isoformat() for ts in observed})
@@ -824,9 +852,11 @@ class HydrologyGraphsApp(tk.Toplevel):
         matrix = getattr(self, "graph_cell_vars", {})
         if isinstance(matrix, dict) and matrix:
             days: list[int] = []
-            if any(bool(matrix.get(key).get()) for key in ("hyetograph:3day", "hydrograph_discharge:3day", "hydrograph_water_level:3day") if matrix.get(key) is not None):
+            keys_3day = ("hyetograph:3day", "hydrograph_discharge:3day", "hydrograph_water_level:3day")
+            keys_5day = ("hyetograph:5day", "hydrograph_discharge:5day", "hydrograph_water_level:5day")
+            if any(bool(var.get()) for key in keys_3day if (var := matrix.get(key)) is not None):
                 days.append(3)
-            if any(bool(matrix.get(key).get()) for key in ("hyetograph:5day", "hydrograph_discharge:5day", "hydrograph_water_level:5day") if matrix.get(key) is not None):
+            if any(bool(var.get()) for key in keys_5day if (var := matrix.get(key)) is not None):
                 days.append(5)
             return days
 
@@ -844,7 +874,7 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _create_style_control(
         self,
-        parent: ttk.Frame,
+        parent: tk.Misc,
         *,
         row: int,
         field: dict[str, Any],
@@ -913,7 +943,7 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _create_compact_style_row(
         self,
-        parent: ttk.Frame,
+        parent: tk.Misc,
         *,
         row: int,
         row_label: str,
@@ -961,7 +991,7 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _create_palette_style_row(
         self,
-        parent: ttk.Frame,
+        parent: tk.Misc,
         *,
         row: int,
         row_label: str,
@@ -1125,35 +1155,7 @@ class HydrologyGraphsApp(tk.Toplevel):
             return False
 
     def _apply_group_toggle_states(self) -> None:
-        """グループトグルに応じて編集可否を切り替える。"""
-
-        toggles: dict[str, bool] = {}
-        for control in self._style_graph_controls:
-            if not bool(control.get("is_group_toggle")):
-                continue
-            path = str(control.get("path", "")).strip()
-            toggles[path] = bool(control["var"].get())
-
-        for control in self._style_graph_controls:
-            group_path = str(control.get("group_toggle_path", "")).strip()
-            if not group_path:
-                continue
-            enabled = toggles.get(group_path, True)
-            widget = control.get("widget")
-            if widget is None:
-                continue
-            kind = str(control.get("kind", "str"))
-            if kind == "choice":
-                widget.configure(state="readonly" if enabled else "disabled")
-            elif kind == "button":
-                widget.configure(state="normal" if enabled else "disabled")
-            elif kind == "bool":
-                if enabled:
-                    widget.state(["!disabled"])
-                else:
-                    widget.state(["disabled"])
-            else:
-                widget.configure(state="normal" if enabled else "disabled")
+        apply_group_toggle_states(self)
 
     def _style_label_column_minsize(self, fields: list[dict[str, Any]]) -> int:
         return style_label_column_minsize(fields)
@@ -1414,17 +1416,7 @@ class HydrologyGraphsApp(tk.Toplevel):
             self._style_text_syncing = False
 
     def _set_control_var(self, control: dict[str, Any], value: Any) -> None:
-        """型に応じて制御変数へ値を反映する。"""
-
-        kind = control["kind"]
-        var: tk.Variable = control["var"]
-        if kind == "bool":
-            var.set(bool(value))
-            return
-        if value is None:
-            var.set("")
-            return
-        var.set(str(value))
+        set_control_var(control, value)
 
     def _on_preview_graph_selected(self, _event=None) -> None:
         """プレビュー対象グラフの変更に合わせて編集フォームを切り替える。"""
@@ -1486,62 +1478,14 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._render_preview(silent_json_error=True)
 
     def _apply_style_form_values(self) -> bool:
-        """フォームの値を payload に反映する。"""
-
-        graph_key = self._current_style_graph_key()
-        graph_styles = self._style_payload.setdefault("graph_styles", {})
-        graph_style = graph_styles.get(graph_key)
-        if not isinstance(graph_style, dict):
-            graph_style = {}
-            graph_styles[graph_key] = graph_style
-        for control in self._style_graph_controls:
-            path = str(control.get("path", "")).strip()
-            if not path or path.startswith("__palette__"):
-                continue
-            current_value = nested_value(graph_style, control["path"], None)
-            value, error = self._coerce_control_value(control, current_value)
-            if error:
-                self.preview_message.set(error)
-                return False
-            if value is _STYLE_EMPTY_NUMERIC:
-                delete_nested_value(graph_style, control["path"])
-                continue
-            set_nested_value(graph_style, control["path"], value)
-        time_display_mode = str(self.time_display_mode.get()).strip() or "datetime"
-        if time_display_mode not in VALID_TIME_DISPLAY_MODES:
-            time_display_mode = "datetime"
-        set_nested_value(self._style_payload, "display.time_display_mode", time_display_mode)
-        return True
+        return apply_style_form_values(
+            self,
+            empty_numeric=_STYLE_EMPTY_NUMERIC,
+            valid_time_display_modes=VALID_TIME_DISPLAY_MODES,
+        )
 
     def _coerce_control_value(self, control: dict[str, Any], current_value: Any) -> tuple[Any, str | None]:
-        """フォーム入力値を設定型へ変換する。"""
-
-        kind = control["kind"]
-        label = control["label"]
-        var: tk.Variable = control["var"]
-        if kind == "bool":
-            return bool(var.get()), None
-        text = str(var.get()).strip()
-        if kind == "str" or kind == "choice":
-            return text, None
-        if text == "":
-            if kind in {"int", "float"}:
-                return _STYLE_EMPTY_NUMERIC, None
-            return current_value, None
-        if kind == "int":
-            try:
-                parsed = float(text)
-            except ValueError:
-                return current_value, f"スタイル入力エラー: {label} は整数を入力してください。"
-            if not parsed.is_integer():
-                return current_value, f"スタイル入力エラー: {label} は整数を入力してください。"
-            return int(parsed), None
-        if kind == "float":
-            try:
-                return float(text), None
-            except ValueError:
-                return current_value, f"スタイル入力エラー: {label} は数値を入力してください。"
-        return text, None
+        return coerce_control_value(control, current_value, empty_numeric=_STYLE_EMPTY_NUMERIC)
 
     def _push_style_history(self, payload: dict[str, Any]) -> None:
         """履歴スタックへ現在スタイルを積む。"""
@@ -1798,20 +1742,20 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         self._running = running
         # 実行中は入力面を触れないようにして、結果表示に集中させる。
-        self.run_btn.configure(state="disabled" if running else "normal")
-        self.stop_btn.configure(state="normal" if running else "disabled")
+        cast(Any, self.run_btn).configure(state="disabled" if running else "normal")
+        cast(Any, self.stop_btn).configure(state="normal" if running else "disabled")
         for widget in self._execution_disable_widgets:
             try:
-                widget.configure(state="disabled" if running else "normal")
+                cast(Any, widget).configure(state="disabled" if running else "normal")
             except tk.TclError:
                 pass
         for chk in self._graph_type_checkbuttons:
-            chk.configure(state="disabled" if running else "normal")
+            cast(Any, chk).configure(state="disabled" if running else "normal")
         if running:
             # スタイル変更が実行結果に影響するので、実行中はタブ切替も抑止する。
-            self.notebook.tab(self.style_tab, state="disabled")
+            cast(Any, self.notebook).tab(self.style_tab, state="disabled")
         else:
-            self.notebook.tab(self.style_tab, state="normal")
+            cast(Any, self.notebook).tab(self.style_tab, state="normal")
 
     def _poll_events(self) -> None:
         """ワーカースレッドの結果をメインスレッドで反映する。"""
