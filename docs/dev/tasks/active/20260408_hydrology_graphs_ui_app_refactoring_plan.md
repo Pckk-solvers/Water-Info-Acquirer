@@ -31,6 +31,23 @@
   - フォーム表示挙動に差分がない。
   - 部分テストが通る。
 
+#### Task 2 実施結果
+- 実施日: 2026-04-08
+- 追加:
+  - `src/hydrology_graphs/ui/style_form_builder.py`
+- 変更:
+  - `src/hydrology_graphs/ui/app.py` の以下を builder へ委譲化
+    - `_create_style_control`
+    - `_create_compact_style_row`
+    - `_create_compact_input_control`
+    - `_create_palette_style_row`
+    - `_build_palette_summary`
+    - `_style_label_column_minsize`
+- 確認:
+  - `uv run ruff check ...` は通過
+  - `uv run pyright ...` は既存の `app.py` 属性注釈不足に起因するエラー群が残る（今回分離で新規悪化なし）
+  - `uv run pytest -q tests/hydrology_graphs/test_ui_support.py tests/hydrology_graphs/test_preview_actions.py` は通過
+
 ### Task 3: style form actions の切り出し
 - 値反映と型変換、group toggle 制御を `ui/style_form_actions.py` へ移す。
 - 完了条件:
@@ -83,3 +100,14 @@
   - 分割境界が責務と一致しているか
   - 既存テストで回帰を検出できるか
   - 1タスクあたりの差分が小さいか
+
+## 実装着手前の自己レビュー結果（Task 2）
+- 観点1: 分割境界
+  - 判定: OK
+  - 理由: フォーム構築（widget生成/配置）のみを `style_form_builder` に切り出し、値反映ロジックは `app.py` 側に残すため責務が混ざらない。
+- 観点2: 互換性
+  - 判定: OK
+  - 理由: `app.py` 側に同名メソッドの薄いラッパを残して既存呼び出し互換を維持する。
+- 観点3: テスト範囲
+  - 判定: OK
+  - 理由: `test_ui_support.py` と `test_preview_actions.py` を最低ラインとして回帰確認可能。
