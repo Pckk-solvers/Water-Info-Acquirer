@@ -76,6 +76,19 @@
   - 設定ダイアログの表示・適用・再適用が維持される。
   - 部分テストが通る。
 
+#### Task 4 実施結果
+- 実施日: 2026-04-08
+- 追加:
+  - `src/hydrology_graphs/ui/style_palette_dialog.py`
+- 変更:
+  - `src/hydrology_graphs/ui/app.py` の以下を dialog へ委譲化
+    - `_open_palette_dialog`
+    - `_is_hex_color`
+- 確認:
+  - `uv run ruff check ...` は通過
+  - `uv run pyright ...` は通過（0 errors）
+  - `uv run pytest -q tests/hydrology_graphs/test_ui_support.py tests/hydrology_graphs/test_preview_actions.py` は通過
+
 ### Task 5: 実行タブ選択UIの切り出し
 - 観測所チェックUIと基準日UIを `ui/station_selection.py` / `ui/base_date_selection.py` へ分離する。
 - 完了条件:
@@ -138,3 +151,14 @@
 - 観点3: テスト範囲
   - 判定: OK
   - 理由: 既存の UI 部分テストでフォーム反映・プレビューアクション回帰を確認できる。
+
+## 実装着手前の自己レビュー結果（Task 4）
+- 観点1: 分割境界
+  - 判定: OK
+  - 理由: ダイアログ表示・入力検証・適用処理は `style_palette_dialog` に閉じており、builder/actions とは責務が分離できる。
+- 観点2: 互換性
+  - 判定: OK
+  - 理由: `app.py` 側に `_open_palette_dialog` と `_is_hex_color` のラッパを維持し、既存ボタンコールバック互換を保つ。
+- 観点3: テスト範囲
+  - 判定: OK
+  - 理由: `test_ui_support.py` と `test_preview_actions.py` の回帰確認に加え、`ruff/pyright` で静的検証を行う。
