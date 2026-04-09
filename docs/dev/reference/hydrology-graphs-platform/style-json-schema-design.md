@@ -74,6 +74,23 @@
 - `graph_styles.<key>.x_axis.date_boundary_line_offset_hours`:
   - type: `number`
   - 既定: `0.0`
+- `graph_styles.<key>.x_axis.data_trim_enabled`:
+  - type: `boolean`
+  - 既定: `true`
+- `graph_styles.<key>.x_axis.data_trim_start_hours`:
+  - type: `number`
+  - minimum: `0`
+  - 既定: `0.0`
+- `graph_styles.<key>.x_axis.data_trim_end_hours`:
+  - type: `number`
+  - minimum: `0`
+  - 既定: `0.0`
+- `graph_styles.<key>.grid.enabled`:
+  - type: `boolean`
+  - 既定: `true`
+- `graph_styles.<key>.bar.enabled` / `graph_styles.<key>.series.enabled` / `graph_styles.<key>.y_axis.enabled`:
+  - type: `boolean`
+  - 既定: `true`
 
 ## 6.1 日付境界線の描画方針（非スキーマ）
 
@@ -81,6 +98,7 @@
 - 境界線の基準位置は `datetime` の日付境界 `00:00` とする。
 - 実描画位置は `00:00 + graph_styles.<key>.x_axis.date_boundary_line_offset_hours` とする。
 - 境界線表示ON/OFFもオフセットも、どちらもグラフ個別設定として扱う。
+- `data_trim_enabled=true` のときだけトリムを適用する（`false` の場合は start/end 値があっても未適用）。
 
 ## 7. 既定値の扱い
 
@@ -149,6 +167,9 @@
           "properties": {
             "tick_interval_hours": { "type": "number", "exclusiveMinimum": 0 },
             "range_margin_rate": { "type": "number", "minimum": 0, "default": 0 },
+            "data_trim_enabled": { "type": "boolean", "default": true },
+            "data_trim_start_hours": { "type": "number", "minimum": 0, "default": 0.0 },
+            "data_trim_end_hours": { "type": "number", "minimum": 0, "default": 0.0 },
             "date_boundary_line_enabled": { "type": "boolean", "default": false },
             "date_boundary_line_offset_hours": { "type": "number", "default": 0.0 }
           }

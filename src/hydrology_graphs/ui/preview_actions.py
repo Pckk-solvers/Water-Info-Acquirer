@@ -74,10 +74,21 @@ def _build_preview_input(
     payload_from_editor = app._style_from_editor(silent=silent_json_error)
     if payload_from_editor is not None:
         app._style_payload = payload_from_editor
-    if not app._apply_style_form_values():
+    raw_apply_result = app._apply_style_form_values()
+    if isinstance(raw_apply_result, bool):
+        apply_ok = raw_apply_result
+        changed_paths: set[str] = set()
+    else:
+        apply_ok = bool(getattr(raw_apply_result, "ok", False))
+        changed_paths = {str(path).strip() for path in getattr(raw_apply_result, "changed_paths", set()) if str(path).strip()}
+    if not apply_ok:
         return None
     app._set_style_text_from_payload()
-    app._push_style_history(app._style_payload)
+    refresh_controls = getattr(app, "_refresh_style_controls_from_payload", None)
+    if callable(refresh_controls):
+        refresh_controls(changed_paths)
+    if changed_paths:
+        app._push_style_history(app._style_payload)
 
     style_key = app._current_preview_graph_key()
     if style_key is None:

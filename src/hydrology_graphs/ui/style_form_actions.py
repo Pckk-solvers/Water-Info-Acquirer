@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import tkinter as tk
 from typing import Any
 
 from .style_payload import delete_nested_value, nested_value, set_nested_value
+
+
+@dataclass(slots=True)
+class ApplyStyleFormResult:
+    ok: bool
+    changed_paths: set[str] = field(default_factory=set)
 
 
 def set_control_var(control: dict[str, Any], value: Any) -> None:
@@ -76,14 +83,27 @@ def coerce_control_value(control: dict[str, Any], current_value: Any, *, empty_n
             return current_value, f"スタイル入力エラー: {label} は整数を入力してください。"
         return int(parsed), None
     if kind == "float":
+        path = str(control.get("path", "")).strip()
         try:
-            return float(text), None
+            value = float(text)
         except ValueError:
             return current_value, f"スタイル入力エラー: {label} は数値を入力してください。"
+        if path in {"x_axis.data_trim_start_hours", "x_axis.data_trim_end_hours"}:
+            if value < 0:
+                return current_value, f"スタイル入力エラー: {label} は0以上を入力してください。"
+            doubled = value * 2.0
+            if abs(doubled - round(doubled)) > 1e-9:
+                return current_value, f"スタイル入力エラー: {label} は0.5刻みで入力してください。"
+        return value, None
     return text, None
 
 
-def apply_style_form_values(app, *, empty_numeric: object, valid_time_display_modes: set[str] | frozenset[str]) -> bool:
+def apply_style_form_values(
+    app,
+    *,
+    empty_numeric: object,
+    valid_time_display_modes: set[str] | frozenset[str],
+) -> ApplyStyleFormResult:
     """フォームの値を payload に反映する。"""
 
     graph_key = app._current_style_graph_key()
@@ -92,6 +112,7 @@ def apply_style_form_values(app, *, empty_numeric: object, valid_time_display_mo
     if not isinstance(graph_style, dict):
         graph_style = {}
         graph_styles[graph_key] = graph_style
+    changed_paths: set[str] = set()
     for control in app._style_graph_controls:
         path = str(control.get("path", "")).strip()
         if not path or path.startswith("__palette__"):
@@ -100,13 +121,20 @@ def apply_style_form_values(app, *, empty_numeric: object, valid_time_display_mo
         value, error = coerce_control_value(control, current_value, empty_numeric=empty_numeric)
         if error:
             app.preview_message.set(error)
-            return False
+            return ApplyStyleFormResult(ok=False)
         if value is empty_numeric:
-            delete_nested_value(graph_style, control["path"])
+            if current_value is not None:
+                delete_nested_value(graph_style, control["path"])
+                changed_paths.add(path)
             continue
-        set_nested_value(graph_style, control["path"], value)
+        if current_value != value:
+            set_nested_value(graph_style, control["path"], value)
+            changed_paths.add(path)
     time_display_mode = str(app.time_display_mode.get()).strip() or "datetime"
     if time_display_mode not in valid_time_display_modes:
         time_display_mode = "datetime"
-    set_nested_value(app._style_payload, "display.time_display_mode", time_display_mode)
-    return True
+    current_time_display_mode = str(nested_value(app._style_payload, "display.time_display_mode", "datetime")).strip() or "datetime"
+    if current_time_display_mode != time_display_mode:
+        set_nested_value(app._style_payload, "display.time_display_mode", time_display_mode)
+        changed_paths.add("display.time_display_mode")
+    return ApplyStyleFormResult(ok=True, changed_paths=changed_paths)

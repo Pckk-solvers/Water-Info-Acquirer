@@ -62,6 +62,7 @@ from .style_form_builder import (
     style_label_column_minsize,
 )
 from .style_form_actions import (
+    ApplyStyleFormResult,
     apply_group_toggle_states,
     apply_style_form_values,
     coerce_control_value,
@@ -178,6 +179,69 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
 
 _STYLE_EMPTY_NUMERIC = object()
 _LINE_STYLE_CHOICES: tuple[str, ...] = ("solid", "dashed", "dashdot", "dotted")
+_PALETTE_SUMMARY_MAX_CHARS = 32
+_PALETTE_SUMMARY_LABEL_WIDTH = 22
+_COMMON_COMPACT_ROWS: tuple[dict[str, Any], ...] = (
+    {
+        "row_label": "グリッド",
+        "toggle": {"path": "grid.enabled"},
+        "values": (
+            {"path": "grid.x_enabled", "label": "X(縦線)", "kind": "bool"},
+            {"path": "grid.y_enabled", "label": "Y(横線)", "kind": "bool"},
+        ),
+    },
+)
+_HYETOGRAPH_COMPACT_ROWS: tuple[dict[str, Any], ...] = (
+    {
+        "row_label": "累積雨量線",
+        "toggle": {"path": "cumulative_line.enabled"},
+        "palette_fields": (
+            {"path": "cumulative_line.width", "label": "太さ", "kind": "float"},
+            {
+                "path": "cumulative_line.style",
+                "label": "線種",
+                "kind": "choice",
+                "values": _LINE_STYLE_CHOICES,
+            },
+            {"path": "cumulative_line.color", "label": "色", "kind": "color"},
+        ),
+    },
+    {
+        "row_label": "欠測帯",
+        "toggle": {"path": "missing_band.enabled"},
+        "palette_fields": (
+            {"path": "missing_band.alpha", "label": "濃さ", "kind": "float"},
+            {"path": "missing_band.color", "label": "色", "kind": "color"},
+        ),
+    },
+    {
+        "row_label": "棒設定",
+        "toggle": {"path": "bar.enabled"},
+        "palette_fields": (
+            {"path": "bar_color", "label": "棒色", "kind": "color"},
+            {"path": "bar.width", "label": "棒幅", "kind": "float"},
+            {"path": "bar.edge_width", "label": "外枠太さ", "kind": "float"},
+            {"path": "bar.edge_alpha", "label": "外枠濃さ", "kind": "float"},
+        ),
+    },
+    {
+        "row_label": "系列設定",
+        "toggle": {"path": "series.enabled"},
+        "palette_fields": (
+            {"path": "series_color", "label": "色", "kind": "color"},
+            {"path": "series_width", "label": "太さ", "kind": "float"},
+            {"path": "series_style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES},
+        ),
+    },
+    {
+        "row_label": "Y軸(時間雨量)",
+        "toggle": {"path": "y_axis.enabled"},
+        "values": (
+            {"path": "y_axis.max", "label": "上限", "kind": "float"},
+            {"path": "y_axis.tick_step", "label": "刻み", "kind": "float"},
+        ),
+    },
+)
 
 
 class HydrologyGraphsApp(tk.Toplevel):
@@ -239,6 +303,8 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._style_form_updating = False
         self._style_graph_controls: list[dict[str, Any]] = []
         self._style_palette_rows: list[dict[str, Any]] = []
+        self._style_controls_by_path: dict[str, list[dict[str, Any]]] = {}
+        self._style_palette_rows_by_path: dict[str, list[dict[str, Any]]] = {}
         self._style_field_tooltips: list[ToolTip] = []
         self._execute_tooltips: list[ToolTip] = []
         self.display_mode_box: ttk.LabelFrame | None = None
@@ -728,7 +794,7 @@ class HydrologyGraphsApp(tk.Toplevel):
             return key
         return None
 
-    def _graph_style_fields_for(self, graph_style: dict[str, Any]) -> list[dict[str, Any]]:
+    def _graph_style_fields_for(self, graph_key: str, graph_style: dict[str, Any]) -> list[dict[str, Any]]:
         """対象グラフに応じた編集項目定義を返す。"""
 
         fields = [dict(field) for field in BASE_GRAPH_STYLE_FIELDS]
@@ -741,6 +807,34 @@ class HydrologyGraphsApp(tk.Toplevel):
                     "tooltip": "X軸の時刻目盛りを何時間間隔で表示するかを指定します。",
                 }
             )
+        if self._is_event_style_key(graph_key):
+            if nested_value(graph_style, "x_axis.data_trim_enabled", None) is not None:
+                fields.append(
+                    {
+                        "path": "x_axis.data_trim_enabled",
+                        "label": "表示データ範囲トリム有効",
+                        "kind": "bool",
+                        "tooltip": "表示データ範囲トリムの有効/無効を切り替えます。",
+                    }
+                )
+            if nested_value(graph_style, "x_axis.data_trim_start_hours", None) is not None:
+                fields.append(
+                    {
+                        "path": "x_axis.data_trim_start_hours",
+                        "label": "表示データ範囲トリム",
+                        "kind": "float",
+                        "tooltip": "描画前に先頭側から除外する時間。0.5単位で指定して挙動確認できます。",
+                    }
+                )
+            if nested_value(graph_style, "x_axis.data_trim_end_hours", None) is not None:
+                fields.append(
+                    {
+                        "path": "x_axis.data_trim_end_hours",
+                        "label": "表示データ範囲トリム",
+                        "kind": "float",
+                        "tooltip": "描画前に末尾側から除外する時間。累積雨量は除外後データで再計算します。",
+                    }
+                )
         if nested_value(graph_style, "bar_color", None) is not None:
             fields.append({"path": "bar_color", "label": "棒色", "kind": "str"})
         if nested_value(graph_style, "bar.width", None) is not None:
@@ -771,6 +865,10 @@ class HydrologyGraphsApp(tk.Toplevel):
     def _is_hyetograph_style_key(graph_key: str) -> bool:
         return graph_key.startswith("hyetograph:")
 
+    @staticmethod
+    def _is_event_style_key(graph_key: str) -> bool:
+        return ":" in graph_key
+
     def _open_palette_dialog(self, *, title: str, fields: list[dict[str, Any]], group_toggle_path: str | None = None) -> None:
         open_palette_dialog(self, title=title, fields=fields, group_toggle_path=group_toggle_path)
 
@@ -780,6 +878,171 @@ class HydrologyGraphsApp(tk.Toplevel):
 
     def _apply_group_toggle_states(self) -> None:
         apply_group_toggle_states(self)
+
+    def _add_style_control(self, graph_style: dict[str, Any], control: dict[str, Any]) -> None:
+        value = nested_value(graph_style, control["path"], None)
+        self._set_control_var(control, value)
+        tip = str(control.get("tooltip", "")).strip()
+        if tip:
+            label_widget = control.get("label_widget")
+            widget = control.get("widget")
+            if label_widget is not None:
+                self._style_field_tooltips.append(ToolTip(label_widget, tip))
+            if widget is not None:
+                self._style_field_tooltips.append(ToolTip(widget, tip))
+        self._style_graph_controls.append(control)
+
+    def _rebuild_style_control_indexes(self) -> None:
+        controls_by_path: dict[str, list[dict[str, Any]]] = {}
+        for control in self._style_graph_controls:
+            path = str(control.get("path", "")).strip()
+            if not path:
+                continue
+            controls_by_path.setdefault(path, []).append(control)
+        self._style_controls_by_path = controls_by_path
+
+        palette_rows_by_path: dict[str, list[dict[str, Any]]] = {}
+        for row in self._style_palette_rows:
+            for field in list(row.get("fields") or []):
+                path = str(field.get("path", "")).strip()
+                if not path:
+                    continue
+                palette_rows_by_path.setdefault(path, []).append(row)
+        self._style_palette_rows_by_path = palette_rows_by_path
+
+    def _refresh_style_controls_from_payload(self, changed_paths: set[str] | None = None) -> None:
+        """既存フォーム構造を維持したまま値だけ更新する。"""
+
+        normalized_changed: set[str] | None = None
+        if changed_paths is not None:
+            normalized_changed = {str(path).strip() for path in changed_paths if str(path).strip()}
+            if not normalized_changed:
+                normalized_changed = set()
+        was_updating = self._style_form_updating
+        self._style_form_updating = True
+        try:
+            graph_key = self._current_style_graph_key()
+            graph_styles = self._style_payload.setdefault("graph_styles", {})
+            graph_style = graph_styles.get(graph_key)
+            if not isinstance(graph_style, dict):
+                graph_style = {}
+                graph_styles[graph_key] = graph_style
+
+            should_sync_time_display_mode = normalized_changed is None or "display.time_display_mode" in normalized_changed
+            if should_sync_time_display_mode:
+                time_display_mode = str(nested_value(self._style_payload, "display.time_display_mode", "datetime")).strip() or "datetime"
+                if time_display_mode not in VALID_TIME_DISPLAY_MODES:
+                    time_display_mode = "datetime"
+                if self.time_display_mode.get() != time_display_mode:
+                    self.time_display_mode.set(time_display_mode)
+
+            if normalized_changed is None:
+                controls = self._style_graph_controls
+            else:
+                controls = []
+                for path in normalized_changed:
+                    controls.extend(self._style_controls_by_path.get(path, []))
+            for control in controls:
+                path = str(control.get("path", "")).strip()
+                if not path or path.startswith("__palette__"):
+                    continue
+                value = nested_value(graph_style, path, None)
+                self._set_control_var(control, value)
+
+            if normalized_changed is None:
+                rows = self._style_palette_rows
+            else:
+                rows_map: dict[int, dict[str, Any]] = {}
+                for path in normalized_changed:
+                    for row in self._style_palette_rows_by_path.get(path, []):
+                        rows_map[id(row)] = row
+                rows = list(rows_map.values())
+            for row_meta in rows:
+                summary_label_width = int(row_meta.get("summary_label_width", _PALETTE_SUMMARY_LABEL_WIDTH))
+                summary_max_chars = int(row_meta.get("summary_max_chars", _PALETTE_SUMMARY_MAX_CHARS))
+                effective_max_chars = min(summary_max_chars, max(4, summary_label_width - 1))
+                row_meta["summary_var"].set(
+                    build_palette_summary(
+                        graph_style,
+                        list(row_meta.get("fields") or []),
+                        max_chars=effective_max_chars,
+                    )
+                )
+            self._apply_group_toggle_states()
+        finally:
+            self._style_form_updating = was_updating
+
+    def _render_row_definition(
+        self,
+        *,
+        graph_style: dict[str, Any],
+        row: int,
+        row_def: dict[str, Any],
+    ) -> int:
+        palette_fields = list(row_def.get("palette_fields") or [])
+        if palette_fields:
+            controls, rows_used = create_palette_style_row(
+                self,
+                self.graph_style_box,
+                row=row,
+                row_label=str(row_def["row_label"]),
+                graph_style=graph_style,
+                palette_fields=palette_fields,
+                toggle=row_def.get("toggle"),
+                summary_max_chars=_PALETTE_SUMMARY_MAX_CHARS,
+                summary_label_width=_PALETTE_SUMMARY_LABEL_WIDTH,
+            )
+        else:
+            controls, rows_used = create_compact_style_row(
+                self,
+                self.graph_style_box,
+                row=row,
+                row_label=str(row_def["row_label"]),
+                toggle=row_def.get("toggle"),
+                values=list(row_def.get("values") or []),
+                detail_values=list(row_def.get("detail_values") or []),
+            )
+        for control in controls:
+            self._add_style_control(graph_style, control)
+        return rows_used
+
+    @staticmethod
+    def _paired_compact_row_definitions() -> tuple[dict[str, Any], ...]:
+        return (
+            {
+                "anchor_path": "threshold.label_offset",
+                "skip_paths": {"threshold.label_enabled"},
+                "row_label": "基準線ラベルオフセット",
+                "toggle": {"path": "threshold.label_enabled", "tooltip_path": "threshold.label_enabled"},
+                "values": (
+                    {"path": "threshold.label_offset", "label": "", "kind": "float", "tooltip_path": "threshold.label_offset"},
+                ),
+            },
+            {
+                "anchor_path": "x_axis.data_trim_start_hours",
+                "skip_paths": {"x_axis.data_trim_enabled", "x_axis.data_trim_end_hours"},
+                "row_label": "表示データ範囲トリム",
+                "toggle": {"path": "x_axis.data_trim_enabled", "tooltip_path": "x_axis.data_trim_enabled"},
+                "values": (
+                    {"path": "x_axis.data_trim_start_hours", "label": "先頭(時間)", "kind": "float", "tooltip_path": "x_axis.data_trim_start_hours"},
+                    {"path": "x_axis.data_trim_end_hours", "label": "末尾(時間)", "kind": "float", "tooltip_path": "x_axis.data_trim_end_hours"},
+                ),
+            },
+            {
+                "anchor_path": "x_axis.date_boundary_line_offset_hours",
+                "skip_paths": {"x_axis.date_boundary_line_enabled"},
+                "row_label": "日付境界線オフセット(時間)",
+                "toggle": {"path": "x_axis.date_boundary_line_enabled", "tooltip_path": "x_axis.date_boundary_line_enabled"},
+                "values": (
+                    {
+                        "path": "x_axis.date_boundary_line_offset_hours",
+                        "label": "",
+                        "kind": "float",
+                        "tooltip_path": "x_axis.date_boundary_line_offset_hours",
+                    },
+                ),
+            },
+        )
 
     def _refresh_style_forms_from_payload(self) -> None:
         """現在のスタイル payload からフォーム表示を更新する。"""
@@ -802,232 +1065,101 @@ class HydrologyGraphsApp(tk.Toplevel):
             )
             for child in self.graph_style_box.winfo_children():
                 child.destroy()
-            fields = self._graph_style_fields_for(graph_style)
-            excluded: set[str] = set()
+            fields = self._graph_style_fields_for(graph_key, graph_style)
+            excluded: set[str] = {"grid.enabled"}
             if self._is_hyetograph_style_key(graph_key):
-                excluded.update(
-                    {
-                        "grid.enabled",
-                        "bar.width",
-                        "bar_color",
-                        "series_color",
-                        "series_width",
-                        "series_style",
-                    }
-                )
+                excluded.update({"bar.width", "bar_color", "series_color", "series_width", "series_style"})
             fields = [field for field in fields if str(field.get("path")) not in excluded]
-            label_col_minsize = style_label_column_minsize(fields)
+            label_col_minsize = min(style_label_column_minsize(fields), 170)
             self.graph_style_box.columnconfigure(0, minsize=44)
             self.graph_style_box.columnconfigure(1, minsize=label_col_minsize)
-            self.graph_style_box.columnconfigure(2, weight=1)
+            self.graph_style_box.columnconfigure(2, weight=0)
             display_mode_box = getattr(self, "display_mode_box", None)
             if display_mode_box is not None:
-                display_mode_box.columnconfigure(0, minsize=label_col_minsize)
+                display_mode_box.columnconfigure(1, minsize=label_col_minsize)
             self._style_graph_controls = []
             self._style_palette_rows = []
+            self._style_controls_by_path = {}
+            self._style_palette_rows_by_path = {}
             self._style_field_tooltips = []
             current_row = 0
             field_by_path = {str(field.get("path", "")): field for field in fields}
+            paired_by_anchor: dict[str, dict[str, Any]] = {}
+            skip_paths: set[str] = set()
+            for paired in self._paired_compact_row_definitions():
+                anchor_path = str(paired.get("anchor_path", "")).strip()
+                if not anchor_path or anchor_path not in field_by_path:
+                    continue
+                toggle_def = paired.get("toggle")
+                toggle_path = str((toggle_def or {}).get("path", "")).strip() if isinstance(toggle_def, dict) else ""
+                if toggle_path and toggle_path not in field_by_path:
+                    continue
+                value_defs = list(paired.get("values") or [])
+                if any(str(value.get("path", "")).strip() not in field_by_path for value in value_defs):
+                    continue
+                paired_by_anchor[anchor_path] = paired
+                skip_paths.update(set(paired.get("skip_paths") or set()))
+
             for field in fields:
-                path = str(field.get("path", ""))
-                if (
-                    path == "threshold.label_enabled"
-                    and "threshold.label_offset" in field_by_path
-                ):
-                    # 基準線ラベルは「オフセット」行にチェックを統合して1行にする。
+                path = str(field.get("path", "")).strip()
+                if path in skip_paths:
                     continue
-                if path == "threshold.label_offset" and "threshold.label_enabled" in field_by_path:
-                    toggle_field = field_by_path["threshold.label_enabled"]
-                    controls, rows_used = create_compact_style_row(
-                        self,
-                        self.graph_style_box,
-                        row=current_row,
-                        row_label=str(field.get("label", "")),
-                        toggle={
-                            "path": "threshold.label_enabled",
-                            "tooltip": str(toggle_field.get("tooltip", "")).strip(),
-                        },
-                        values=[
-                            {
-                                "path": "threshold.label_offset",
-                                "label": "",
-                                "kind": str(field.get("kind", "float")),
-                                "tooltip": str(field.get("tooltip", "")).strip(),
+                paired = paired_by_anchor.get(path)
+                if paired is not None:
+                    toggle_def = paired.get("toggle")
+                    toggle = None
+                    if isinstance(toggle_def, dict):
+                        toggle_path = str(toggle_def.get("path", "")).strip()
+                        if toggle_path:
+                            toggle_field = field_by_path[toggle_path]
+                            toggle = {
+                                "path": toggle_path,
+                                "tooltip": str(toggle_field.get("tooltip", "")).strip(),
                             }
-                        ],
-                    )
-                    for control in controls:
-                        value = nested_value(graph_style, control["path"], None)
-                        self._set_control_var(control, value)
-                        tip = str(control.get("tooltip", "")).strip()
-                        if tip:
-                            label_widget = control.get("label_widget")
-                            widget = control.get("widget")
-                            if label_widget is not None:
-                                self._style_field_tooltips.append(ToolTip(label_widget, tip))
-                            if widget is not None:
-                                self._style_field_tooltips.append(ToolTip(widget, tip))
-                        self._style_graph_controls.append(control)
-                    current_row += rows_used
-                    continue
-                if (
-                    path == "x_axis.date_boundary_line_enabled"
-                    and "x_axis.date_boundary_line_offset_hours" in field_by_path
-                ):
-                    # 日付境界線は「オフセット」行にチェックを統合して1行にする。
-                    continue
-                if path == "x_axis.date_boundary_line_offset_hours" and "x_axis.date_boundary_line_enabled" in field_by_path:
-                    toggle_field = field_by_path["x_axis.date_boundary_line_enabled"]
-                    controls, rows_used = create_compact_style_row(
-                        self,
-                        self.graph_style_box,
-                        row=current_row,
-                        row_label=str(field.get("label", "")),
-                        toggle={
-                            "path": "x_axis.date_boundary_line_enabled",
-                            "tooltip": str(toggle_field.get("tooltip", "")).strip(),
-                        },
-                        values=[
+                    values: list[dict[str, Any]] = []
+                    for value_def in list(paired.get("values") or []):
+                        value_path = str(value_def.get("path", "")).strip()
+                        source = field_by_path[value_path]
+                        values.append(
                             {
-                                "path": "x_axis.date_boundary_line_offset_hours",
-                                "label": "",
-                                "kind": str(field.get("kind", "float")),
-                                "tooltip": str(field.get("tooltip", "")).strip(),
+                                "path": value_path,
+                                "label": str(value_def.get("label", "")),
+                                "kind": str(source.get("kind", value_def.get("kind", "float"))),
+                                "tooltip": str(source.get("tooltip", "")).strip(),
                             }
-                        ],
+                        )
+                    rows_used = self._render_row_definition(
+                        graph_style=graph_style,
+                        row=current_row,
+                        row_def={
+                            "row_label": str(paired.get("row_label", field.get("label", ""))),
+                            "toggle": toggle,
+                            "values": values,
+                        },
                     )
-                    for control in controls:
-                        value = nested_value(graph_style, control["path"], None)
-                        self._set_control_var(control, value)
-                        tip = str(control.get("tooltip", "")).strip()
-                        if tip:
-                            label_widget = control.get("label_widget")
-                            widget = control.get("widget")
-                            if label_widget is not None:
-                                self._style_field_tooltips.append(ToolTip(label_widget, tip))
-                            if widget is not None:
-                                self._style_field_tooltips.append(ToolTip(widget, tip))
-                        self._style_graph_controls.append(control)
                     current_row += rows_used
                     continue
 
-                control = create_style_control(
-                    self,
-                    self.graph_style_box,
-                    row=current_row,
-                    field=field,
-                )
-                value = nested_value(graph_style, control["path"], None)
-                self._set_control_var(control, value)
-                tip = str(control.get("tooltip", "")).strip()
-                if tip:
-                    label_widget = control.get("label_widget")
-                    widget = control.get("widget")
-                    if label_widget is not None:
-                        self._style_field_tooltips.append(ToolTip(label_widget, tip))
-                    if widget is not None:
-                        self._style_field_tooltips.append(ToolTip(widget, tip))
-                self._style_graph_controls.append(control)
+                control = create_style_control(self, self.graph_style_box, row=current_row, field=field)
+                self._add_style_control(graph_style, control)
                 current_row += 1
 
+            row_defs: list[dict[str, Any]] = [dict(row_def) for row_def in _COMMON_COMPACT_ROWS]
             if self._is_hyetograph_style_key(graph_key):
-                compact_rows = [
-                    {
-                        "row_label": "累積雨量線",
-                        "toggle": {"path": "cumulative_line.enabled"},
-                        "palette_fields": [
-                            {"path": "cumulative_line.width", "label": "太さ", "kind": "float"},
-                            {
-                                "path": "cumulative_line.style",
-                                "label": "線種",
-                                "kind": "choice",
-                                "values": _LINE_STYLE_CHOICES,
-                            },
-                            {"path": "cumulative_line.color", "label": "色", "kind": "color"},
-                        ],
-                    },
-                    {
-                        "row_label": "欠測帯",
-                        "toggle": {"path": "missing_band.enabled"},
-                        "palette_fields": [
-                            {"path": "missing_band.alpha", "label": "濃さ", "kind": "float"},
-                            {"path": "missing_band.color", "label": "色", "kind": "color"},
-                        ],
-                    },
-                    {
-                        "row_label": "グリッド",
-                        "toggle": None,
-                        "values": [
-                            {"path": "grid.x_enabled", "label": "X(縦線)", "kind": "bool"},
-                            {"path": "grid.y_enabled", "label": "Y(横線)", "kind": "bool"},
-                        ],
-                    },
-                    {
-                        "row_label": "棒設定",
-                        "toggle": None,
-                        "palette_fields": [
-                            {"path": "bar_color", "label": "棒色", "kind": "color"},
-                            {"path": "bar.width", "label": "棒幅", "kind": "float"},
-                            {"path": "bar.edge_width", "label": "外枠太さ", "kind": "float"},
-                            {"path": "bar.edge_alpha", "label": "外枠濃さ", "kind": "float"},
-                        ],
-                    },
-                    {
-                        "row_label": "系列設定",
-                        "toggle": None,
-                        "palette_fields": [
-                            {"path": "series_color", "label": "色", "kind": "color"},
-                            {"path": "series_width", "label": "太さ", "kind": "float"},
-                            {"path": "series_style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES},
-                        ],
-                    },
-                    {
-                        "row_label": "Y軸(時間雨量)",
-                        "toggle": None,
-                        "values": [
-                            {"path": "y_axis.max", "label": "上限", "kind": "float"},
-                            {"path": "y_axis.tick_step", "label": "刻み", "kind": "float"},
-                        ],
-                    },
-                ]
-                for row_def in compact_rows:
-                    palette_fields = list(row_def.get("palette_fields") or [])
-                    if palette_fields:
-                        controls, rows_used = create_palette_style_row(
-                            self,
-                            self.graph_style_box,
-                            row=current_row,
-                            row_label=str(row_def["row_label"]),
-                            graph_style=graph_style,
-                            palette_fields=palette_fields,
-                            toggle=row_def.get("toggle"),
-                        )
-                    else:
-                        controls, rows_used = create_compact_style_row(
-                            self,
-                            self.graph_style_box,
-                            row=current_row,
-                            row_label=str(row_def["row_label"]),
-                            toggle=row_def.get("toggle"),
-                            values=list(row_def.get("values") or []),
-                            detail_values=list(row_def.get("detail_values") or []),
-                        )
-                    for control in controls:
-                        value = nested_value(graph_style, control["path"], None)
-                        self._set_control_var(control, value)
-                        tip = str(control.get("tooltip", "")).strip()
-                        if tip:
-                            label_widget = control.get("label_widget")
-                            widget = control.get("widget")
-                            if label_widget is not None:
-                                self._style_field_tooltips.append(ToolTip(label_widget, tip))
-                            if widget is not None:
-                                self._style_field_tooltips.append(ToolTip(widget, tip))
-                        self._style_graph_controls.append(control)
-                    current_row += rows_used
-            for row_meta in self._style_palette_rows:
-                row_meta["summary_var"].set(build_palette_summary(graph_style, list(row_meta.get("fields") or [])))
-            self._apply_group_toggle_states()
+                row_defs.extend(dict(row_def) for row_def in _HYETOGRAPH_COMPACT_ROWS)
+
+            for row_def in row_defs:
+                toggle_def = row_def.get("toggle")
+                toggle_path = str((toggle_def or {}).get("path", "")).strip() if isinstance(toggle_def, dict) else ""
+                value_paths = [str(value.get("path", "")).strip() for value in list(row_def.get("values") or [])]
+                palette_paths = [str(value.get("path", "")).strip() for value in list(row_def.get("palette_fields") or [])]
+                required_paths = [path for path in [toggle_path, *value_paths, *palette_paths] if path]
+                if any(nested_value(graph_style, path, None) is None for path in required_paths):
+                    continue
+                rows_used = self._render_row_definition(graph_style=graph_style, row=current_row, row_def=row_def)
+                current_row += rows_used
+            self._rebuild_style_control_indexes()
+            self._refresh_style_controls_from_payload()
         finally:
             self._style_form_updating = False
 
@@ -1095,15 +1227,16 @@ class HydrologyGraphsApp(tk.Toplevel):
         payload = self._style_from_editor(silent=True)
         if payload is not None:
             self._style_payload = payload
-        if not self._apply_style_form_values():
+        apply_result = self._apply_style_form_values()
+        if not apply_result.ok:
             return
-        self._apply_group_toggle_states()
         self._set_style_text_from_payload()
-        self._refresh_style_forms_from_payload()
-        self._push_style_history(self._style_payload)
+        self._refresh_style_controls_from_payload(apply_result.changed_paths)
+        if apply_result.changed_paths:
+            self._push_style_history(self._style_payload)
         self._render_preview(silent_json_error=True)
 
-    def _apply_style_form_values(self) -> bool:
+    def _apply_style_form_values(self) -> ApplyStyleFormResult:
         return apply_style_form_values(
             self,
             empty_numeric=_STYLE_EMPTY_NUMERIC,

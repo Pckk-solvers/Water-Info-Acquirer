@@ -7,6 +7,9 @@ from typing import Any
 
 from .style_payload import nested_value
 
+_VALUE_LABEL_COL_MINSIZE = 62
+_VALUE_INPUT_COL_MINSIZE = 88
+
 
 def create_style_control(
     app,
@@ -36,7 +39,7 @@ def create_style_control(
             textvariable=var,
             state="readonly",
             values=tuple(field.get("values") or ()),
-            width=30,
+            width=24,
         )
         widget.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
         widget.bind("<<ComboboxSelected>>", app._on_style_form_commit_event)
@@ -72,6 +75,7 @@ def create_compact_input_control(
     is_last: bool,
     is_single_full_width: bool,
     label_prefix: str,
+    columnspan: int = 1,
 ) -> dict[str, Any]:
     """compact行の入力ウィジェットを1つ生成して配置する。"""
 
@@ -88,20 +92,20 @@ def create_compact_input_control(
             textvariable=var,
             state="readonly",
             values=tuple(field.get("values") or ()),
-            width=input_width if not is_single_full_width else 30,
+            width=input_width if not is_single_full_width else 24,
         )
         widget.bind("<<ComboboxSelected>>", app._on_style_form_commit_event)
         widget.bind("<Return>", app._on_style_form_commit_event)
     else:
         var = tk.StringVar(value="")
-        widget = ttk.Entry(container, textvariable=var, width=input_width if not is_single_full_width else 30)
+        widget = ttk.Entry(container, textvariable=var, width=input_width if not is_single_full_width else 24)
         widget.bind("<Return>", app._on_style_form_commit_event)
 
     pad_right = 0 if is_last else 8
     if kind in {"str", "int", "float", "choice"} and (is_last or is_single_full_width):
         container.columnconfigure(widget_col, weight=1)
     sticky = "ew" if kind in {"str", "int", "float", "choice"} else "w"
-    widget.grid(row=grid_row, column=widget_col, sticky=sticky, padx=(0, pad_right))
+    widget.grid(row=grid_row, column=widget_col, columnspan=columnspan, sticky=sticky, padx=(0, pad_right))
 
     return {
         "path": str(field.get("path", "")),
@@ -156,31 +160,58 @@ def create_compact_style_row(
     if value_defs:
         value_frame = ttk.Frame(parent)
         value_frame.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
-        value_frame.columnconfigure(0, weight=1)
-        for i, field in enumerate(value_defs):
-            caption = str(field.get("label", "")).strip()
-            base_col = i * 2
-            if caption:
-                ttk.Label(value_frame, text=caption).grid(row=0, column=base_col, sticky="w", padx=(0, 2))
-                widget_col = base_col + 1
-            else:
-                widget_col = base_col
-            is_single_full_width = len(value_defs) == 1 and caption == ""
-            controls.append(
-                create_compact_input_control(
-                    app,
-                    container=value_frame,
-                    field=field,
-                    row_label=row_label,
-                    label_widget=label_widget,
-                    group_toggle_path=toggle_path,
-                    grid_row=0,
-                    widget_col=widget_col,
-                    is_last=(i == len(value_defs) - 1),
-                    is_single_full_width=is_single_full_width,
-                    label_prefix=f"{row_label}:{field.get('label', '')}",
+        if len(value_defs) <= 2:
+            _configure_two_slot_value_columns(value_frame)
+            for i, field in enumerate(value_defs):
+                caption = str(field.get("label", "")).strip()
+                label_col = i * 2
+                input_col = label_col + 1
+                if caption:
+                    ttk.Label(value_frame, text=caption).grid(row=0, column=label_col, sticky="w", padx=(0, 4))
+                else:
+                    ttk.Frame(value_frame, width=1).grid(row=0, column=label_col, sticky="w")
+                is_single_full_width = len(value_defs) == 1 and caption == ""
+                controls.append(
+                    create_compact_input_control(
+                        app,
+                        container=value_frame,
+                        field=field,
+                        row_label=row_label,
+                        label_widget=label_widget,
+                        group_toggle_path=toggle_path,
+                        grid_row=0,
+                        widget_col=input_col if not is_single_full_width else 0,
+                        columnspan=4 if is_single_full_width else 1,
+                        is_last=(i == len(value_defs) - 1),
+                        is_single_full_width=is_single_full_width,
+                        label_prefix=f"{row_label}:{field.get('label', '')}",
+                    )
                 )
-            )
+        else:
+            for i, field in enumerate(value_defs):
+                caption = str(field.get("label", "")).strip()
+                base_col = i * 2
+                if caption:
+                    ttk.Label(value_frame, text=caption).grid(row=0, column=base_col, sticky="w", padx=(0, 2))
+                    widget_col = base_col + 1
+                else:
+                    widget_col = base_col
+                is_single_full_width = len(value_defs) == 1 and caption == ""
+                controls.append(
+                    create_compact_input_control(
+                        app,
+                        container=value_frame,
+                        field=field,
+                        row_label=row_label,
+                        label_widget=label_widget,
+                        group_toggle_path=toggle_path,
+                        grid_row=0,
+                        widget_col=widget_col,
+                        is_last=(i == len(value_defs) - 1),
+                        is_single_full_width=is_single_full_width,
+                        label_prefix=f"{row_label}:{field.get('label', '')}",
+                    )
+                )
 
     detail_defs = detail_values or []
     if detail_defs:
@@ -190,29 +221,55 @@ def create_compact_style_row(
         ttk.Frame(parent, width=1).grid(row=row + 1, column=0, sticky="w", padx=(6, 0), pady=(0, 3))
         detail_frame = ttk.Frame(parent)
         detail_frame.grid(row=row + 1, column=2, sticky="ew", padx=6, pady=(0, 3))
-        for i, field in enumerate(detail_defs):
-            caption = str(field.get("label", "")).strip()
-            base_col = i * 2
-            if caption:
-                ttk.Label(detail_frame, text=caption).grid(row=0, column=base_col, sticky="w", padx=(0, 2))
-                widget_col = base_col + 1
-            else:
-                widget_col = base_col
-            controls.append(
-                create_compact_input_control(
-                    app,
-                    container=detail_frame,
-                    field=field,
-                    row_label=row_label,
-                    label_widget=detail_label,
-                    group_toggle_path=toggle_path,
-                    grid_row=0,
-                    widget_col=widget_col,
-                    is_last=(i == len(detail_defs) - 1),
-                    is_single_full_width=False,
-                    label_prefix=f"{row_label}:detail:{field.get('label', '')}",
+        if len(detail_defs) <= 2:
+            _configure_two_slot_value_columns(detail_frame)
+            for i, field in enumerate(detail_defs):
+                caption = str(field.get("label", "")).strip()
+                label_col = i * 2
+                input_col = label_col + 1
+                if caption:
+                    ttk.Label(detail_frame, text=caption).grid(row=0, column=label_col, sticky="w", padx=(0, 4))
+                else:
+                    ttk.Frame(detail_frame, width=1).grid(row=0, column=label_col, sticky="w")
+                controls.append(
+                    create_compact_input_control(
+                        app,
+                        container=detail_frame,
+                        field=field,
+                        row_label=row_label,
+                        label_widget=detail_label,
+                        group_toggle_path=toggle_path,
+                        grid_row=0,
+                        widget_col=input_col,
+                        is_last=(i == len(detail_defs) - 1),
+                        is_single_full_width=False,
+                        label_prefix=f"{row_label}:detail:{field.get('label', '')}",
+                    )
                 )
-            )
+        else:
+            for i, field in enumerate(detail_defs):
+                caption = str(field.get("label", "")).strip()
+                base_col = i * 2
+                if caption:
+                    ttk.Label(detail_frame, text=caption).grid(row=0, column=base_col, sticky="w", padx=(0, 2))
+                    widget_col = base_col + 1
+                else:
+                    widget_col = base_col
+                controls.append(
+                    create_compact_input_control(
+                        app,
+                        container=detail_frame,
+                        field=field,
+                        row_label=row_label,
+                        label_widget=detail_label,
+                        group_toggle_path=toggle_path,
+                        grid_row=0,
+                        widget_col=widget_col,
+                        is_last=(i == len(detail_defs) - 1),
+                        is_single_full_width=False,
+                        label_prefix=f"{row_label}:detail:{field.get('label', '')}",
+                    )
+                )
 
     return controls, rows_used
 
@@ -226,6 +283,8 @@ def create_palette_style_row(
     graph_style: dict[str, Any],
     palette_fields: list[dict[str, Any]],
     toggle: dict[str, Any] | None = None,
+    summary_max_chars: int = 56,
+    summary_label_width: int = 28,
 ) -> tuple[list[dict[str, Any]], int]:
     """col2 にサマリ + 設定ボタンを置く行を構築する。"""
 
@@ -258,8 +317,9 @@ def create_palette_style_row(
     area = ttk.Frame(parent)
     area.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
     area.columnconfigure(0, weight=1)
-    summary_var = tk.StringVar(value=build_palette_summary(graph_style, palette_fields))
-    summary_label = ttk.Label(area, textvariable=summary_var, foreground="#334155")
+    effective_max_chars = min(summary_max_chars, max(4, summary_label_width - 1))
+    summary_var = tk.StringVar(value=build_palette_summary(graph_style, palette_fields, max_chars=effective_max_chars))
+    summary_label = ttk.Label(area, textvariable=summary_var, foreground="#334155", width=summary_label_width, anchor="w")
     summary_label.grid(row=0, column=0, sticky="w")
     button = ttk.Button(
         area,
@@ -288,6 +348,8 @@ def create_palette_style_row(
             "row_label": row_label,
             "summary_var": summary_var,
             "fields": palette_fields,
+            "summary_max_chars": summary_max_chars,
+            "summary_label_width": summary_label_width,
             "group_toggle_path": toggle_path,
             "button": button,
         }
@@ -295,7 +357,16 @@ def create_palette_style_row(
     return controls, rows_used
 
 
-def build_palette_summary(graph_style: dict[str, Any], fields: list[dict[str, Any]]) -> str:
+def _configure_two_slot_value_columns(container: ttk.Frame) -> None:
+    """2入力行を同一フォーマットで揃えるための固定列構成。"""
+
+    container.columnconfigure(0, minsize=_VALUE_LABEL_COL_MINSIZE, weight=0)
+    container.columnconfigure(1, minsize=_VALUE_INPUT_COL_MINSIZE, weight=0, uniform="value_inputs")
+    container.columnconfigure(2, minsize=_VALUE_LABEL_COL_MINSIZE, weight=0)
+    container.columnconfigure(3, minsize=_VALUE_INPUT_COL_MINSIZE, weight=0, uniform="value_inputs")
+
+
+def build_palette_summary(graph_style: dict[str, Any], fields: list[dict[str, Any]], *, max_chars: int = 56) -> str:
     parts: list[str] = []
     for field in fields:
         path = str(field.get("path", "")).strip()
@@ -307,8 +378,8 @@ def build_palette_summary(graph_style: dict[str, Any], fields: list[dict[str, An
             continue
         parts.append(f"{label}:{value}")
     summary = " / ".join(parts) if parts else "未設定"
-    if len(summary) > 56:
-        return summary[:56] + "..."
+    if len(summary) > max_chars:
+        return summary[:max_chars] + "..."
     return summary
 
 

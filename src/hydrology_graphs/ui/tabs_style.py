@@ -9,9 +9,9 @@ from .tooltip import ToolTip
 def build_style_tab(app, parent: ttk.Frame) -> None:
     """スタイル調整タブのレイアウトを構築する。"""
 
-    parent.columnconfigure(0, weight=2)
-    parent.columnconfigure(1, weight=3)
-    parent.columnconfigure(0, minsize=520)
+    parent.columnconfigure(0, weight=0)
+    parent.columnconfigure(1, weight=1)
+    parent.columnconfigure(0, minsize=560)
     parent.rowconfigure(0, weight=1)
 
     left = ttk.Frame(parent, padding=6)
@@ -99,12 +99,13 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
 
     display_mode_box = ttk.LabelFrame(scroll_inner, text="共通設定")
     display_mode_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-    display_mode_box.columnconfigure(0, weight=0)
-    display_mode_box.columnconfigure(1, weight=1)
+    display_mode_box.columnconfigure(0, minsize=44)
+    display_mode_box.columnconfigure(1, weight=0)
+    display_mode_box.columnconfigure(2, weight=1)
     app.display_mode_box = display_mode_box
-    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=0, padx=6, pady=6, sticky="w")
+    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=1, padx=(1, 6), pady=6, sticky="w")
     mode_buttons = ttk.Frame(display_mode_box)
-    mode_buttons.grid(row=0, column=1, padx=6, pady=6, sticky="w")
+    mode_buttons.grid(row=0, column=2, padx=6, pady=6, sticky="w")
     ttk.Radiobutton(
         mode_buttons,
         text="1時~24時",

@@ -80,6 +80,8 @@ def render_graph_png(
             dpi=dpi,
         )
 
+    trimmed_df = _trim_event_dataframe(df, graph_style, graph_type=graph_type)
+
     fig, ax = plt.subplots(
         figsize=(figure_width, figure_height),
         dpi=dpi,
@@ -90,15 +92,15 @@ def render_graph_png(
 
     # グラフ種別ごとに描画方法を切り替える。イベント系は折れ線/棒、年最大系は年次棒。
     if graph_type in (GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL):
-        _plot_hydro(ax, df, graph_style)
+        _plot_hydro(ax, trimmed_df, graph_style)
     elif graph_type in (GRAPH_ANNUAL_RAINFALL, GRAPH_ANNUAL_DISCHARGE, GRAPH_ANNUAL_WATER_LEVEL):
-        _plot_annual(ax, df, graph_style)
+        _plot_annual(ax, trimmed_df, graph_style)
     else:
         raise ValueError(f"Unsupported graph_type: {graph_type}")
 
     # 基準線は最後に重ねることで、主系列の見た目を邪魔しにくくする。
     _plot_thresholds(ax, thresholds, graph_style)
-    _plot_date_boundaries(ax, df, graph_style, graph_type=graph_type)
+    _plot_date_boundaries(ax, trimmed_df, graph_style, graph_type=graph_type)
     _apply_title_axis_labels(ax, graph_style, station_name)
     _apply_axis_details(ax, graph_style, time_display_mode=time_display_mode)
 
@@ -156,24 +158,27 @@ def _render_hyetograph_png(
     ax_rain.set_facecolor(_FIXED_BACKGROUND_COLOR)
     _apply_common_axes_style(ax_rain, graph_style, graph_type=GRAPH_HYETOGRAPH, allow_invert=True)
 
-    full_time, bar_values, missing_mask = _prepare_hyetograph_data(df)
+    trimmed_df = _trim_event_dataframe(df, graph_style, graph_type=GRAPH_HYETOGRAPH)
+    full_time, bar_values, missing_mask = _prepare_hyetograph_data(trimmed_df)
     bar_cfg = graph_style.get("bar", {})
+    bar_enabled = bool(bar_cfg.get("enabled", True))
     width_hours = float(graph_style.get("x_axis", {}).get("tick_interval_hours", 1))
     width = float(bar_cfg.get("width", 0.8)) / max(width_hours, 1.0)
-    ax_rain.bar(
-        full_time,
-        bar_values,
-        width=width,
-        color=graph_style.get("bar_color", "#60A5FA"),
-        edgecolor=(0.0, 0.0, 0.0, float(bar_cfg.get("edge_alpha", 1.0))),
-        linewidth=float(bar_cfg.get("edge_width", 0.0)),
-        label="時間雨量",
-        zorder=float(graph_style.get("series", {}).get("zorder", 2)),
-    )
+    if bar_enabled:
+        ax_rain.bar(
+            full_time,
+            bar_values,
+            width=width,
+            color=graph_style.get("bar_color", "#60A5FA"),
+            edgecolor=(0.0, 0.0, 0.0, float(bar_cfg.get("edge_alpha", 1.0))),
+            linewidth=float(bar_cfg.get("edge_width", 0.0)),
+            label="時間雨量",
+            zorder=float(graph_style.get("series", {}).get("zorder", 2)),
+        )
     _plot_missing_bands(ax_rain, full_time, missing_mask, graph_style)
 
     _plot_thresholds(ax_rain, thresholds, graph_style)
-    _plot_date_boundaries(ax_rain, df, graph_style, graph_type=GRAPH_HYETOGRAPH)
+    _plot_date_boundaries(ax_rain, trimmed_df, graph_style, graph_type=GRAPH_HYETOGRAPH)
     ax_cum = ax_rain.twinx()
     ax_cum.set_facecolor((1, 1, 1, 0))
     ax_cum.grid(False)
@@ -190,7 +195,9 @@ def _render_hyetograph_png(
             label="累積雨量",
             zorder=float(graph_style.get("series", {}).get("zorder", 2)) + 0.2,
         )
-        peak = float(pd.to_numeric(cumulative, errors="coerce").max(skipna=True) or 0.0)
+        cumulative_numeric = pd.Series(pd.to_numeric(cumulative, errors="coerce"), dtype="float64")
+        non_null = cumulative_numeric.dropna()
+        peak = float(non_null.max()) if not non_null.empty else 0.0
     else:
         peak = 0.0
 
@@ -217,7 +224,8 @@ def _render_hyetograph_png(
             upper = _nice_upper_bound(peak)
     ax_cum.set_ylim(bottom=0.0, top=max(upper, 1.0))
     _sync_secondary_ticks_from_primary(ax_rain, ax_cum)
-    _apply_y_axis_number_format(ax_cum, graph_style.get("y_axis", {}).get("number_format", "plain"))
+    if bool(graph_style.get("y_axis", {}).get("enabled", True)):
+        _apply_y_axis_number_format(ax_cum, graph_style.get("y_axis", {}).get("number_format", "plain"))
 
     _apply_title_axis_labels(ax_rain, graph_style, station_name)
     y2_label = _coerce_text(graph_style.get("y2_axis", {}).get("label", "累積雨量"))
@@ -309,36 +317,29 @@ def _apply_common_axes_style(
     tick_size = float(font.get("tick_size", graph_style.get("font_size", 11)))
     ax.tick_params(labelsize=tick_size)
     grid = graph_style.get("grid", {})
-    x_grid_enabled = bool(grid.get("x_enabled", grid.get("enabled", True)))
-    y_grid_enabled = bool(grid.get("y_enabled", grid.get("enabled", True)))
-    if graph_type == GRAPH_HYETOGRAPH:
-        if y_grid_enabled:
-            ax.grid(
-                True,
-                axis="y",
-                linestyle=str(grid.get("style", "--")),
-                color=str(grid.get("color", "#CBD5E1")),
-                alpha=float(grid.get("alpha", 0.7)),
-            )
-        else:
-            ax.grid(False, axis="y")
-        if x_grid_enabled:
-            ax.grid(
-                True,
-                axis="x",
-                linestyle=str(grid.get("style", "--")),
-                color=str(grid.get("color", "#CBD5E1")),
-                alpha=float(grid.get("alpha", 0.7)),
-            )
-        else:
-            ax.grid(False, axis="x")
-    elif grid.get("enabled", True):
+    grid_enabled = bool(grid.get("enabled", True))
+    x_grid_enabled = grid_enabled and bool(grid.get("x_enabled", grid.get("enabled", True)))
+    y_grid_enabled = grid_enabled and bool(grid.get("y_enabled", grid.get("enabled", True)))
+    if y_grid_enabled:
         ax.grid(
             True,
+            axis="y",
             linestyle=str(grid.get("style", "--")),
             color=str(grid.get("color", "#CBD5E1")),
             alpha=float(grid.get("alpha", 0.7)),
         )
+    else:
+        ax.grid(False, axis="y")
+    if x_grid_enabled:
+        ax.grid(
+            True,
+            axis="x",
+            linestyle=str(grid.get("style", "--")),
+            color=str(grid.get("color", "#CBD5E1")),
+            alpha=float(grid.get("alpha", 0.7)),
+        )
+    else:
+        ax.grid(False, axis="x")
     if allow_invert and graph_style.get("invert_y_axis"):
         ax.invert_yaxis()
         ax.xaxis.tick_top()
@@ -369,9 +370,53 @@ def _prepare_hyetograph_data(df: pd.DataFrame) -> tuple[pd.DatetimeIndex, pd.Ser
     return full_time, bar_values, missing_mask
 
 
+def _trim_event_dataframe(df: pd.DataFrame, graph_style: dict[str, Any], *, graph_type: str) -> pd.DataFrame:
+    """イベント系グラフの描画前データを先頭/末尾トリムする。"""
+
+    if graph_type not in {GRAPH_HYETOGRAPH, GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL}:
+        return df
+    if df.empty:
+        return df
+
+    x_axis = graph_style.get("x_axis", {})
+    if not bool(x_axis.get("data_trim_enabled", True)):
+        return df
+    try:
+        trim_start = max(float(x_axis.get("data_trim_start_hours", 0.0) or 0.0), 0.0)
+    except Exception:  # noqa: BLE001
+        trim_start = 0.0
+    try:
+        trim_end = max(float(x_axis.get("data_trim_end_hours", 0.0) or 0.0), 0.0)
+    except Exception:  # noqa: BLE001
+        trim_end = 0.0
+    if trim_start <= 0 and trim_end <= 0:
+        return df
+
+    time_col = _time_column_for_plot(df)
+    if time_col not in df.columns:
+        return df
+
+    data = df.copy()
+    ts = pd.to_datetime(data[time_col], errors="coerce")
+    valid = ts.dropna()
+    if valid.empty:
+        return data.iloc[0:0].copy()
+
+    start_bound = valid.min() + pd.Timedelta(hours=trim_start)
+    end_bound = valid.max() - pd.Timedelta(hours=trim_end)
+    if end_bound < start_bound:
+        return data.iloc[0:0].copy()
+
+    mask = ts.between(start_bound, end_bound, inclusive="both")
+    return data.loc[mask].copy()
+
+
 def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     """流量・水位の折れ線グラフを描く。"""
 
+    series_cfg = graph_style.get("series", {})
+    if not bool(series_cfg.get("enabled", True)):
+        return
     time_col = _time_column_for_plot(df)
     data = df.sort_values(time_col).copy()
     data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
@@ -383,13 +428,16 @@ def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
         linestyle=_line_style(graph_style.get("series_style", "solid")),
         marker="o" if graph_style.get("show_markers", False) else None,
         label="観測値",
-        zorder=float(graph_style.get("series", {}).get("zorder", 2)),
+        zorder=float(series_cfg.get("zorder", 2)),
     )
 
 
 def _plot_annual(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     """年最大系の棒グラフを描く。"""
 
+    bar_cfg = graph_style.get("bar", {})
+    if not bool(bar_cfg.get("enabled", True)):
+        return
     annual = annual_max_by_year(df) if "year" not in df.columns else df.copy()
     xs = [str(int(year)) for year in annual["year"].tolist()]
     ys = annual["value"].tolist()
@@ -397,7 +445,7 @@ def _plot_annual(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
         xs,
         ys,
         color=graph_style.get("bar_color", graph_style.get("series_color", "#1D4ED8")),
-        width=float(graph_style.get("bar", {}).get("width", 0.8)),
+        width=float(bar_cfg.get("width", 0.8)),
         label="年最大値",
         zorder=float(graph_style.get("series", {}).get("zorder", 2)),
     )
@@ -505,6 +553,7 @@ def _apply_axis_details(
 
     x_axis = graph_style.get("x_axis", {})
     y_axis = y_axis_override if isinstance(y_axis_override, dict) else graph_style.get("y_axis", {})
+    y_axis_enabled = bool(y_axis.get("enabled", True))
     if apply_x_axis:
         if x_axis.get("tick_interval_hours"):
             ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(float(x_axis["tick_interval_hours"]))))
@@ -525,27 +574,28 @@ def _apply_axis_details(
         if x_margin_rate >= 0:
             ax.margins(x=x_margin_rate)
 
-    y_min = fixed_y_min if fixed_y_min is not None else y_axis.get("min")
-    y_max = y_axis.get("max")
-    if y_min is not None or y_max is not None:
-        ax.set_ylim(bottom=y_min, top=y_max)
+    if y_axis_enabled:
+        y_min = fixed_y_min if fixed_y_min is not None else y_axis.get("min")
+        y_max = y_axis.get("max")
+        if y_min is not None or y_max is not None:
+            ax.set_ylim(bottom=y_min, top=y_max)
 
-    tick_step = y_axis.get("tick_step")
-    if tick_step is not None:
-        tick_step = float(tick_step)
-        low, high = ax.get_ylim()
-        if tick_step > 0 and high > low:
-            eps = max(abs(low), abs(high), 1.0) * 1e-9
-            ticks: list[float] = []
-            value = low
-            while value <= high + eps:
-                ticks.append(value)
-                value += tick_step
-            if ticks and abs(ticks[-1] - high) <= eps * 10:
-                ticks[-1] = high
-            ax.set_yticks(ticks)
+        tick_step = y_axis.get("tick_step")
+        if tick_step is not None:
+            tick_step = float(tick_step)
+            low, high = ax.get_ylim()
+            if tick_step > 0 and high > low:
+                eps = max(abs(low), abs(high), 1.0) * 1e-9
+                ticks: list[float] = []
+                value = low
+                while value <= high + eps:
+                    ticks.append(value)
+                    value += tick_step
+                if ticks and abs(ticks[-1] - high) <= eps * 10:
+                    ticks[-1] = high
+                ax.set_yticks(ticks)
 
-    _apply_y_axis_number_format(ax, y_axis.get("number_format", "plain"))
+        _apply_y_axis_number_format(ax, y_axis.get("number_format", "plain"))
 
 
 def _apply_y_axis_number_format(ax, number_format: object) -> None:

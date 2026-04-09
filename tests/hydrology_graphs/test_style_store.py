@@ -19,8 +19,21 @@ def test_default_style_x_axis_defaults_are_zero():
     style = default_style()
     for graph_style in style["graph_styles"].values():
         x_axis = graph_style.get("x_axis", {})
+        grid = graph_style.get("grid", {})
+        bar = graph_style.get("bar", {})
+        y_axis = graph_style.get("y_axis", {})
+        series = graph_style.get("series", {})
         assert x_axis.get("range_margin_rate", 0) == 0
         assert x_axis.get("tick_rotation", 0) == 0
+        assert isinstance(x_axis.get("data_trim_enabled", True), bool)
+        assert x_axis.get("data_trim_start_hours", 0) == 0
+        assert x_axis.get("data_trim_end_hours", 0) == 0
+        assert isinstance(grid.get("enabled", True), bool)
+        assert isinstance(grid.get("x_enabled"), bool)
+        assert isinstance(grid.get("y_enabled"), bool)
+        assert isinstance(bar.get("enabled", True), bool)
+        assert isinstance(y_axis.get("enabled", True), bool)
+        assert isinstance(series.get("enabled", True), bool)
         assert "background_color" not in graph_style
 
 
@@ -138,6 +151,30 @@ def test_load_style_backfills_date_boundary_line_defaults():
     x_axis = result.style["graph_styles"]["hyetograph:3day"]["x_axis"]
     assert x_axis["date_boundary_line_enabled"] is False
     assert x_axis["date_boundary_line_offset_hours"] == 0.0
+
+
+def test_load_style_backfills_data_trim_defaults():
+    payload = default_style()
+    payload["graph_styles"]["hydrograph_discharge:3day"]["x_axis"].pop("data_trim_start_hours", None)
+    payload["graph_styles"]["hydrograph_discharge:3day"]["x_axis"].pop("data_trim_end_hours", None)
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    x_axis = result.style["graph_styles"]["hydrograph_discharge:3day"]["x_axis"]
+    assert x_axis["data_trim_enabled"] is True
+    assert x_axis["data_trim_start_hours"] == 0.0
+    assert x_axis["data_trim_end_hours"] == 0.0
+
+
+def test_load_style_rejects_negative_x_axis_data_trim_start_hours():
+    payload = default_style()
+    payload["graph_styles"]["hyetograph:3day"]["x_axis"]["data_trim_start_hours"] = -0.5
+
+    result = load_style(payload=payload)
+
+    assert not result.is_valid
+    assert "error:hyetograph:3day_x_axis_data_trim_start_hours_must_be_non_negative" in result.warnings
 
 
 def test_default_hyetograph_style_contains_dual_axis_and_missing_band_defaults():

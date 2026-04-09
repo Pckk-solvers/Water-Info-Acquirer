@@ -36,9 +36,15 @@ Schema Version: 2.0
 - `series_color`, `series_width`, `series_style`
 - `axis.x_label`, `axis.y_label`
 - 任意: `x_axis`, `y_axis`, `bar`, `threshold`, `series`
+  - `grid.enabled` を指定した場合はグリッド行全体のON/OFFとして扱う
   - `x_axis.range_margin_rate` を指定した場合は X軸データ範囲の余白率として扱う（例: `0.05` で両端5%）
+  - `x_axis.data_trim_enabled` を指定した場合は表示データ範囲トリムのON/OFFとして扱う
+  - `x_axis.data_trim_start_hours` / `x_axis.data_trim_end_hours` を指定した場合は描画前データの先頭/末尾トリム（時間）として扱う
   - `x_axis.date_boundary_line_enabled` を指定した場合は日付境界線表示のON/OFFとして扱う
   - `x_axis.date_boundary_line_offset_hours` を指定した場合は日付境界線の位置オフセット（時間）として扱う
+  - `bar.enabled` を指定した場合は棒描画（ハイエト/年最大）のON/OFFとして扱う
+  - `series.enabled` を指定した場合は系列描画（主にハイドロ折れ線）のON/OFFとして扱う
+  - `y_axis.enabled` を指定した場合はY軸設定（max/tick_step/number_format）の適用ON/OFFとして扱う
   - `y_axis.number_format` は `plain|comma|percent` を受け付ける（ハイエトグラフでは左右Y軸に同一適用）
 
 ## 4. 値制約（要点）
@@ -49,6 +55,11 @@ Schema Version: 2.0
 - 未知の `graph_styles` キーは警告対象（保存時除外）
 - `x_axis.range_margin_rate` は `0` 以上の数値のみ許可
 - `x_axis.range_margin_rate` 未指定時は `0` を既定として扱う
+- `grid.enabled` は boolean のみ許可（未指定時 `true`）
+- `x_axis.data_trim_enabled` は boolean のみ許可（未指定時 `true`）
+- `x_axis.data_trim_start_hours` / `x_axis.data_trim_end_hours` は `0` 以上の数値のみ許可
+- `x_axis.data_trim_start_hours` / `x_axis.data_trim_end_hours` 未指定時は `0.0` を既定として扱う
+- `bar.enabled` / `series.enabled` / `y_axis.enabled` は boolean のみ許可（未指定時 `true`）
 - `x_axis.date_boundary_line_enabled` は boolean のみ許可
 - `x_axis.date_boundary_line_enabled` 未指定時は `false` を既定として扱う
 - `x_axis.date_boundary_line_offset_hours` は number のみ許可

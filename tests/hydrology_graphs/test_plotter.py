@@ -252,3 +252,187 @@ def test_render_hyetograph_applies_percent_format_to_both_y_axes(monkeypatch):
     assert len(y_formatters) >= 2
     assert all(isinstance(fmt, mticker.FuncFormatter) for fmt in y_formatters[-2:])
     assert y_formatters[-1](12.5, 0) == "12.5%"
+
+
+def test_render_hydro_applies_x_axis_data_trim_hours(monkeypatch):
+    rows = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(8):
+        rows.append(
+            {
+                "observed_at": start + timedelta(hours=i),
+                "value": float(i + 1),
+            }
+        )
+    df = pd.DataFrame(rows)
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    x_axis = style.setdefault("x_axis", {})
+    x_axis["data_trim_start_hours"] = 1.0
+    x_axis["data_trim_end_hours"] = 2.0
+
+    plotted_x: list[pd.Timestamp] = []
+    original_plot = matplotlib.axes.Axes.plot
+
+    def _spy(self, x, y, *args, **kwargs):
+        plotted_x.extend(pd.to_datetime(x).tolist())
+        return original_plot(self, x, y, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "plot", _spy)
+
+    png = render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="A",
+        df=df,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert plotted_x
+    assert min(plotted_x) == start + timedelta(hours=1)
+    assert max(plotted_x) == start + timedelta(hours=5)
+
+
+def test_render_hydro_does_not_trim_when_data_trim_disabled(monkeypatch):
+    rows = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(8):
+        rows.append({"observed_at": start + timedelta(hours=i), "value": float(i + 1)})
+    df = pd.DataFrame(rows)
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    x_axis = style.setdefault("x_axis", {})
+    x_axis["data_trim_enabled"] = False
+    x_axis["data_trim_start_hours"] = 1.0
+    x_axis["data_trim_end_hours"] = 2.0
+
+    plotted_x: list[pd.Timestamp] = []
+    original_plot = matplotlib.axes.Axes.plot
+
+    def _spy(self, x, y, *args, **kwargs):
+        plotted_x.extend(pd.to_datetime(x).tolist())
+        return original_plot(self, x, y, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "plot", _spy)
+
+    png = render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="A",
+        df=df,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert plotted_x
+    assert min(plotted_x) == start
+    assert max(plotted_x) == start + timedelta(hours=7)
+
+
+def test_render_hyetograph_applies_half_hour_data_trim_to_bars(monkeypatch):
+    rows = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(6):
+        rows.append(
+            {
+                "observed_at": start + timedelta(hours=i),
+                "value": float(i + 1),
+                "quality": "ok",
+            }
+        )
+    df = pd.DataFrame(rows)
+    style = default_style()["graph_styles"]["hyetograph:3day"]
+    x_axis = style.setdefault("x_axis", {})
+    x_axis["data_trim_start_hours"] = 0.5
+    x_axis["data_trim_end_hours"] = 0.5
+
+    bar_x: list[pd.Timestamp] = []
+    original_bar = matplotlib.axes.Axes.bar
+
+    def _spy(self, x, *args, **kwargs):
+        bar_x.extend(pd.to_datetime(x).tolist())
+        return original_bar(self, x, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "bar", _spy)
+
+    png = render_graph_png(
+        graph_type="hyetograph",
+        station_name="A",
+        df=df,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert bar_x
+    assert min(bar_x) == start + timedelta(hours=1)
+    assert max(bar_x) == start + timedelta(hours=4)
+
+
+def test_render_hydro_uses_axis_specific_grid_flags(monkeypatch):
+    rows = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(8):
+        rows.append({"observed_at": start + timedelta(hours=i), "value": float(i + 1)})
+    df = pd.DataFrame(rows)
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    style.setdefault("grid", {})["x_enabled"] = False
+    style["grid"]["y_enabled"] = True
+
+    calls: list[tuple[object, object]] = []
+    original_grid = matplotlib.axes.Axes.grid
+
+    def _spy(self, visible=None, which="major", axis="both", **kwargs):
+        calls.append((visible, axis))
+        return original_grid(self, visible=visible, which=which, axis=axis, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "grid", _spy)
+
+    png = render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="A",
+        df=df,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (False, "x") in calls
+    assert (True, "y") in calls
+
+
+def test_render_hydro_disables_all_grid_when_grid_enabled_false(monkeypatch):
+    rows = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(8):
+        rows.append({"observed_at": start + timedelta(hours=i), "value": float(i + 1)})
+    df = pd.DataFrame(rows)
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    style.setdefault("grid", {})["enabled"] = False
+    style["grid"]["x_enabled"] = True
+    style["grid"]["y_enabled"] = True
+
+    calls: list[tuple[object, object]] = []
+    original_grid = matplotlib.axes.Axes.grid
+
+    def _spy(self, visible=None, which="major", axis="both", **kwargs):
+        calls.append((visible, axis))
+        return original_grid(self, visible=visible, which=which, axis=axis, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "grid", _spy)
+
+    png = render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="A",
+        df=df,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (False, "x") in calls
+    assert (False, "y") in calls

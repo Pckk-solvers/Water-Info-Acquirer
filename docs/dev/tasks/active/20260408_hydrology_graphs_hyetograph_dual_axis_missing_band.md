@@ -30,6 +30,7 @@
   - `y2_axis.max`, `y2_axis.tick_step`（右軸・内部補助）
   - `grid.x_enabled`, `grid.y_enabled`（軸別グリッドON/OFF）
   - `missing_band.enabled`, `missing_band.color`, `missing_band.alpha`
+  - `x_axis.data_trim_start_hours`, `x_axis.data_trim_end_hours`（表示前データ除外）
 - 制約を明記:
   - 左右Y軸の下限は固定 `0`
   - 棒間隔の見え方は `bar.width` のみで調整し、時刻位置は変更しない
@@ -38,6 +39,8 @@
   - 刻みは指定優先（過密でも間引かない）
   - グリッド既定値は `x_enabled=false`, `y_enabled=true`
   - 欠測帯判定ルール（`quality=missing` または期待時刻欠落）
+  - トリム単位は暫定 `0.5時間`（検証後に `1時間` へ変更判断）
+  - トリムは描画前データに適用し、累積雨量はトリム後データで再計算する
 
 ### Task 2: style schema / style store 反映
 - `style_schema_2_0.json` に追加キーの型・最小値・既定値を追加する。
@@ -66,6 +69,8 @@
 - 欠測区間は累積線を切断し、補間しない。
 - 同一X軸で描画し、時刻位置のずれをなくす。
 - 左右Y軸の下限を `0` 固定にし、累積側は自動上限で収める。
+- `x_axis.data_trim_start_hours` / `x_axis.data_trim_end_hours` を適用し、先頭・末尾データを除外したうえで描画する。
+- 累積雨量はトリム後データで再計算する。
 
 ### Task 5: テスト追加（部分テスト）
 - schema/style_store テスト:
@@ -101,3 +106,24 @@
   - 追加キー名と責務境界（UI / style schema / render）が妥当か
   - 欠測判定ルールが既存データ契約と矛盾しないか
   - テスト範囲が回帰リスクを十分にカバーしているか
+
+---
+
+## 更新メモ（2026-04-08, フォーム編集再開）
+
+### 直近で進める対象
+- Task 3（フォーム反映）を優先して再開する。
+- 既存の分割方針に合わせ、UI変更は以下モジュール中心で実施する。
+  - `src/hydrology_graphs/ui/style_form_builder.py`
+  - `src/hydrology_graphs/ui/style_form_actions.py`
+  - `src/hydrology_graphs/ui/style_palette_dialog.py`
+  - `src/hydrology_graphs/ui/app.py`（coordinator 変更のみ）
+
+### 実装粒度（1回で実装・確認する単位）
+1. フォーム行レイアウトの統一（3列構成維持、1項目レンダリング共通化）
+2. 日付境界線/基準線ラベル関連の入力幅と開始位置の統一
+3. 設定ダイアログ再適用時の反映確認（閉じずに適用を含む）
+4. 部分テスト/静的検証の実施
+   - `uv run ruff check ...`
+   - `uv run pyright ...`
+   - `uv run pytest -q tests/hydrology_graphs/test_ui_support.py tests/hydrology_graphs/test_preview_actions.py`

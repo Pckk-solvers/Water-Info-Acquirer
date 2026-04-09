@@ -35,7 +35,6 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
     dialog = tk.Toplevel(app)
     dialog.title(f"{title} の設定")
     dialog.transient(app)
-    dialog.grab_set()
     dialog.resizable(False, False)
     dialog.columnconfigure(1, weight=1)
 
@@ -94,11 +93,13 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
         if not isinstance(current_graph_style, dict):
             current_graph_style = {}
             current_graph_styles[graph_key] = current_graph_style
+        changed_paths: set[str] = set()
         for control in controls:
             path = str(control["path"])
             kind = str(control["kind"])
             label = str(control["label"])
             var = control["var"]
+            current_value = nested_value(current_graph_style, path, None)
             if kind == "bool":
                 value = bool(var.get())
             elif kind == "choice":
@@ -106,7 +107,9 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
             elif kind == "float":
                 text = str(var.get()).strip()
                 if text == "":
-                    delete_nested_value(current_graph_style, path)
+                    if current_value is not None:
+                        delete_nested_value(current_graph_style, path)
+                        changed_paths.add(path)
                     continue
                 try:
                     value = float(text)
@@ -116,7 +119,9 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
             elif kind == "int":
                 text = str(var.get()).strip()
                 if text == "":
-                    delete_nested_value(current_graph_style, path)
+                    if current_value is not None:
+                        delete_nested_value(current_graph_style, path)
+                        changed_paths.add(path)
                     continue
                 try:
                     parsed = float(text)
@@ -130,7 +135,9 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
             elif kind == "color":
                 text = str(var.get()).strip().upper()
                 if text == "":
-                    delete_nested_value(current_graph_style, path)
+                    if current_value is not None:
+                        delete_nested_value(current_graph_style, path)
+                        changed_paths.add(path)
                     continue
                 if not is_hex_color(text):
                     messagebox.showerror("入力エラー", f"{label} は #RRGGBB 形式の色を選択してください。", parent=dialog)
@@ -138,12 +145,37 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
                 value = text
             else:
                 value = str(var.get()).strip()
-            set_nested_value(current_graph_style, path, value)
+            if current_value != value:
+                set_nested_value(current_graph_style, path, value)
+                changed_paths.add(path)
 
         app._apply_group_toggle_states()
         app._set_style_text_from_payload()
-        app._push_style_history(app._style_payload)
-        app._refresh_style_forms_from_payload()
+        app._refresh_style_controls_from_payload(changed_paths)
+        if changed_paths:
+            app._push_style_history(app._style_payload)
         app._render_preview(silent_json_error=True)
 
     ttk.Button(buttons, text="適用", command=_apply).grid(row=0, column=1)
+
+    _place_dialog_near_pointer(app, dialog)
+    dialog.grab_set()
+
+
+def _place_dialog_near_pointer(app, dialog: tk.Toplevel) -> None:
+    """ダイアログを現在のマウスカーソル付近へ配置する。"""
+
+    try:
+        dialog.update_idletasks()
+        width = max(int(dialog.winfo_reqwidth()), int(dialog.winfo_width()))
+        height = max(int(dialog.winfo_reqheight()), int(dialog.winfo_height()))
+        pointer_x = int(app.winfo_pointerx()) + 12
+        pointer_y = int(app.winfo_pointery()) + 12
+        screen_w = int(dialog.winfo_screenwidth())
+        screen_h = int(dialog.winfo_screenheight())
+        x = max(0, min(pointer_x, max(0, screen_w - width)))
+        y = max(0, min(pointer_y, max(0, screen_h - height)))
+        dialog.geometry(f"+{x}+{y}")
+    except Exception:
+        # 位置調整は補助機能なので、失敗してもダイアログ表示を優先する。
+        return

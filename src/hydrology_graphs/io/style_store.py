@@ -35,7 +35,7 @@ def _base_style() -> dict[str, Any]:
         "margin": {"top": 0.08, "right": 0.04, "bottom": 0.12, "left": 0.08},
         "legend": {"enabled": True, "position": "upper right"},
         "dpi": 120,
-        "grid": {"enabled": True, "color": "#CBD5E1", "style": "--", "alpha": 0.7},
+        "grid": {"enabled": True, "x_enabled": True, "y_enabled": True, "color": "#CBD5E1", "style": "--", "alpha": 0.7},
         "font": {"title_size": 14, "label_size": 12, "tick_size": 10},
         "export": {"transparent_background": False},
     }
@@ -58,11 +58,14 @@ def _style_hyetograph() -> dict[str, Any]:
                 "tick_rotation": 0,
                 "tick_interval_hours": 6,
                 "label_align": "center",
+                "data_trim_enabled": True,
+                "data_trim_start_hours": 0.0,
+                "data_trim_end_hours": 0.0,
             },
             "grid": {"enabled": True, "x_enabled": False, "y_enabled": True, "color": "#CBD5E1", "style": "--", "alpha": 0.7},
-            "y_axis": {"number_format": "plain", "tick_count": 6, "max": 80},
+            "y_axis": {"enabled": True, "number_format": "plain", "tick_count": 6, "max": 80},
             "y2_axis": {"max": 250, "tick_step": 25},
-            "bar": {"width": 0.25, "edge_width": 0.8, "edge_alpha": 0.8},
+            "bar": {"enabled": True, "width": 0.25, "edge_width": 0.8, "edge_alpha": 0.8},
             "cumulative_line": {"enabled": True, "color": "#1E3A8A", "width": 1.6, "style": "solid"},
             "missing_band": {"enabled": True, "color": "#9CA3AF", "alpha": 0.28},
             "threshold": {
@@ -71,7 +74,7 @@ def _style_hyetograph() -> dict[str, Any]:
                 "label_font_size": 10,
                 "zorder": 3,
             },
-            "series": {"zorder": 2},
+            "series": {"enabled": True, "zorder": 2},
         }
     )
     return style
@@ -91,15 +94,18 @@ def _style_hydro_discharge() -> dict[str, Any]:
                 "tick_rotation": 0,
                 "tick_interval_hours": 6,
                 "label_align": "center",
+                "data_trim_enabled": True,
+                "data_trim_start_hours": 0.0,
+                "data_trim_end_hours": 0.0,
             },
-            "y_axis": {"number_format": "comma", "tick_count": 8},
+            "y_axis": {"enabled": True, "number_format": "comma", "tick_count": 8},
             "threshold": {
                 "label_enabled": True,
                 "label_offset": 0.03,
                 "label_font_size": 10,
                 "zorder": 3,
             },
-            "series": {"zorder": 2},
+            "series": {"enabled": True, "zorder": 2},
         }
     )
     return style
@@ -119,15 +125,18 @@ def _style_hydro_water_level() -> dict[str, Any]:
                 "tick_rotation": 0,
                 "tick_interval_hours": 6,
                 "label_align": "center",
+                "data_trim_enabled": True,
+                "data_trim_start_hours": 0.0,
+                "data_trim_end_hours": 0.0,
             },
-            "y_axis": {"number_format": "plain", "tick_count": 7},
+            "y_axis": {"enabled": True, "number_format": "plain", "tick_count": 7},
             "threshold": {
                 "label_enabled": True,
                 "label_offset": 0.05,
                 "label_font_size": 10,
                 "zorder": 3,
             },
-            "series": {"zorder": 2},
+            "series": {"enabled": True, "zorder": 2},
         }
     )
     return style
@@ -144,9 +153,9 @@ def _style_annual_rainfall() -> dict[str, Any]:
             "bar_color": "#60A5FA",
             "title": {"template": "{station_name} 年最大雨量"},
             "x_axis": {"tick_rotation": 0, "label_align": "center"},
-            "y_axis": {"number_format": "plain", "tick_count": 8},
-            "bar": {"width": 0.8},
-            "series": {"zorder": 2},
+            "y_axis": {"enabled": True, "number_format": "plain", "tick_count": 8},
+            "bar": {"enabled": True, "width": 0.8},
+            "series": {"enabled": True, "zorder": 2},
         }
     )
     return style
@@ -163,9 +172,9 @@ def _style_annual_discharge() -> dict[str, Any]:
             "bar_color": "#34D399",
             "title": {"template": "{station_name} 年最大流量"},
             "x_axis": {"tick_rotation": 0, "label_align": "center"},
-            "y_axis": {"number_format": "comma", "tick_count": 8},
-            "bar": {"width": 0.8},
-            "series": {"zorder": 2},
+            "y_axis": {"enabled": True, "number_format": "comma", "tick_count": 8},
+            "bar": {"enabled": True, "width": 0.8},
+            "series": {"enabled": True, "zorder": 2},
         }
     )
     return style
@@ -182,9 +191,9 @@ def _style_annual_water_level() -> dict[str, Any]:
             "bar_color": "#A78BFA",
             "title": {"template": "{station_name} 年最高水位"},
             "x_axis": {"tick_rotation": 0, "label_align": "center"},
-            "y_axis": {"number_format": "plain", "tick_count": 8},
-            "bar": {"width": 0.8},
-            "series": {"zorder": 2},
+            "y_axis": {"enabled": True, "number_format": "plain", "tick_count": 8},
+            "bar": {"enabled": True, "width": 0.8},
+            "series": {"enabled": True, "zorder": 2},
         }
     )
     return style
@@ -310,6 +319,10 @@ def _schema_graph_style_validation_error_to_warning(path: list[Any], validator: 
             return f"error:{style_key}_margin_{suffix[1]}_must_be_non_negative"
         if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "range_margin_rate":
             return f"error:{style_key}_x_axis_range_margin_rate_must_be_non_negative"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "data_trim_start_hours":
+            return f"error:{style_key}_x_axis_data_trim_start_hours_must_be_non_negative"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "data_trim_end_hours":
+            return f"error:{style_key}_x_axis_data_trim_end_hours_must_be_non_negative"
         if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "tick_count":
             return f"error:{style_key}_y_axis_tick_count_must_be_positive_int"
     if validator == "type":
@@ -319,8 +332,22 @@ def _schema_graph_style_validation_error_to_warning(path: list[Any], validator: 
             return f"error:{style_key}_margin_must_be_object"
         if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "date_boundary_line_enabled":
             return f"error:{style_key}_x_axis_date_boundary_line_enabled_must_be_boolean"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "data_trim_enabled":
+            return f"error:{style_key}_x_axis_data_trim_enabled_must_be_boolean"
         if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "date_boundary_line_offset_hours":
             return f"error:{style_key}_x_axis_date_boundary_line_offset_hours_must_be_number"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "data_trim_start_hours":
+            return f"error:{style_key}_x_axis_data_trim_start_hours_must_be_number"
+        if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "data_trim_end_hours":
+            return f"error:{style_key}_x_axis_data_trim_end_hours_must_be_number"
+        if head == "grid" and len(suffix) >= 2 and suffix[1] == "enabled":
+            return f"error:{style_key}_grid_enabled_must_be_boolean"
+        if head == "bar" and len(suffix) >= 2 and suffix[1] == "enabled":
+            return f"error:{style_key}_bar_enabled_must_be_boolean"
+        if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "enabled":
+            return f"error:{style_key}_y_axis_enabled_must_be_boolean"
+        if head == "series" and len(suffix) >= 2 and suffix[1] == "enabled":
+            return f"error:{style_key}_series_enabled_must_be_boolean"
         if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "tick_count":
             return f"error:{style_key}_y_axis_tick_count_must_be_positive_int"
     return None
@@ -366,7 +393,14 @@ def _drop_optional_none_values_for_schema(raw: dict[str, Any]) -> None:
         ("x_axis", "range_margin_rate"),
         ("x_axis", "tick_interval_hours"),
         ("x_axis", "date_boundary_line_enabled"),
+        ("x_axis", "data_trim_enabled"),
         ("x_axis", "date_boundary_line_offset_hours"),
+        ("x_axis", "data_trim_start_hours"),
+        ("x_axis", "data_trim_end_hours"),
+        ("grid", "enabled"),
+        ("bar", "enabled"),
+        ("y_axis", "enabled"),
+        ("series", "enabled"),
         ("bar", "width"),
         ("bar", "edge_width"),
         ("bar", "edge_alpha"),
@@ -475,11 +509,24 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
         style["x_axis"] = {}
     style["x_axis"].setdefault("range_margin_rate", 0)
     style["x_axis"].setdefault("date_boundary_line_enabled", False)
+    style["x_axis"].setdefault("data_trim_enabled", True)
     style["x_axis"].setdefault("date_boundary_line_offset_hours", 0.0)
+    style["x_axis"].setdefault("data_trim_start_hours", 0.0)
+    style["x_axis"].setdefault("data_trim_end_hours", 0.0)
     if "grid" not in style or not isinstance(style["grid"], dict):
         style["grid"] = {}
+    style["grid"].setdefault("enabled", True)
     style["grid"].setdefault("x_enabled", bool(style["grid"].get("enabled", True)))
     style["grid"].setdefault("y_enabled", bool(style["grid"].get("enabled", True)))
+    if "bar" not in style or not isinstance(style["bar"], dict):
+        style["bar"] = {}
+    style["bar"].setdefault("enabled", True)
+    if "series" not in style or not isinstance(style["series"], dict):
+        style["series"] = {}
+    style["series"].setdefault("enabled", True)
+    if "y_axis" not in style or not isinstance(style["y_axis"], dict):
+        style["y_axis"] = {}
+    style["y_axis"].setdefault("enabled", True)
 
 
 def _deep_merge(base: dict, incoming: dict) -> None:
