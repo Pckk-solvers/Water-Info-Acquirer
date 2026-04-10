@@ -132,6 +132,55 @@ def validate_event_series_complete(
     return True, None
 
 
+def evaluate_event_series_status(
+    df: pd.DataFrame,
+    base_date: date,
+    window_days: int,
+    *,
+    terminal_padding_hours: int = 0,
+) -> tuple[str, str | None]:
+    """イベント窓の欠測状態を評価し、ok/warn/ng を返す。"""
+
+    expected = expected_event_index(base_date, window_days, terminal_padding_hours=terminal_padding_hours)
+    if df.empty:
+        return "ng", "対象期間のデータが存在しません。"
+    tcol = _time_column(df)
+    if tcol not in df.columns:
+        return "ng", f"{tcol} 列が見つかりません。"
+    work = df.copy()
+    work[tcol] = pd.to_datetime(work[tcol], errors="coerce")
+    work = work.dropna(subset=[tcol]).copy()
+    if work.empty:
+        return "ng", "対象期間のデータが存在しません。"
+    work["__exists__"] = 1
+    work = work.set_index(tcol).reindex(expected)
+    if "value" not in work.columns:
+        return "ng", "value 列が見つかりません。"
+
+    row_missing = cast(pd.Series, work["__exists__"]).isna()
+    value_missing = cast(pd.Series, work["value"]).isna()
+    quality_missing = pd.Series(False, index=work.index, dtype="bool")
+    if "quality" in work.columns:
+        quality_missing = cast(pd.Series, work["quality"]).eq("missing").fillna(False).astype(bool)
+
+    has_missing = bool(row_missing.any() or value_missing.any() or quality_missing.any())
+    valid_value = value_missing.fillna(True).eq(False)
+    valid_quality = quality_missing.fillna(False).eq(False)
+    valid_count = int((valid_value & valid_quality).sum())
+    if valid_count <= 0:
+        return "ng", "対象期間に有効データがありません。"
+    if has_missing:
+        tags: list[str] = []
+        if bool(row_missing.any()):
+            tags.append("M1:行欠落")
+        if bool(quality_missing.any()):
+            tags.append("M2:quality=missing")
+        if bool(value_missing.any()):
+            tags.append("M3:value欠損")
+        return "warn", f"欠測あり（{', '.join(tags)}）"
+    return "ok", None
+
+
 def annual_max_series(df: pd.DataFrame) -> pd.Series:
     """年ごとの最大値系列を返す。"""
 

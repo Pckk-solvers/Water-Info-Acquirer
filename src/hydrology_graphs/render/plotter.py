@@ -387,7 +387,8 @@ def _prepare_hyetograph_data(df: pd.DataFrame) -> tuple[pd.DatetimeIndex, pd.Ser
     if "quality" in data.columns:
         q_series = data.set_index(time_col)["quality"]
         q_missing = q_series.eq("missing")
-        quality_missing = q_missing.groupby(level=0).last().reindex(full_time).fillna(False).astype(bool)
+        q_missing_reindexed = q_missing.groupby(level=0).last().reindex(full_time)
+        quality_missing = q_missing_reindexed.where(q_missing_reindexed.notna(), False).astype("bool")
     missing_mask = values.isna() | quality_missing
     bar_values = values.fillna(0.0)
     return full_time, bar_values, missing_mask
@@ -440,12 +441,12 @@ def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
     series_cfg = graph_style.get("series", {})
     if not bool(series_cfg.get("enabled", True)):
         return
-    time_col = _time_column_for_plot(df)
-    data = df.sort_values(time_col).copy()
-    data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
+    full_time, values, missing_mask = _prepare_hydro_data(df)
+    if full_time.empty:
+        return
     ax.plot(
-        data[time_col],
-        pd.to_numeric(data["value"], errors="coerce"),
+        full_time,
+        values,
         color=graph_style.get("series_color", "#0F766E"),
         linewidth=float(graph_style.get("series_width", 1.5)),
         linestyle=_line_style(graph_style.get("series_style", "solid")),
@@ -453,6 +454,33 @@ def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
         label="観測値",
         zorder=float(series_cfg.get("zorder", 2)),
     )
+    _plot_missing_bands(ax, full_time, missing_mask, graph_style)
+
+
+def _prepare_hydro_data(df: pd.DataFrame) -> tuple[pd.DatetimeIndex, pd.Series, pd.Series]:
+    """ハイドロ描画用の時系列（全時刻・値・欠測マスク）を作る。"""
+
+    if df.empty:
+        return pd.DatetimeIndex([]), pd.Series(dtype="float64"), pd.Series(dtype="bool")
+    time_col = _time_column_for_plot(df)
+    data = df.sort_values(time_col).copy()
+    data[time_col] = pd.to_datetime(data[time_col], errors="coerce")
+    data = data.dropna(subset=[time_col]).reset_index(drop=True)
+    if data.empty:
+        return pd.DatetimeIndex([]), pd.Series(dtype="float64"), pd.Series(dtype="bool")
+    full_time = pd.date_range(start=data[time_col].min(), end=data[time_col].max(), freq="1h")
+    value_series = cast(pd.Series, pd.to_numeric(data["value"], errors="coerce"))
+    indexed_values = pd.Series(value_series.values, index=data[time_col]).groupby(level=0).last()
+    values = indexed_values.reindex(full_time)
+    quality_missing = pd.Series(False, index=full_time)
+    if "quality" in data.columns:
+        q_series = data.set_index(time_col)["quality"]
+        q_missing = q_series.eq("missing")
+        q_missing_reindexed = q_missing.groupby(level=0).last().reindex(full_time)
+        quality_missing = q_missing_reindexed.where(q_missing_reindexed.notna(), False).astype("bool")
+    missing_mask = values.isna() | quality_missing
+    line_values = values.mask(quality_missing)
+    return full_time, line_values, missing_mask
 
 
 def _plot_annual(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:

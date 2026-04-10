@@ -239,6 +239,29 @@ def test_preview_graph_target_accepts_24h_display_mode(tmp_path):
     assert result.image_bytes_png is not None
 
 
+def test_preview_graph_target_returns_warning_on_missing_but_renderable(tmp_path):
+    _write_timeseries(tmp_path, hours=72)
+
+    result = preview_graph_target(
+        PreviewInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            style_json_path=None,
+            style_payload=default_style(),
+            source="jma",
+            station_key="111",
+            graph_type="hyetograph",
+            base_datetime="2025-01-02",
+            event_window_days=3,
+            event_window_terminal_padding=True,
+        )
+    )
+
+    assert result.status == "success"
+    assert result.reason_code == "missing_with_warning"
+    assert result.reason_message is not None
+
+
 def test_precheck_reports_insufficient_years(tmp_path):
     frame = pd.DataFrame(
         {
@@ -358,7 +381,7 @@ def test_precheck_allows_3day_when_5day_is_missing(tmp_path):
 
     by_window = {item.event_window_days: item for item in result.items}
     assert by_window[3].status == "ok"
-    assert by_window[5].status == "ng"
+    assert by_window[5].status == "warn"
 
 
 def test_precheck_event_padding_requires_terminal_hour(tmp_path):
@@ -388,8 +411,9 @@ def test_precheck_event_padding_requires_terminal_hour(tmp_path):
     )
 
     assert without_padding.summary.ok_targets == 1
-    assert with_padding.summary.ng_targets == 1
-    assert with_padding.items[0].reason_code == "missing_timeseries"
+    assert with_padding.summary.warn_targets == 1
+    assert with_padding.items[0].status == "warn"
+    assert with_padding.items[0].reason_code == "missing_with_warning"
 
 
 def test_run_graph_batch_writes_png(tmp_path):
@@ -447,6 +471,7 @@ def test_run_graph_batch_honors_event_padding(tmp_path):
         )
     )
 
-    assert result.summary.skipped == 1
-    assert result.items[0].status == "skipped"
-    assert result.items[0].reason_code == "missing_timeseries"
+    assert result.summary.success == 1
+    assert result.items[0].status == "success"
+    assert result.items[0].reason_code == "missing_with_warning"
+    assert result.items[0].reason_message is not None

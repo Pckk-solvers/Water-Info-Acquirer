@@ -81,5 +81,8 @@ def _handle_preview_done(app, payload: object) -> None:
         app.preview_message.set(result.reason_message or "プレビュー生成に失敗しました。")
     else:
         display_preview_image(app, result.image_bytes_png, force=True)
-        app.preview_message.set("プレビュー更新完了")
+        if result.reason_message:
+            app.preview_message.set(f"プレビュー更新完了（{result.reason_message}）")
+        else:
+            app.preview_message.set("プレビュー更新完了")
     app._start_preview_worker_if_needed()

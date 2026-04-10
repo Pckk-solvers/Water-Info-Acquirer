@@ -597,6 +597,56 @@ def test_render_hydro_does_not_trim_when_data_trim_disabled(monkeypatch):
     assert max(plotted_x) == start + timedelta(hours=7)
 
 
+def test_render_hydro_breaks_line_and_draws_missing_band_on_missing(monkeypatch):
+    rows = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(8):
+        rows.append(
+            {
+                "observed_at": start + timedelta(hours=i),
+                "value": float(i + 1),
+                "quality": "ok",
+            }
+        )
+    # 2時を欠落、4時を quality=missing にする
+    rows = [row for row in rows if row["observed_at"] != start + timedelta(hours=2)]
+    for row in rows:
+        if row["observed_at"] == start + timedelta(hours=4):
+            row["quality"] = "missing"
+    df = pd.DataFrame(rows)
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    style.setdefault("missing_band", {})["enabled"] = True
+
+    plotted_y: list[float] = []
+    band_calls: list[object] = []
+    original_plot = matplotlib.axes.Axes.plot
+    original_axvspan = matplotlib.axes.Axes.axvspan
+
+    def _plot_spy(self, x, y, *args, **kwargs):
+        plotted_y.extend(pd.to_numeric(pd.Series(y), errors="coerce").tolist())
+        return original_plot(self, x, y, *args, **kwargs)
+
+    def _band_spy(self, *args, **kwargs):
+        band_calls.append((args, kwargs))
+        return original_axvspan(self, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "plot", _plot_spy)
+    monkeypatch.setattr(matplotlib.axes.Axes, "axvspan", _band_spy)
+
+    png = render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="A",
+        df=df,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert any(pd.isna(v) for v in plotted_y)
+    assert band_calls
+
+
 def test_render_hyetograph_applies_half_hour_data_trim_to_bars(monkeypatch):
     rows = []
     start = datetime(2025, 1, 1, 0, 0, 0)

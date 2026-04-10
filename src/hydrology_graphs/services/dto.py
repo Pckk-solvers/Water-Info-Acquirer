@@ -75,6 +75,7 @@ class PrecheckSummary:
     total_targets: int
     ok_targets: int
     ng_targets: int
+    warn_targets: int = 0
 
 
 @dataclass(frozen=True, slots=True)

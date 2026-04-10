@@ -72,7 +72,12 @@ def run_precheck(app) -> None:
     _clear_result_rows(app)
     for row in result.items:
         reason = row.reason_message or ""
-        status = "ready" if row.status == "ok" else "precheck_ng"
+        if row.status == "ok":
+            status = "ready"
+        elif row.status == "warn":
+            status = "precheck_warn"
+        else:
+            status = "precheck_ng"
         display_target = format_result_target_display(
             source=row.source,
             station_key=row.station_key,
@@ -92,10 +97,14 @@ def run_precheck(app) -> None:
             output_path="",
         )
     app.precheck_summary.set(
-        f"対象数: {result.summary.total_targets} / READY: {result.summary.ok_targets} / NG: {result.summary.ng_targets}"
+        "対象数: "
+        f"{result.summary.total_targets} / READY: {result.summary.ok_targets} "
+        f"/ WARN: {result.summary.warn_targets} / NG: {result.summary.ng_targets}"
     )
     app._append_log(
-        f"[PRECHECK] done total={result.summary.total_targets} ready={result.summary.ok_targets} ng={result.summary.ng_targets}"
+        "[PRECHECK] done "
+        f"total={result.summary.total_targets} ready={result.summary.ok_targets} "
+        f"warn={result.summary.warn_targets} ng={result.summary.ng_targets}"
     )
     refresh_preview_choices(app)
 

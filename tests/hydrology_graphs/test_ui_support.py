@@ -165,6 +165,8 @@ def test_format_result_target_display_from_target_id_uses_japanese_labels():
 
 def test_format_result_status_display_uses_japanese_labels():
     assert format_result_status_display("ready") == "準備完了"
+    assert format_result_status_display("warn") == "欠測あり（継続可）"
+    assert format_result_status_display("precheck_warn") == "欠測あり（継続可）"
     assert format_result_status_display("precheck_ng") == "要確認"
     assert format_result_status_display("running") == "実行中"
     assert format_result_status_display("success") == "完了"

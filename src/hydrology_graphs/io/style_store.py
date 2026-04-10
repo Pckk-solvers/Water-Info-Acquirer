@@ -146,6 +146,7 @@ def _style_hydro_discharge() -> dict[str, Any]:
                 "data_trim_end_hours": 0.0,
             },
             "y_axis": {"enabled": True, "number_format": "comma", "tick_count": 8, "tick_label_pad": 0.0},
+            "missing_band": {"enabled": True, "color": "#9CA3AF", "alpha": 0.28},
             "threshold": {
                 "label_enabled": True,
                 "label_offset": 0.03,
@@ -185,6 +186,7 @@ def _style_hydro_water_level() -> dict[str, Any]:
                 "data_trim_end_hours": 0.0,
             },
             "y_axis": {"enabled": True, "number_format": "plain", "tick_count": 7, "tick_label_pad": 0.0},
+            "missing_band": {"enabled": True, "color": "#9CA3AF", "alpha": 0.28},
             "threshold": {
                 "label_enabled": True,
                 "label_offset": 0.05,
@@ -634,6 +636,11 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
     style["y2_axis"].setdefault("label_offset", 0.0)
     style["y2_axis"].setdefault("number_format", style["y_axis"].get("number_format", "plain"))
     style["y2_axis"].setdefault("tick_label_pad", 0.0)
+    if "missing_band" not in style or not isinstance(style["missing_band"], dict):
+        style["missing_band"] = {}
+    style["missing_band"].setdefault("enabled", False)
+    style["missing_band"].setdefault("color", "#9CA3AF")
+    style["missing_band"].setdefault("alpha", 0.28)
     if "font" not in style or not isinstance(style["font"], dict):
         style["font"] = {}
     raw_font_size = raw_graph.get("font_size")

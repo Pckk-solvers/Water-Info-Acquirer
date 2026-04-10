@@ -17,3 +17,6 @@ tmp/
 *.egg-info/
 
 data/parquet_input/
+
+.gemini/
+gha-creds-*.json

@@ -533,7 +533,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         # 5日窓プレビューに使えるよう、連続1時間データを生成する。
         event_index = pd.date_range(
             start="2024-08-30 00:00:00",
-            end="2024-09-03 23:00:00",
+            end="2024-09-04 00:00:00",
             freq="1h",
         )
         def _dev_rainfall_value(hour_index: int) -> float:
@@ -555,6 +555,9 @@ class HydrologyGraphsApp(tk.Toplevel):
                 else:
                     rain = _dev_rainfall_value(max(0, i - 5))
                     value = 120.0 + rain * 14.0
+
+                # 欠測表示の実験用：9月1日12時を欠測扱いにする
+                is_missing = ts == datetime(2024, 9, 1, 12, 0, 0)
                 records.append(
                     {
                         "source": source,
@@ -562,10 +565,10 @@ class HydrologyGraphsApp(tk.Toplevel):
                         "station_name": station_name,
                         "observed_at": ts.to_pydatetime(),
                         "metric": metric,
-                        "value": float(value),
+                        "value": float("nan") if is_missing else float(value),
                         "unit": metric_units[metric],
                         "interval": "1hour",
-                        "quality": "normal",
+                        "quality": "missing" if is_missing else "normal",
                     }
                 )
 

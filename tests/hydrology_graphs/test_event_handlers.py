@@ -76,3 +76,13 @@ def test_handle_preview_done_error_sets_message(monkeypatch):
     event_handlers.handle_event(app, "preview_done", result)
     assert app._preview_running is False
     assert app.preview_message.value == "err"
+
+
+def test_handle_preview_done_success_with_warning_message(monkeypatch):
+    app = _dummy_app()
+    monkeypatch.setattr(event_handlers, "display_preview_image", lambda *_args, **_kwargs: None)
+    result = SimpleNamespace(status="success", image_bytes_png=b"png", reason_message="欠測あり（M1:行欠落）")
+    event_handlers.handle_event(app, "preview_done", result)
+    assert app._preview_running is False
+    assert "プレビュー更新完了" in app.preview_message.value
+    assert "欠測あり" in app.preview_message.value

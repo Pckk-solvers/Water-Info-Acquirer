@@ -9,13 +9,13 @@ import pandas as pd
 from ..domain.logic import (
     annual_max_by_year,
     annual_max_series,
+    evaluate_event_series_status,
     event_capture_window_bounds,
     ensure_graph_type_supported,
     extract_event_series,
     has_min_years,
     is_event_graph,
     required_metric_interval,
-    validate_event_series_complete,
 )
 from ..domain.models import GraphTarget, ThresholdRecord
 from ..io.parquet_store import ParquetCatalog, scan_parquet_catalog, scan_parquet_station_index
@@ -45,6 +45,7 @@ from .dto import (
 
 REASON_CONTRACT_ERROR = "contract_error"
 REASON_MISSING_TIMESERIES = "missing_timeseries"
+REASON_MISSING_WITH_WARNING = "missing_with_warning"
 REASON_INSUFFICIENT_YEARS = "insufficient_years"
 REASON_THRESHOLD_NOT_FOUND = "threshold_not_found"
 REASON_STYLE_ERROR = "style_error"
@@ -156,6 +157,7 @@ def precheck_graph_targets_with_catalog(
 
     items: list[PrecheckItem] = []
     ok_targets = 0
+    warn_targets = 0
     ng_targets = 0
 
     for source, station_key in station_pairs:
@@ -249,6 +251,8 @@ def precheck_graph_targets_with_catalog(
                         status, reason_code, reason_message, _ = evaluated_by_window[window_days]
                         if status == "ok":
                             ok_targets += 1
+                        elif status == "warn":
+                            warn_targets += 1
                         else:
                             ng_targets += 1
                         items.append(
@@ -283,6 +287,8 @@ def precheck_graph_targets_with_catalog(
                     reason_message = exc.message
                 if status == "ok":
                     ok_targets += 1
+                elif status == "warn":
+                    warn_targets += 1
                 else:
                     ng_targets += 1
                 items.append(
@@ -307,6 +313,7 @@ def precheck_graph_targets_with_catalog(
         summary=PrecheckSummary(
             total_targets=len(items),
             ok_targets=ok_targets,
+            warn_targets=warn_targets,
             ng_targets=ng_targets,
         ),
         items=items,
@@ -398,7 +405,7 @@ def preview_graph_target_with_catalog(
     )
     try:
         # プレビューは本番実行と同じ描画パスを通して、見た目のズレをなくす。
-        png = _render_target_bytes(
+        png, target_status, target_reason = _render_target_bytes_with_status(
             catalog,
             target,
             style_result.style,
@@ -409,8 +416,8 @@ def preview_graph_target_with_catalog(
         )
         return PreviewResult(
             status="success",
-            reason_code=None,
-            reason_message=None,
+            reason_code=REASON_MISSING_WITH_WARNING if target_status == "warn" else None,
+            reason_message=target_reason if target_status == "warn" else None,
             image_bytes_png=png,
         )
     except UsecaseError as exc:
@@ -470,7 +477,7 @@ def run_graph_batch(
 
         try:
             # 1件ずつ描画して保存する。途中失敗しても次の対象へ進む。
-            png = _render_target_bytes(
+            png, target_status, target_reason = _render_target_bytes_with_status(
                 catalog,
                 GraphTarget(
                     source=target.source,
@@ -491,6 +498,8 @@ def run_graph_batch(
                 BatchRunItemResult(
                     target_id=_batch_target_id(target),
                     status="success",
+                    reason_code=REASON_MISSING_WITH_WARNING if target_status == "warn" else None,
+                    reason_message=target_reason if target_status == "warn" else None,
                     output_path=str(output_path),
                 )
             )
@@ -567,17 +576,19 @@ def _evaluate_target(
             event_window_days,
             terminal_padding_hours=terminal_padding_hours,
         )
-        ok, reason = validate_event_series_complete(
+        event_status, reason = evaluate_event_series_status(
             sliced,
             parsed,
             event_window_days,
             terminal_padding_hours=terminal_padding_hours,
         )
-        if not ok:
-            return "ng", REASON_MISSING_TIMESERIES, reason or "イベント窓に欠損があります。", None
+        if event_status == "ng":
+            return "ng", REASON_MISSING_TIMESERIES, reason or "イベント窓に有効データがありません。", None
         thresholds = _thresholds_for_target(threshold_result, source, station_key, graph_type)
         if threshold_result is not None and not thresholds:
             return "ng", REASON_THRESHOLD_NOT_FOUND, "対応する基準線が見つかりません。", None
+        if event_status == "warn":
+            return "warn", REASON_MISSING_WITH_WARNING, reason or "欠測あり（描画継続）", sliced.reset_index(drop=True)
         return "ok", None, None, sliced.reset_index(drop=True)
 
     annual = annual_max_series(subset)
@@ -631,7 +642,7 @@ def _evaluate_event_windows(
         result_5 = _safe_eval(5)
         results[5] = result_5
         status_5, _rc_5, _rm_5, draw_df_5 = result_5
-        if status_5 == "ok" and draw_df_5 is not None:
+        if status_5 in {"ok", "warn"} and draw_df_5 is not None:
             parsed = _parse_date(base_datetime)
             if parsed is not None:
                 start_3, end_3 = event_capture_window_bounds(parsed, 3, terminal_padding_hours)
@@ -639,14 +650,16 @@ def _evaluate_event_windows(
                 observed = pd.to_datetime(draw_df_5[time_col], errors="coerce")
                 mask = (observed >= pd.Timestamp(start_3)) & (observed < pd.Timestamp(end_3))
                 draw_df_3 = draw_df_5.loc[mask].copy()
-                ok_3, reason_3 = validate_event_series_complete(
+                status_3, reason_3 = evaluate_event_series_status(
                     draw_df_3,
                     parsed,
                     3,
                     terminal_padding_hours=terminal_padding_hours,
                 )
-                if ok_3:
+                if status_3 == "ok":
                     results[3] = "ok", None, None, draw_df_3.reset_index(drop=True)
+                elif status_3 == "warn":
+                    results[3] = "warn", REASON_MISSING_WITH_WARNING, reason_3 or "欠測あり（描画継続）", draw_df_3.reset_index(drop=True)
                 else:
                     results[3] = _safe_eval(3)
             else:
@@ -662,7 +675,7 @@ def _evaluate_event_windows(
     return results
 
 
-def _render_target_bytes(
+def _render_target_bytes_with_status(
     catalog: ParquetCatalog,
     target: GraphTarget,
     style: dict,
@@ -671,8 +684,8 @@ def _render_target_bytes(
     threshold_result: ThresholdLoadResult | None = None,
     terminal_padding_hours: int = 0,
     time_display_mode: str = "datetime",
-) -> bytes:
-    """1対象分の PNG を生成する。"""
+) -> tuple[bytes, str, str | None]:
+    """1対象分の PNG を生成し、評価状態（ok/warn）を返す。"""
 
     effective_threshold_result = (
         threshold_result if threshold_result is not None else load_thresholds(threshold_file_path) if threshold_file_path else None
@@ -688,7 +701,7 @@ def _render_target_bytes(
         terminal_padding_hours=terminal_padding_hours,
         threshold_result=effective_threshold_result,
     )
-    if status != "ok" or draw_df is None:
+    if status not in {"ok", "warn"} or draw_df is None:
         raise UsecaseError(reason_code or REASON_CONTRACT_ERROR, reason_message or "描画対象が見つかりません。")
 
     thresholds = _thresholds_for_target(
@@ -709,7 +722,7 @@ def _render_target_bytes(
         raise UsecaseError(REASON_STYLE_ERROR, f"style.graph_styles.{style_key} が見つかりません。")
     try:
         # render 層には描画だけを渡し、保存や I/O は外側で分離する。
-        return render_graph_png(
+        png = render_graph_png(
             graph_type=target.graph_type,
             station_name=station_name,
             df=draw_df,
@@ -717,8 +730,33 @@ def _render_target_bytes(
             thresholds=thresholds,
             time_display_mode=time_display_mode,
         )
+        return png, status, reason_message
     except Exception as exc:  # noqa: BLE001
         raise UsecaseError(REASON_RENDER_ERROR, str(exc)) from exc
+
+
+def _render_target_bytes(
+    catalog: ParquetCatalog,
+    target: GraphTarget,
+    style: dict,
+    *,
+    threshold_file_path: str | None,
+    threshold_result: ThresholdLoadResult | None = None,
+    terminal_padding_hours: int = 0,
+    time_display_mode: str = "datetime",
+) -> bytes:
+    """1対象分の PNG を生成する。"""
+
+    png, _status, _reason = _render_target_bytes_with_status(
+        catalog,
+        target,
+        style,
+        threshold_file_path=threshold_file_path,
+        threshold_result=threshold_result,
+        terminal_padding_hours=terminal_padding_hours,
+        time_display_mode=time_display_mode,
+    )
+    return png
 
 
 def _has_style_error(result: StyleLoadResult) -> bool:

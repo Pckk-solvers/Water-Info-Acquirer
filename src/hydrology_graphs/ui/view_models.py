@@ -74,11 +74,11 @@ def graph_targets_from_precheck_items(
     *,
     items: list[PrecheckItem],
 ) -> list[GraphTarget]:
-    """Precheck結果から OK 対象の GraphTarget 一覧を構築する。"""
+    """Precheck結果から描画継続可能対象（ok/warn）の GraphTarget 一覧を構築する。"""
 
     targets: list[GraphTarget] = []
     for row in items:
-        if row.status != "ok":
+        if row.status not in {"ok", "warn"}:
             continue
         base = date.fromisoformat(row.base_datetime) if row.base_datetime else None
         targets.append(
@@ -224,8 +224,10 @@ def format_result_status_display(status: str) -> str:
     text = str(status or "").strip()
     mapping = {
         "ok": "準備完了",
+        "warn": "欠測あり（継続可）",
         "ng": "要確認",
         "ready": "準備完了",
+        "precheck_warn": "欠測あり（継続可）",
         "precheck_ng": "要確認",
         "running": "実行中",
         "success": "完了",

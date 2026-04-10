@@ -195,6 +195,15 @@ def test_default_hyetograph_style_contains_dual_axis_and_missing_band_defaults()
     assert style["y2_axis"]["label_rotation"] == "270"
 
 
+def test_default_hydro_styles_enable_missing_band_defaults():
+    discharge = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    water_level = default_style()["graph_styles"]["hydrograph_water_level:3day"]
+    for style in (discharge, water_level):
+        missing_band = style.get("missing_band", {})
+        assert missing_band.get("enabled", False) is True
+        assert missing_band.get("color") == "#9CA3AF"
+
+
 def test_load_style_accepts_hyetograph_added_keys():
     payload = default_style()
     hyeto = payload["graph_styles"]["hyetograph:3day"]
