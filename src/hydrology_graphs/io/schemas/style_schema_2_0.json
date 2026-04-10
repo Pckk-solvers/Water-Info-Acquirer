@@ -455,6 +455,37 @@
               "default": true
             }
           }
+        },
+        "series2": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "style": {
+              "type": "string",
+              "enum": [
+                "solid",
+                "dashed",
+                "dotted",
+                "dashdot"
+              ]
+            },
+            "use_secondary_y": {
+              "type": "boolean",
+              "default": false
+            }
+          }
         }
       }
     }

@@ -11,7 +11,12 @@ from typing import Any, cast
 
 from jsonschema import Draft202012Validator
 
-from ..domain.constants import EVENT_GRAPH_TYPES, GRAPH_TYPES
+from ..domain.constants import (
+    EVENT_GRAPH_TYPES,
+    GRAPH_HYDRO_DISCHARGE,
+    GRAPH_HYDRO_WATER_LEVEL,
+    GRAPH_TYPES,
+)
 
 """描画スタイル JSON の読込・保存・正規化。"""
 
@@ -358,11 +363,17 @@ def _schema_graph_style_validation_error_to_warning(path: list[Any], validator: 
             return f"error:{style_key}_bar_color_must_be_hex"
         if head == "secondary_series_color":
             return f"error:{style_key}_secondary_series_color_must_be_hex"
+        if head == "series2" and len(suffix) >= 2 and suffix[1] == "color":
+            return f"error:{style_key}_series2_color_must_be_hex"
     if validator == "enum" and head == "series_style":
         return f"error:{style_key}_series_style_invalid"
+    if validator == "enum" and head == "series2" and len(suffix) >= 2 and suffix[1] == "style":
+        return f"error:{style_key}_series2_style_invalid"
     if validator == "exclusiveMinimum":
         if head in {"font_size", "figure_width", "figure_height", "dpi", "series_width"}:
             return f"error:{style_key}_{head}_must_be_positive"
+        if head == "series2" and len(suffix) >= 2 and suffix[1] == "width":
+            return f"error:{style_key}_series2_width_must_be_positive"
         if head == "grid" and len(suffix) >= 2 and suffix[1] == "width":
             return f"error:{style_key}_grid_width_must_be_positive"
         if head == "x_axis" and len(suffix) >= 2 and suffix[1] == "tick_interval_hours":
@@ -417,6 +428,13 @@ def _schema_graph_style_validation_error_to_warning(path: list[Any], validator: 
             return f"error:{style_key}_y_axis_enabled_must_be_boolean"
         if head == "series" and len(suffix) >= 2 and suffix[1] == "enabled":
             return f"error:{style_key}_series_enabled_must_be_boolean"
+        if head == "series2":
+            if len(suffix) >= 2:
+                if suffix[1] == "enabled":
+                    return f"error:{style_key}_series2_enabled_must_be_boolean"
+                if suffix[1] == "use_secondary_y":
+                    return f"error:{style_key}_series2_use_secondary_y_must_be_boolean"
+            return f"error:{style_key}_series2_invalid"
         if head == "y_axis" and len(suffix) >= 2 and suffix[1] == "tick_count":
             return f"error:{style_key}_y_axis_tick_count_must_be_positive_int"
     return None
@@ -488,6 +506,9 @@ def _drop_optional_none_values_for_schema(raw: dict[str, Any]) -> None:
         ("y2_axis", "tick_step"),
         ("y2_axis", "max"),
         ("missing_band", "alpha"),
+        ("series2", "enabled"),
+        ("series2", "use_secondary_y"),
+        ("series2", "width"),
         ("y_axis", "tick_count"),
         ("threshold", "label_font_size"),
     )
@@ -549,7 +570,7 @@ def _normalize_style(raw: dict) -> tuple[dict, list[str]]:
             warnings.append(f"unknown_graph_style_key:{key}")
             graph_styles.pop(key, None)
     for key in STYLE_GRAPH_KEYS:
-        _normalize_graph_style(graph_styles[key], warnings, raw_graph=graph_styles_raw[key])
+        _normalize_graph_style(graph_styles[key], warnings, style_key=key, raw_graph=graph_styles_raw[key])
 
     return merged, warnings
 
@@ -567,7 +588,7 @@ def _normalize_display(display: Any, warnings: list[str]) -> dict[str, Any]:
     return {"time_display_mode": time_display_mode}
 
 
-def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict) -> None:
+def _normalize_graph_style(style: dict, warnings: list[str], *, style_key: str, raw_graph: dict) -> None:
     if not isinstance(style, dict):
         warnings.append("error:graph_style_must_be_object")
         return
@@ -601,7 +622,9 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
     style["x_axis"].setdefault("tick_label_pad", 0.0)
     if "grid" not in style or not isinstance(style["grid"], dict):
         style["grid"] = {}
-    grid_enabled_fallback = bool(raw_graph.get("grid", {}).get("enabled", True)) if isinstance(raw_graph.get("grid"), dict) else True
+    grid_enabled_fallback = (
+        bool(raw_graph.get("grid", {}).get("enabled", True)) if isinstance(raw_graph.get("grid"), dict) else True
+    )
     style["grid"].setdefault("x_enabled", grid_enabled_fallback)
     style["grid"].setdefault("y_enabled", grid_enabled_fallback)
     style["grid"].setdefault("width", 0.8)
@@ -616,6 +639,19 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
     if "series" not in style or not isinstance(style["series"], dict):
         style["series"] = {}
     style["series"].setdefault("enabled", True)
+
+    is_hydro = any(style_key.startswith(prefix) for prefix in (GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL))
+    if is_hydro:
+        if "series2" not in style or not isinstance(style["series2"], dict):
+            style["series2"] = {}
+        style["series2"].setdefault("enabled", False)
+        style["series2"].setdefault("color", "#F59E0B")
+        style["series2"].setdefault("width", 1.5)
+        style["series2"].setdefault("style", "dashed")
+        style["series2"].setdefault("use_secondary_y", False)
+    else:
+        style.pop("series2", None)
+
     if "y_axis" not in style or not isinstance(style["y_axis"], dict):
         style["y_axis"] = {}
     style["y_axis"].setdefault("enabled", True)
@@ -644,7 +680,9 @@ def _normalize_graph_style(style: dict, warnings: list[str], *, raw_graph: dict)
     if "font" not in style or not isinstance(style["font"], dict):
         style["font"] = {}
     raw_font_size = raw_graph.get("font_size")
-    fallback_font_size = float(raw_font_size) if isinstance(raw_font_size, (int, float)) else float(style.get("font_size", 11))
+    fallback_font_size = (
+        float(raw_font_size) if isinstance(raw_font_size, (int, float)) else float(style.get("font_size", 11))
+    )
     style["font"].setdefault("title_size", max(fallback_font_size + 3, 1.0))
     style["font"].setdefault("x_label_size", max(fallback_font_size + 1, 1.0))
     style["font"].setdefault("y_label_size", max(fallback_font_size + 1, 1.0))

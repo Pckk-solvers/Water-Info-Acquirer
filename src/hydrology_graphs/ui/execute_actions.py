@@ -6,7 +6,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 from hydrology_graphs.io.threshold_store import load_thresholds_with_cache
-from hydrology_graphs.services import BatchRunInput, PrecheckInput
+from hydrology_graphs.services import BatchRunInput, BatchTarget, PrecheckInput
 from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
@@ -220,7 +220,7 @@ def start_batch_run(app) -> None:
         should_stop=app._stop_event.is_set if app._stop_event else None,
     )
     for target in batch_targets:
-        row_id = _row_id_for_target_id(target.target_id)
+        row_id = _row_id_for_target_id(_batch_target_id(target))
         if row_id in app._result_row_ids:
             app.result_tree.set(app._result_row_ids[row_id], "status", format_result_status_display("running"))
             app.result_tree.set(app._result_row_ids[row_id], "reason", "")
@@ -363,6 +363,15 @@ def _sync_base_date_listbox(app) -> None:
 
 def _row_id_for_target_id(target_id: str) -> str:
     return target_id
+
+
+def _batch_target_id(target: BatchTarget) -> str:
+    """BatchTarget の行識別用IDを返す。"""
+
+    base = target.base_datetime or "annual"
+    if target.base_datetime and target.event_window_days in (3, 5):
+        return f"{target.source}:{target.station_key}:{target.graph_type}:{base}:{target.event_window_days}day"
+    return f"{target.source}:{target.station_key}:{target.graph_type}:{base}"
 
 
 def _retained_preview_choice(current: str, choices: list[str]) -> str:
