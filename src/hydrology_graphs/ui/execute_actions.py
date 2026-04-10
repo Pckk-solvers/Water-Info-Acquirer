@@ -44,6 +44,7 @@ def run_precheck(app) -> None:
         messagebox.showerror("入力エラー", "イベント系グラフを選択した場合は基準日を1つ以上追加してください。")
         return
 
+    time_display_mode = str(app.time_display_mode.get()).strip() or "datetime"
     precheck_input = PrecheckInput(
         parquet_dir=app.parquet_dir.get().strip(),
         threshold_file_path=app.threshold_path.get().strip() or None,
@@ -52,7 +53,7 @@ def run_precheck(app) -> None:
         base_dates=base_dates,
         event_window_days_list=event_windows,
         event_window_days_by_graph=event_windows_by_graph,
-        event_window_terminal_padding=True,
+        event_window_terminal_padding=_uses_terminal_padding(time_display_mode),
     )
     app._append_log(
         f"[PRECHECK] start stations={len(station_pairs)} graph_types={len(graph_types)} base_dates={len(base_dates)} windows={event_windows}"
@@ -136,19 +137,36 @@ def refresh_preview_choices(app) -> None:
     if not app._precheck_ok_targets:
         app._clear_preview_choices()
         return
+    base_choices = build_preview_choices(
+        ok_targets=app._precheck_ok_targets,
+        catalog_stations=app._catalog_stations,
+        graph_key_to_display=app._preview_graph_key_to_display,
+    )
+    current_station = app.preview_target_station.get().strip()
+    retained_station = _retained_preview_choice(current_station, base_choices.station_values)
+    selected_station_pair = base_choices.station_display_to_pair.get(retained_station)
+    station_choices = build_preview_choices(
+        ok_targets=app._precheck_ok_targets,
+        catalog_stations=app._catalog_stations,
+        graph_key_to_display=app._preview_graph_key_to_display,
+        selected_station_pair=selected_station_pair,
+    )
+    current_date = app.preview_target_date.get().strip()
+    retained_date = _retained_preview_choice(current_date, station_choices.date_values)
+    selected_base_date = retained_date if retained_date in station_choices.date_values else None
     choices = build_preview_choices(
         ok_targets=app._precheck_ok_targets,
         catalog_stations=app._catalog_stations,
         graph_key_to_display=app._preview_graph_key_to_display,
+        selected_station_pair=selected_station_pair,
+        selected_base_date=selected_base_date,
     )
     app._preview_station_display_to_pair = choices.station_display_to_pair
     app._preview_graph_display_to_key = choices.graph_display_to_key
     app.preview_station_combo.configure(values=choices.station_values)
     app.preview_date_combo.configure(values=choices.date_values)
-    current_station = app.preview_target_station.get().strip()
-    current_date = app.preview_target_date.get().strip()
-    app.preview_target_station.set(_retained_preview_choice(current_station, choices.station_values))
-    app.preview_target_date.set(_retained_preview_choice(current_date, choices.date_values))
+    app.preview_target_station.set(_retained_preview_choice(retained_station, choices.station_values))
+    app.preview_target_date.set(_retained_preview_choice(retained_date, choices.date_values))
     preview_graph_combo = getattr(app, "preview_graph_combo", None)
     if preview_graph_combo is not None:
         preview_graph_combo.configure(values=choices.graph_values)
@@ -179,6 +197,7 @@ def start_batch_run(app) -> None:
     if not out_dir:
         return
     app._style_payload = payload
+    time_display_mode = str(payload.get("display", {}).get("time_display_mode", "datetime")).strip() or "datetime"
     batch_targets = build_batch_targets(app._precheck_ok_targets)
     run_input = BatchRunInput(
         parquet_dir=app.parquet_dir.get().strip(),
@@ -187,7 +206,8 @@ def start_batch_run(app) -> None:
         style_json_path=app._style_json_path,
         style_payload=payload,
         targets=batch_targets,
-        event_window_terminal_padding=True,
+        event_window_terminal_padding=_uses_terminal_padding(time_display_mode),
+        time_display_mode=time_display_mode,
         should_stop=app._stop_event.is_set if app._stop_event else None,
     )
     for target in batch_targets:
@@ -212,6 +232,10 @@ def start_batch_run(app) -> None:
             app._event_queue.put(("run_error", str(exc)))
 
     threading.Thread(target=worker, daemon=True).start()
+
+
+def _uses_terminal_padding(time_display_mode: str) -> bool:
+    return True
 
 
 def add_base_date_from_candidate(app) -> None:

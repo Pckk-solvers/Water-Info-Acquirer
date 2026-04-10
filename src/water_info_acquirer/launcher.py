@@ -27,7 +27,7 @@ TEXT_SECONDARY = "#4b5563"
 TEXT_TERTIARY = "#6b7280"
 
 
-def main(*, developer_mode: bool = False) -> None:
+def main(*, developer_mode: bool = False, launch_target: str | None = None) -> None:
     ensure_src_on_path()
     root = tk.Tk()
     root.withdraw()
@@ -37,7 +37,8 @@ def main(*, developer_mode: bool = False) -> None:
 
     current_child: tk.Toplevel | None = None
     enabled_definitions = [definition for definition in APP_DEFINITIONS if definition.enabled]
-    selected_key = tk.StringVar(value=enabled_definitions[0].key if enabled_definitions else "")
+    default_selected = launch_target if launch_target else (enabled_definitions[0].key if enabled_definitions else "")
+    selected_key = tk.StringVar(value=default_selected)
     card_frames: dict[str, tk.Frame] = {}
 
     def _on_close():
@@ -70,11 +71,12 @@ def main(*, developer_mode: bool = False) -> None:
             _open_target(next_target)
 
         try:
+            on_return_home_cb = None if launch_target else _return_home
             current_child = definition.open_app(
                 parent=root,
                 on_open_other=_on_open_other,
                 on_close=_on_close,
-                on_return_home=_return_home,
+                on_return_home=on_return_home_cb,
                 developer_mode=developer_mode,
             )
         except Exception as exc:  # noqa: BLE001
@@ -117,6 +119,16 @@ def main(*, developer_mode: bool = False) -> None:
             index = 0
         selected_key.set(keys[(index + step) % len(keys)])
         _refresh_cards()
+
+    if launch_target:
+        if launch_target not in APP_DEFINITION_BY_KEY:
+            raise ValueError(f"Unknown app key: {launch_target}")
+        definition = APP_DEFINITION_BY_KEY[launch_target]
+        if not definition.enabled:
+            raise ValueError(f"Disabled app key: {launch_target}")
+        _open_target(launch_target)
+        root.mainloop()
+        return
 
     root.configure(bg=BG_ROOT)
 

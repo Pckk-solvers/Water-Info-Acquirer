@@ -1,0 +1,462 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://water-info-acquirer.local/hydrology-graphs/style-schema-2.0.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "graph_styles"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "graph_styles": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "hyetograph:3day",
+        "hyetograph:5day",
+        "hydrograph_discharge:3day",
+        "hydrograph_discharge:5day",
+        "hydrograph_water_level:3day",
+        "hydrograph_water_level:5day",
+        "annual_max_rainfall",
+        "annual_max_discharge",
+        "annual_max_water_level"
+      ],
+      "properties": {
+        "hyetograph:3day": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "hyetograph:5day": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "hydrograph_discharge:3day": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "hydrograph_discharge:5day": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "hydrograph_water_level:3day": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "hydrograph_water_level:5day": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "annual_max_rainfall": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "annual_max_discharge": {
+          "$ref": "#/$defs/graphStyle"
+        },
+        "annual_max_water_level": {
+          "$ref": "#/$defs/graphStyle"
+        }
+      }
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "time_display_mode": {
+          "type": "string",
+          "enum": [
+            "datetime",
+            "24h"
+          ],
+          "default": "datetime"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "graphStyle": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "series_color",
+        "series_width",
+        "series_style",
+        "axis"
+      ],
+      "properties": {
+        "series_color": {
+          "type": "string",
+          "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+        },
+        "series_width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "series_style": {
+          "type": "string",
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted",
+            "dashdot"
+          ]
+        },
+        "font_size": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "figure_width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "figure_height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "dpi": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "axis": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "x_label": {
+              "type": "string"
+            },
+            "y_label": {
+              "type": "string"
+            },
+            "x_label_offset": {
+              "type": "number"
+            },
+            "y_label_offset": {
+              "type": "number"
+            }
+          }
+        },
+        "margin": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "top": {
+              "type": "number",
+              "minimum": 0
+            },
+            "right": {
+              "type": "number",
+              "minimum": 0
+            },
+            "bottom": {
+              "type": "number",
+              "minimum": 0
+            },
+            "left": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "bar_color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+        },
+        "secondary_series_color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+        },
+        "x_axis": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "tick_interval_hours": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "tick_hours_of_day": {
+              "type": "string",
+              "default": ""
+            },
+            "year_tick_step": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "range_margin_rate": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0
+            },
+            "date_boundary_line_enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "date_boundary_line_offset_hours": {
+              "type": "number",
+              "default": 0.0
+            },
+            "tick_label_pad": {
+              "type": "number",
+              "default": 0.0
+            },
+            "data_trim_enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "show_date_labels": {
+              "type": "boolean",
+              "default": true
+            },
+            "data_trim_start_hours": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.0
+            },
+            "data_trim_end_hours": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.0
+            }
+          }
+        },
+        "bar": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "edge_width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "edge_alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "font": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "title_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "x_label_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "y_label_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "x_tick_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "y_tick_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "legend_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "cumulative_line": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "style": {
+              "type": "string",
+              "enum": [
+                "solid",
+                "dashed",
+                "dotted",
+                "dashdot"
+              ]
+            }
+          }
+        },
+        "y_axis": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "tick_step": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "tick_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tick_label_pad": {
+              "type": "number",
+              "default": 0.0
+            }
+          }
+        },
+        "y2_axis": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "tick_step": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "number_format": {
+              "type": "string",
+              "enum": [
+                "plain",
+                "comma",
+                "percent"
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "label_rotation": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "0",
+                    "90",
+                    "180",
+                    "270"
+                  ]
+                },
+                {
+                  "type": "number",
+                  "enum": [
+                    0,
+                    90,
+                    180,
+                    270
+                  ]
+                }
+              ],
+              "default": "270"
+            },
+            "label_offset": {
+              "type": "number"
+            },
+            "tick_label_pad": {
+              "type": "number",
+              "default": 0.0
+            }
+          }
+        },
+        "missing_band": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "grid": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "x_enabled": {
+              "type": "boolean"
+            },
+            "y_enabled": {
+              "type": "boolean"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "style": {
+              "type": "string"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "threshold": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "label_font_size": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "series": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

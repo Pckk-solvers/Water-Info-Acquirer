@@ -72,7 +72,7 @@ APP_DEFINITIONS: tuple[AppDefinition, ...] = (
             on_return_home=on_return_home,
             developer_mode=developer_mode,
         ),
-        description="Parquet から6種の水文グラフを一括生成するGUIを起動します。",
+        description="Parquetから水文グラフを生成するGUIを起動します。",
         help_url="https://pckk-solvers.github.io/Water-Info-Acquirer/dev/hydrology-graphs-platform/",
     ),
 )

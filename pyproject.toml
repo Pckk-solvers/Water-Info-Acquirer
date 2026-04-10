@@ -22,6 +22,7 @@ dependencies = [
     "pdfplumber>=0.11.9",
     "psutil>=7.2.2",
     "japanize-matplotlib>=1.1.3",
+    "jsonschema>=4.23.0",
 ]
 
 [project.scripts]
@@ -33,6 +34,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"hydrology_graphs.io" = ["schemas/*.json"]
 
 [dependency-groups]
 dev = [

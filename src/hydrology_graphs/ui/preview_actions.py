@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from hydrology_graphs.services import PreviewInput
+from .style_payload import nested_value
 
 
 def render_preview(app, *, silent_json_error: bool = False) -> None:
@@ -73,20 +74,31 @@ def _build_preview_input(
     payload_from_editor = app._style_from_editor(silent=silent_json_error)
     if payload_from_editor is not None:
         app._style_payload = payload_from_editor
-    if not app._apply_style_form_values():
+    raw_apply_result = app._apply_style_form_values()
+    if isinstance(raw_apply_result, bool):
+        apply_ok = raw_apply_result
+        changed_paths: set[str] = set()
+    else:
+        apply_ok = bool(getattr(raw_apply_result, "ok", False))
+        changed_paths = {str(path).strip() for path in getattr(raw_apply_result, "changed_paths", set()) if str(path).strip()}
+    if not apply_ok:
         return None
     app._set_style_text_from_payload()
-    app._push_style_history(app._style_payload)
+    refresh_controls = getattr(app, "_refresh_style_controls_from_payload", None)
+    if callable(refresh_controls):
+        refresh_controls(changed_paths)
+    if changed_paths:
+        app._push_style_history(app._style_payload)
 
-    station_token = app.preview_target_station.get().strip()
-    if not station_token:
+    style_key = app._current_preview_graph_key()
+    if style_key is None:
+        graph_combo = getattr(app, "preview_graph_combo", None)
+        graph_values = tuple(graph_combo.cget("values")) if graph_combo is not None else ()
+        if graph_values:
+            _set_preview_message(app, "プレビュー出力対象を選択してください。")
+        else:
+            _set_preview_message(app, "選択条件に一致するプレビュー対象がありません。")
         return None
-    station_pair = app._preview_station_display_to_pair.get(station_token)
-    if station_pair is None:
-        app.preview_message.set("観測所の指定が不正です。")
-        return None
-    source, station_key = station_pair
-    style_key = app._current_style_graph_key()
     if ":" in style_key and style_key.endswith("day"):
         graph_type, day_suffix = style_key.split(":", 1)
         try:
@@ -103,7 +115,26 @@ def _build_preview_input(
         event_window_days = None
         base_date = None
 
+    target = _resolve_preview_target(
+        app,
+        graph_type=graph_type,
+        event_window_days=event_window_days,
+        station_token=app.preview_target_station.get().strip(),
+        base_date=base_date,
+    )
+    if target is None:
+        return None
+
+    source, station_key = target.source, target.station_key
+    if target.base_date is not None:
+        base_date = target.base_date.isoformat()
+        app.preview_target_date.set(base_date)
+    station_display = _station_display_for_pair(app, source, station_key)
+    if station_display:
+        app.preview_target_station.set(station_display)
+
     preview_payload = app._style_payload if for_export else app._build_preview_style_payload(app._style_payload)
+    time_display_mode = str(nested_value(preview_payload, "display.time_display_mode", "datetime")).strip() or "datetime"
     threshold_file = app.threshold_path.get().strip() or None
     preview_input = PreviewInput(
         parquet_dir=app.parquet_dir.get().strip(),
@@ -115,10 +146,72 @@ def _build_preview_input(
         graph_type=graph_type,
         base_datetime=base_date,
         event_window_days=event_window_days,
-        event_window_terminal_padding=True,
-        time_display_mode=str(app.time_display_mode.get()).strip() or "datetime",
+        event_window_terminal_padding=_uses_terminal_padding(time_display_mode),
+        time_display_mode=time_display_mode,
     )
     return preview_input, threshold_file
+
+
+def _resolve_preview_target(
+    app,
+    *,
+    graph_type: str,
+    event_window_days: int | None,
+    station_token: str,
+    base_date: str | None,
+):
+    """現在の選択に対応する precheck OK 対象を返す。"""
+
+    station_pair = app._preview_station_display_to_pair.get(station_token)
+    if station_pair is None:
+        _set_preview_message(app, "プレビュー出力対象の観測所を選択してください。")
+        return None
+    try:
+        parsed_base_date = date.fromisoformat(base_date) if base_date is not None else None
+    except ValueError:
+        _set_preview_message(app, "基準日の形式が不正です。")
+        return None
+    graph_candidates = [
+        target
+        for target in getattr(app, "_precheck_ok_targets", [])
+        if target.graph_type == graph_type and target.event_window_days == event_window_days
+    ]
+    if not graph_candidates:
+        _set_preview_message(app, "プレビュー対象が見つかりません。先に実行前検証を行ってください。")
+        return None
+
+    exact_matches = [
+        target
+        for target in graph_candidates
+        if (target.source, target.station_key) == station_pair
+        and target.base_date == parsed_base_date
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+
+    if exact_matches:
+        _set_preview_message(app, "プレビュー対象が複数一致しました。観測所または基準日を絞ってください。")
+        return None
+
+    _set_preview_message(app, "選択した観測所・基準日・対象グラフに一致するプレビュー候補がありません。")
+    return None
+
+
+def _station_display_for_pair(app, source: str, station_key: str) -> str:
+    for display, pair in getattr(app, "_preview_station_display_to_pair", {}).items():
+        if pair == (source, station_key):
+            return display
+    return ""
+
+
+def _set_preview_message(app, message: str) -> None:
+    preview_message = getattr(app, "preview_message", None)
+    if preview_message is not None:
+        preview_message.set(message)
+
+
+def _uses_terminal_padding(time_display_mode: str) -> bool:
+    return True
 
 
 def _build_sample_output_path(

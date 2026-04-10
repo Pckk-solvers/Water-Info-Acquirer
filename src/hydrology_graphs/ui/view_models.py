@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-
 from hydrology_graphs.domain.models import GraphTarget
 from hydrology_graphs.services.dto import BatchTarget, PrecheckItem
 
@@ -53,6 +52,24 @@ def selected_station_pairs(
     return pairs
 
 
+def format_station_display_text(
+    *,
+    source: str,
+    station_key: str,
+    station_name: str,
+    checked: bool,
+    source_label_map: dict[str, str],
+    metric_labels: tuple[str, ...] = (),
+) -> str:
+    """観測所一覧の表示テキストを作る。"""
+
+    mark = "☑" if checked else "☐"
+    source_label = source_label_map.get(source, source)
+    suffix = f" ({station_name})" if station_name else ""
+    metric_suffix = f" / {' / '.join(metric_labels)}" if metric_labels else ""
+    return f"{mark} {source_label}:{station_key}{suffix}{metric_suffix}"
+
+
 def graph_targets_from_precheck_items(
     *,
     items: list[PrecheckItem],
@@ -81,6 +98,8 @@ def build_preview_choices(
     ok_targets: list[GraphTarget],
     catalog_stations: list[tuple[str, str, str]],
     graph_key_to_display: dict[str, str],
+    selected_station_pair: tuple[str, str] | None = None,
+    selected_base_date: str | None = None,
 ) -> PreviewChoices:
     """OK対象からプレビュー用の候補一覧を生成する。"""
 
@@ -100,8 +119,25 @@ def build_preview_choices(
         station_display_to_pair[display] = pair
 
     station_values = sorted(station_display_to_pair.keys())
-    date_values = sorted({t.base_date.isoformat() for t in ok_targets if t.base_date is not None})
-    graph_keys = sorted({t.graph_type for t in ok_targets})
+    station_scoped_targets = ok_targets
+    if selected_station_pair is not None:
+        station_scoped_targets = [
+            t for t in station_scoped_targets if (t.source, t.station_key) == selected_station_pair
+        ]
+    date_values = sorted({t.base_date.isoformat() for t in station_scoped_targets if t.base_date is not None})
+    graph_targets = station_scoped_targets
+    if selected_base_date:
+        graph_targets = [
+            t
+            for t in graph_targets
+            if t.base_date is None or t.base_date.isoformat() == selected_base_date
+        ]
+    graph_keys = sorted(
+        {
+            t.graph_type if t.event_window_days is None else f"{t.graph_type}:{t.event_window_days}day"
+            for t in graph_targets
+        }
+    )
     graph_values = [graph_key_to_display.get(key, key) for key in graph_keys]
     graph_display_to_key = {
         graph_key_to_display.get(key, key): key

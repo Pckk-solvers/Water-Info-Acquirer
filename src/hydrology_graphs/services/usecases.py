@@ -483,6 +483,7 @@ def run_graph_batch(
                 threshold_file_path=data.threshold_file_path,
                 threshold_result=threshold_result,
                 terminal_padding_hours=_event_padding_hours(data.event_window_terminal_padding),
+                time_display_mode=data.time_display_mode,
             )
             output_path = _build_output_path(output_dir, target)
             write_png(output_path, png)
