@@ -55,22 +55,20 @@ def test_coerce_control_value_rejects_non_half_step_trim():
     assert "0.5刻み" in error
 
 
-def test_apply_style_form_values_keeps_grid_enabled_toggle_value():
+def test_apply_style_form_values_keeps_axis_grid_toggle_values():
     app = _DummyApp()
     app._style_graph_controls = [
-        {"path": "grid.enabled", "label": "grid.enabled", "kind": "bool", "var": _DummyVar(False)},
-        {"path": "grid.x_enabled", "label": "grid.x_enabled", "kind": "bool", "var": _DummyVar(False)},
-        {"path": "grid.y_enabled", "label": "grid.y_enabled", "kind": "bool", "var": _DummyVar(True)},
+        {"path": "grid.x_enabled", "label": "grid.x_enabled", "kind": "bool", "var": _DummyVar(True)},
+        {"path": "grid.y_enabled", "label": "grid.y_enabled", "kind": "bool", "var": _DummyVar(False)},
     ]
 
     result = apply_style_form_values(app, empty_numeric=object(), valid_time_display_modes={"datetime", "24h"})
 
     assert result.ok is True
-    assert "grid.enabled" in result.changed_paths
+    assert {"grid.x_enabled", "grid.y_enabled"}.issubset(result.changed_paths)
     graph_style = app._style_payload["graph_styles"]["hyetograph:3day"]
-    assert graph_style["grid"]["x_enabled"] is False
-    assert graph_style["grid"]["y_enabled"] is True
-    assert graph_style["grid"]["enabled"] is False
+    assert graph_style["grid"]["x_enabled"] is True
+    assert graph_style["grid"]["y_enabled"] is False
 
 
 def test_apply_style_form_values_returns_time_display_mode_change_path():

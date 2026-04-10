@@ -3,6 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from .style_form_builder import STYLE_FORM_TOGGLE_COLUMN_MINSIZE, STYLE_FORM_LABEL_PADX, STYLE_FORM_VALUE_CONTAINER_PADX
 from .tooltip import ToolTip
 
 
@@ -99,13 +100,13 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
 
     display_mode_box = ttk.LabelFrame(scroll_inner, text="共通設定")
     display_mode_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-    display_mode_box.columnconfigure(0, minsize=44)
+    display_mode_box.columnconfigure(0, minsize=STYLE_FORM_TOGGLE_COLUMN_MINSIZE)
     display_mode_box.columnconfigure(1, weight=0)
     display_mode_box.columnconfigure(2, weight=1)
     app.display_mode_box = display_mode_box
-    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=1, padx=(1, 6), pady=6, sticky="w")
+    ttk.Label(display_mode_box, text="時刻表記").grid(row=0, column=1, padx=STYLE_FORM_LABEL_PADX, pady=6, sticky="w")
     mode_buttons = ttk.Frame(display_mode_box)
-    mode_buttons.grid(row=0, column=2, padx=6, pady=6, sticky="w")
+    mode_buttons.grid(row=0, column=2, padx=STYLE_FORM_VALUE_CONTAINER_PADX, pady=6, sticky="w")
     ttk.Radiobutton(
         mode_buttons,
         text="1時~24時",

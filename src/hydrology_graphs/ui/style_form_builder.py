@@ -9,6 +9,10 @@ from .style_payload import nested_value
 
 _VALUE_LABEL_COL_MINSIZE = 62
 _VALUE_INPUT_COL_MINSIZE = 88
+STYLE_FORM_TOGGLE_COLUMN_MINSIZE = 44
+STYLE_FORM_TOGGLE_PADX = (6, 0)
+STYLE_FORM_LABEL_PADX = (1, 6)
+STYLE_FORM_VALUE_CONTAINER_PADX = (6, 6)
 
 
 def create_style_control(
@@ -24,15 +28,15 @@ def create_style_control(
     label = str(field.get("label", ""))
     path = str(field.get("path", ""))
     label_widget = ttk.Label(parent, text=label)
-    label_widget.grid(row=row, column=1, sticky="w", padx=(1, 6), pady=3)
+    label_widget.grid(row=row, column=1, sticky="w", padx=STYLE_FORM_LABEL_PADX, pady=3)
 
     if kind == "bool":
         var: tk.Variable = tk.BooleanVar(value=False)
         widget = ttk.Checkbutton(parent, text="", width=1, variable=var, command=app._on_style_form_commit)
-        widget.grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        widget.grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
         ttk.Frame(parent, width=1).grid(row=row, column=2, sticky="ew", padx=6, pady=3)
     elif kind == "choice":
-        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
         var = tk.StringVar(value="")
         widget = ttk.Combobox(
             parent,
@@ -41,14 +45,14 @@ def create_style_control(
             values=tuple(field.get("values") or ()),
             width=24,
         )
-        widget.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
+        widget.grid(row=row, column=2, sticky="ew", padx=STYLE_FORM_VALUE_CONTAINER_PADX, pady=3)
         widget.bind("<<ComboboxSelected>>", app._on_style_form_commit_event)
         widget.bind("<Return>", app._on_style_form_commit_event)
     else:
-        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
         var = tk.StringVar(value="")
         widget = ttk.Entry(parent, textvariable=var)
-        widget.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
+        widget.grid(row=row, column=2, sticky="ew", padx=STYLE_FORM_VALUE_CONTAINER_PADX, pady=3)
         widget.bind("<Return>", app._on_style_form_commit_event)
 
     return {
@@ -134,13 +138,13 @@ def create_compact_style_row(
     controls: list[dict[str, Any]] = []
     rows_used = 1
     label_widget = ttk.Label(parent, text=row_label)
-    label_widget.grid(row=row, column=1, sticky="w", padx=(1, 6), pady=3)
+    label_widget.grid(row=row, column=1, sticky="w", padx=STYLE_FORM_LABEL_PADX, pady=3)
     toggle_path: str | None = None
     if isinstance(toggle, dict) and str(toggle.get("path", "")).strip():
         toggle_path = str(toggle.get("path", "")).strip()
         var: tk.Variable = tk.BooleanVar(value=False)
         widget = ttk.Checkbutton(parent, text="", width=1, variable=var, command=app._on_style_form_commit)
-        widget.grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        widget.grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
         controls.append(
             {
                 "path": toggle_path,
@@ -154,12 +158,12 @@ def create_compact_style_row(
             }
         )
     else:
-        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
 
     value_defs = values or []
     if value_defs:
         value_frame = ttk.Frame(parent)
-        value_frame.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
+        value_frame.grid(row=row, column=2, sticky="ew", padx=STYLE_FORM_VALUE_CONTAINER_PADX, pady=3)
         if len(value_defs) <= 2:
             _configure_two_slot_value_columns(value_frame)
             for i, field in enumerate(value_defs):
@@ -217,10 +221,10 @@ def create_compact_style_row(
     if detail_defs:
         rows_used += 1
         detail_label = ttk.Label(parent, text="└ 詳細")
-        detail_label.grid(row=row + 1, column=1, sticky="w", padx=(1, 6), pady=(0, 3))
-        ttk.Frame(parent, width=1).grid(row=row + 1, column=0, sticky="w", padx=(6, 0), pady=(0, 3))
+        detail_label.grid(row=row + 1, column=1, sticky="w", padx=STYLE_FORM_LABEL_PADX, pady=(0, 3))
+        ttk.Frame(parent, width=1).grid(row=row + 1, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=(0, 3))
         detail_frame = ttk.Frame(parent)
-        detail_frame.grid(row=row + 1, column=2, sticky="ew", padx=6, pady=(0, 3))
+        detail_frame.grid(row=row + 1, column=2, sticky="ew", padx=STYLE_FORM_VALUE_CONTAINER_PADX, pady=(0, 3))
         if len(detail_defs) <= 2:
             _configure_two_slot_value_columns(detail_frame)
             for i, field in enumerate(detail_defs):
@@ -291,14 +295,14 @@ def create_palette_style_row(
     controls: list[dict[str, Any]] = []
     rows_used = 1
     label_widget = ttk.Label(parent, text=row_label)
-    label_widget.grid(row=row, column=1, sticky="w", padx=(1, 6), pady=3)
+    label_widget.grid(row=row, column=1, sticky="w", padx=STYLE_FORM_LABEL_PADX, pady=3)
 
     toggle_path: str | None = None
     if isinstance(toggle, dict) and str(toggle.get("path", "")).strip():
         toggle_path = str(toggle.get("path", "")).strip()
         var: tk.Variable = tk.BooleanVar(value=False)
         toggle_widget = ttk.Checkbutton(parent, text="", width=1, variable=var, command=app._on_style_form_commit)
-        toggle_widget.grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        toggle_widget.grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
         controls.append(
             {
                 "path": toggle_path,
@@ -312,10 +316,10 @@ def create_palette_style_row(
             }
         )
     else:
-        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=(6, 0), pady=3)
+        ttk.Frame(parent, width=1).grid(row=row, column=0, sticky="w", padx=STYLE_FORM_TOGGLE_PADX, pady=3)
 
     area = ttk.Frame(parent)
-    area.grid(row=row, column=2, sticky="ew", padx=6, pady=3)
+    area.grid(row=row, column=2, sticky="ew", padx=STYLE_FORM_VALUE_CONTAINER_PADX, pady=3)
     area.columnconfigure(0, weight=1)
     effective_max_chars = min(summary_max_chars, max(4, summary_label_width - 1))
     summary_var = tk.StringVar(value=build_palette_summary(graph_style, palette_fields, max_chars=effective_max_chars))

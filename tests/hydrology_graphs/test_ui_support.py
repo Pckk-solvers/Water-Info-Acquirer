@@ -4,6 +4,7 @@ from datetime import date
 
 from hydrology_graphs.domain.models import GraphTarget
 from hydrology_graphs.services.dto import PrecheckItem
+from hydrology_graphs.ui.app import HydrologyGraphsApp
 from hydrology_graphs.ui.view_models import (
     build_batch_targets,
     build_preview_choices,
@@ -220,3 +221,90 @@ def test_refresh_preview_choices_resets_invalid_selection_to_first_choice():
     assert app.preview_target_station.get() == "観測所A (jma:001)"
     assert app.preview_target_date.get() == "2026-01-01"
     assert app.preview_target_graph.get() == "ハイエトグラフ（雨量） 3日"
+
+
+def test_ordered_style_fields_uses_fixed_path_order():
+    fields = [
+        {"path": "x_axis.range_margin_rate", "label": "X軸範囲マージン率"},
+        {"path": "figure_width", "label": "図幅(inch)"},
+        {"path": "title.template", "label": "タイトルテンプレート"},
+    ]
+
+    ordered = HydrologyGraphsApp._ordered_style_fields(fields)
+
+    assert [field["path"] for field in ordered] == ["figure_width", "title.template", "x_axis.range_margin_rate"]
+
+
+def test_should_use_palette_row_for_color_or_many_fields():
+    color_row = {
+        "values": [
+            {"path": "series_color", "kind": "color"},
+            {"path": "series_width", "kind": "float"},
+        ]
+    }
+    many_values_row = {
+        "values": [
+            {"path": "a", "kind": "float"},
+            {"path": "b", "kind": "float"},
+            {"path": "c", "kind": "float"},
+        ]
+    }
+    compact_row = {
+        "values": [
+            {"path": "x_axis.data_trim_start_hours", "kind": "float"},
+            {"path": "x_axis.data_trim_end_hours", "kind": "float"},
+        ]
+    }
+
+    assert HydrologyGraphsApp._should_use_palette_row(color_row) is True
+    assert HydrologyGraphsApp._should_use_palette_row(many_values_row) is True
+    assert HydrologyGraphsApp._should_use_palette_row(compact_row) is False
+
+
+def test_graph_style_fields_y2_label_is_hyetograph_only():
+    app = HydrologyGraphsApp.__new__(HydrologyGraphsApp)
+    base_style = {
+        "x_axis": {"tick_interval_hours": 6},
+        "threshold": {"label_enabled": True, "label_offset": 0.0},
+    }
+
+    hyeto_fields = app._graph_style_fields_for("hyetograph:3day", dict(base_style))
+    hydro_fields = app._graph_style_fields_for("hydrograph_discharge:3day", dict(base_style))
+
+    hyeto_paths = {str(field.get("path", "")) for field in hyeto_fields}
+    hydro_paths = {str(field.get("path", "")) for field in hydro_fields}
+    assert "y2_axis.label" in hyeto_paths
+    assert "y2_axis.label_rotation" in hyeto_paths
+    assert "y2_axis.label" not in hydro_paths
+    assert "y2_axis.label_rotation" not in hydro_paths
+
+
+def test_graph_style_fields_hides_unused_x_axis_fields_for_annual():
+    app = HydrologyGraphsApp.__new__(HydrologyGraphsApp)
+    annual_style = {
+        "x_axis": {
+            "tick_hours_of_day": "1,2,3,4",
+            "tick_interval_hours": 6,
+            "year_tick_step": 2,
+            "show_date_labels": True,
+            "date_boundary_line_enabled": True,
+            "date_boundary_line_offset_hours": 0.0,
+            "data_trim_enabled": True,
+            "data_trim_start_hours": 0.0,
+            "data_trim_end_hours": 0.0,
+        },
+        "threshold": {"label_enabled": True, "label_offset": 0.0},
+    }
+
+    fields = app._graph_style_fields_for("annual_max_rainfall", annual_style)
+    paths = {str(field.get("path", "")) for field in fields}
+
+    assert "x_axis.tick_hours_of_day" not in paths
+    assert "x_axis.tick_interval_hours" not in paths
+    assert "x_axis.year_tick_step" in paths
+    assert "x_axis.show_date_labels" not in paths
+    assert "x_axis.date_boundary_line_enabled" not in paths
+    assert "x_axis.date_boundary_line_offset_hours" not in paths
+    assert "x_axis.data_trim_enabled" not in paths
+    assert "x_axis.data_trim_start_hours" not in paths
+    assert "x_axis.data_trim_end_hours" not in paths

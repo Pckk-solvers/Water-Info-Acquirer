@@ -25,12 +25,18 @@ def test_default_style_x_axis_defaults_are_zero():
         series = graph_style.get("series", {})
         assert x_axis.get("range_margin_rate", 0) == 0
         assert x_axis.get("tick_rotation", 0) == 0
+        if "date_format" in x_axis:
+            assert x_axis.get("show_date_labels", True) is True
+        if "tick_interval_hours" in x_axis:
+            assert x_axis.get("tick_hours_of_day", "") == ""
+        if "year_tick_step" in x_axis:
+            assert x_axis.get("year_tick_step", 1) == 1
         assert isinstance(x_axis.get("data_trim_enabled", True), bool)
         assert x_axis.get("data_trim_start_hours", 0) == 0
         assert x_axis.get("data_trim_end_hours", 0) == 0
-        assert isinstance(grid.get("enabled", True), bool)
         assert isinstance(grid.get("x_enabled"), bool)
         assert isinstance(grid.get("y_enabled"), bool)
+        assert float(grid.get("width", 0)) > 0
         assert isinstance(bar.get("enabled", True), bool)
         assert isinstance(y_axis.get("enabled", True), bool)
         assert isinstance(series.get("enabled", True), bool)
@@ -186,6 +192,7 @@ def test_default_hyetograph_style_contains_dual_axis_and_missing_band_defaults()
     assert style["cumulative_line"]["enabled"] is True
     assert style["missing_band"]["enabled"] is True
     assert style["y2_axis"]["max"] > 0
+    assert style["y2_axis"]["label_rotation"] == "270"
 
 
 def test_load_style_accepts_hyetograph_added_keys():
@@ -201,3 +208,28 @@ def test_load_style_accepts_hyetograph_added_keys():
     result = load_style(payload=payload)
 
     assert result.is_valid
+
+
+def test_load_style_accepts_numeric_y2_label_rotation_and_normalizes_to_string():
+    payload = default_style()
+    payload["graph_styles"]["hyetograph:3day"]["y2_axis"]["label_rotation"] = 90
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    assert result.style["graph_styles"]["hyetograph:3day"]["y2_axis"]["label_rotation"] == "90"
+
+
+def test_load_style_backfills_font_object_from_legacy_font_size():
+    payload = default_style()
+    target = payload["graph_styles"]["hydrograph_discharge:3day"]
+    target["font_size"] = 16
+    target.pop("font", None)
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    font = result.style["graph_styles"]["hydrograph_discharge:3day"]["font"]
+    assert font["title_size"] > 0
+    assert font["x_label_size"] > 0
+    assert font["y_tick_size"] > 0

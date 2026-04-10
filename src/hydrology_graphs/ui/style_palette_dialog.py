@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import tkinter as tk
 from tkinter import colorchooser, messagebox, ttk
 
@@ -157,6 +158,8 @@ def open_palette_dialog(app, *, title: str, fields: list[dict], group_toggle_pat
         app._render_preview(silent_json_error=True)
 
     ttk.Button(buttons, text="適用", command=_apply).grid(row=0, column=1)
+    dialog.bind("<Return>", lambda _event: _apply())
+    dialog.bind("<KP_Enter>", lambda _event: _apply())
 
     _place_dialog_near_pointer(app, dialog)
     dialog.grab_set()
@@ -169,13 +172,74 @@ def _place_dialog_near_pointer(app, dialog: tk.Toplevel) -> None:
         dialog.update_idletasks()
         width = max(int(dialog.winfo_reqwidth()), int(dialog.winfo_width()))
         height = max(int(dialog.winfo_reqheight()), int(dialog.winfo_height()))
-        pointer_x = int(app.winfo_pointerx()) + 12
-        pointer_y = int(app.winfo_pointery()) + 12
-        screen_w = int(dialog.winfo_screenwidth())
-        screen_h = int(dialog.winfo_screenheight())
-        x = max(0, min(pointer_x, max(0, screen_w - width)))
-        y = max(0, min(pointer_y, max(0, screen_h - height)))
+        pointer_x = int(app.winfo_pointerx())
+        pointer_y = int(app.winfo_pointery())
+        work_left, work_top, work_right, work_bottom = _work_area_for_pointer(app, pointer_x, pointer_y)
+        margin = 8
+
+        # 1) 右下に出す 2) 右下が無理なら右上 3) 右側が無理なら左側
+        x = pointer_x + 12
+        y = pointer_y + 12
+        if y + height > work_bottom - margin:
+            y = pointer_y - height - 12
+        if x + width > work_right - margin:
+            x = pointer_x - width - 12
+
+        x = max(work_left + margin, min(x, max(work_left + margin, work_right - width - margin)))
+        y = max(work_top + margin, min(y, max(work_top + margin, work_bottom - height - margin)))
         dialog.geometry(f"+{x}+{y}")
     except Exception:
         # 位置調整は補助機能なので、失敗してもダイアログ表示を優先する。
         return
+
+
+def _work_area_for_pointer(app, pointer_x: int, pointer_y: int) -> tuple[int, int, int, int]:
+    """ポインタ位置が属するモニタの作業領域を返す。"""
+
+    # Windows: タスクバー等を除いたモニタ作業領域を使う。
+    if hasattr(ctypes, "windll") and hasattr(ctypes.windll, "user32"):
+        try:
+            user32 = ctypes.windll.user32
+            monitor_default_to_nearest = 2
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_ulong),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", ctypes.c_ulong),
+                ]
+
+            pt = POINT(pointer_x, pointer_y)
+            monitor = user32.MonitorFromPoint(pt, monitor_default_to_nearest)
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(MONITORINFO)
+            if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                return (
+                    int(info.rcWork.left),
+                    int(info.rcWork.top),
+                    int(info.rcWork.right),
+                    int(info.rcWork.bottom),
+                )
+        except Exception:
+            pass
+
+    # Fallback: 仮想スクリーン全体。
+    try:
+        left = int(app.winfo_vrootx())
+        top = int(app.winfo_vrooty())
+        return left, top, left + int(app.winfo_vrootwidth()), top + int(app.winfo_vrootheight())
+    except Exception:
+        pass
+    return 0, 0, 1920, 1080

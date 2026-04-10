@@ -88,9 +88,31 @@
 - `graph_styles.<key>.grid.enabled`:
   - type: `boolean`
   - 既定: `true`
+- `graph_styles.<key>.grid.color`:
+  - type: `string`（`#RRGGBB`/`#RRGGBBAA`）
+- `graph_styles.<key>.grid.width`:
+  - type: `number`（`> 0`）
+- `graph_styles.<key>.grid.style`:
+  - type: `string`
 - `graph_styles.<key>.bar.enabled` / `graph_styles.<key>.series.enabled` / `graph_styles.<key>.y_axis.enabled`:
   - type: `boolean`
   - 既定: `true`
+
+## 6.2 フォント/軸オフセット/2軸（追加）
+
+- `graph_styles.<key>.font.title_size`
+- `graph_styles.<key>.font.x_label_size`
+- `graph_styles.<key>.font.y_label_size`
+- `graph_styles.<key>.font.x_tick_size`
+- `graph_styles.<key>.font.y_tick_size`
+- `graph_styles.<key>.font.legend_size`
+- `graph_styles.<key>.axis.x_label_offset`
+- `graph_styles.<key>.axis.y_label_offset`
+- `graph_styles.<key>.x_axis.tick_label_pad`
+- `graph_styles.<key>.y_axis.tick_label_pad`
+- `graph_styles.<key>.y2_axis.enabled`
+- `graph_styles.<key>.y2_axis.number_format`
+- `graph_styles.<key>.y2_axis.tick_label_pad`
 
 ## 6.1 日付境界線の描画方針（非スキーマ）
 
@@ -116,6 +138,13 @@
   - `src/hydrology_graphs/io/style_store.py`
 - 描画反映:
   - `src/hydrology_graphs/render/plotter.py`
+
+## 8.1 UIグループとスキーマキーの対応方針
+
+- UIのグループ（文字設定 / 軸設定 / グリッド・境界線 / 系列・棒設定 / スケール設定 / データ範囲設定）は表示上の分類であり、スキーマの入れ子構造は変更しない。
+- スキーマ正本は引き続き `graph_styles.<graph_key>.*` 配下のキーで維持する。
+- 将来拡張時も、まず既存キーを追加し、UI側でグルーピングを定義する。グループ見出しの表示は任意とする。
+- 互換性維持のため、`groups.*` のようなUI専用キーはスキーマに追加しない。
 
 ## 9. JSON Schema ひな形（抜粋）
 

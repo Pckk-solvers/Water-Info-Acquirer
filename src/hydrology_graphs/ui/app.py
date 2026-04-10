@@ -55,6 +55,7 @@ from .preview_canvas import (
 from .preview_actions import export_preview_sample, render_preview
 from .style_payload import nested_value
 from .style_form_builder import (
+    STYLE_FORM_TOGGLE_COLUMN_MINSIZE,
     build_palette_summary,
     create_compact_style_row,
     create_palette_style_row,
@@ -135,22 +136,23 @@ BASE_GRAPH_STYLE_FIELDS: tuple[dict[str, Any], ...] = (
     {"path": "figure_height", "label": "図高(inch)", "kind": "float", "tooltip": "出力画像の縦幅（inch）。画像サイズの基準になります。"},
     {"path": "dpi", "label": "DPI", "kind": "int", "tooltip": "解像度（密度）。値を上げると同じ図幅・図高でも高精細になります。"},
     {"path": "font_family", "label": "フォント", "kind": "str"},
-    {"path": "font_size", "label": "基本フォントサイズ", "kind": "int"},
     {"path": "legend.enabled", "label": "凡例表示", "kind": "bool", "tooltip": "系列名・基準線ラベルの凡例を表示/非表示にします。"},
-    {"path": "grid.enabled", "label": "グリッド表示", "kind": "bool"},
+    {"path": "font.title_size", "label": "タイトル文字サイズ", "kind": "float"},
+    {"path": "font.x_label_size", "label": "X軸ラベル文字サイズ", "kind": "float"},
+    {"path": "font.y_label_size", "label": "Y軸ラベル文字サイズ", "kind": "float"},
+    {"path": "font.x_tick_size", "label": "X目盛文字サイズ", "kind": "float"},
+    {"path": "font.y_tick_size", "label": "Y目盛文字サイズ", "kind": "float"},
+    {"path": "font.legend_size", "label": "凡例文字サイズ", "kind": "float"},
     {"path": "title.template", "label": "タイトルテンプレート", "kind": "str"},
     {"path": "axis.x_label", "label": "X軸ラベル", "kind": "str"},
     {"path": "axis.y_label", "label": "Y軸ラベル", "kind": "str"},
-    {"path": "series_color", "label": "系列色", "kind": "str"},
-    {"path": "series_width", "label": "系列幅", "kind": "float", "tooltip": "折れ線/系列の太さです。"},
-    {
-        "path": "series_style",
-        "label": "系列線種",
-        "kind": "choice",
-        "values": ("solid", "dashed", "dashdot", "dotted"),
-        "tooltip": "折れ線の線種です。",
-    },
+    {"path": "y2_axis.label", "label": "Y軸ラベル2", "kind": "str"},
+    {"path": "y2_axis.label_rotation", "label": "Y軸ラベル2回転", "kind": "choice", "values": ("0", "90", "180", "270")},
+    {"path": "axis.x_label_offset", "label": "X軸ラベル位置", "kind": "float"},
+    {"path": "axis.y_label_offset", "label": "Y軸ラベル位置", "kind": "float"},
     {"path": "x_axis.tick_rotation", "label": "X軸角度", "kind": "float"},
+    {"path": "x_axis.tick_label_pad", "label": "X目盛位置", "kind": "float"},
+    {"path": "y_axis.tick_label_pad", "label": "Y目盛位置", "kind": "float"},
     {
         "path": "x_axis.range_margin_rate",
         "label": "X軸範囲マージン率",
@@ -183,64 +185,129 @@ _PALETTE_SUMMARY_MAX_CHARS = 32
 _PALETTE_SUMMARY_LABEL_WIDTH = 22
 _COMMON_COMPACT_ROWS: tuple[dict[str, Any], ...] = (
     {
-        "row_label": "グリッド",
-        "toggle": {"path": "grid.enabled"},
+        "row_label": "グリッド表示",
         "values": (
-            {"path": "grid.x_enabled", "label": "X(縦線)", "kind": "bool"},
-            {"path": "grid.y_enabled", "label": "Y(横線)", "kind": "bool"},
+            {"path": "grid.x_enabled", "label": "X(縦線)", "kind": "bool", "tooltip": "縦方向のグリッド線を表示します。"},
+            {"path": "grid.y_enabled", "label": "Y(横線)", "kind": "bool", "tooltip": "横方向のグリッド線を表示します。"},
+        ),
+    },
+    {
+        "row_label": "グリッド線設定",
+        "palette_fields": (
+            {"path": "grid.color", "label": "色", "kind": "color"},
+            {"path": "grid.width", "label": "太さ", "kind": "float"},
+            {"path": "grid.style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES},
+        ),
+    },
+)
+_NON_HYETOGRAPH_COMPACT_ROWS: tuple[dict[str, Any], ...] = (
+    {
+        "row_label": "系列設定",
+        "toggle": {"path": "series.enabled", "tooltip": "系列（折れ線）の描画をON/OFFします。"},
+        "palette_fields": (
+            {"path": "series_color", "label": "色", "kind": "color", "tooltip": "系列線の色です。"},
+            {"path": "series_width", "label": "太さ", "kind": "float", "tooltip": "系列線の太さです。"},
+            {"path": "series_style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES, "tooltip": "系列線の線種です。"},
+        ),
+    },
+    {
+        "row_label": "棒設定",
+        "toggle": {"path": "bar.enabled", "tooltip": "棒グラフの描画をON/OFFします。"},
+        "palette_fields": (
+            {"path": "bar_color", "label": "棒色", "kind": "color", "tooltip": "棒本体の色です。"},
+            {"path": "bar.width", "label": "棒幅", "kind": "float", "tooltip": "棒の幅です。"},
         ),
     },
 )
 _HYETOGRAPH_COMPACT_ROWS: tuple[dict[str, Any], ...] = (
     {
         "row_label": "累積雨量線",
-        "toggle": {"path": "cumulative_line.enabled"},
+        "toggle": {"path": "cumulative_line.enabled", "tooltip": "累積雨量の折れ線を表示します。"},
         "palette_fields": (
-            {"path": "cumulative_line.width", "label": "太さ", "kind": "float"},
+            {"path": "cumulative_line.width", "label": "太さ", "kind": "float", "tooltip": "累積雨量線の太さです。"},
             {
                 "path": "cumulative_line.style",
                 "label": "線種",
                 "kind": "choice",
                 "values": _LINE_STYLE_CHOICES,
+                "tooltip": "累積雨量線の線種です。",
             },
-            {"path": "cumulative_line.color", "label": "色", "kind": "color"},
+            {"path": "cumulative_line.color", "label": "色", "kind": "color", "tooltip": "累積雨量線の色です。"},
         ),
     },
     {
         "row_label": "欠測帯",
-        "toggle": {"path": "missing_band.enabled"},
+        "toggle": {"path": "missing_band.enabled", "tooltip": "欠測区間を帯で表示します。"},
         "palette_fields": (
-            {"path": "missing_band.alpha", "label": "濃さ", "kind": "float"},
-            {"path": "missing_band.color", "label": "色", "kind": "color"},
+            {"path": "missing_band.alpha", "label": "濃さ", "kind": "float", "tooltip": "欠測帯の透明度です。"},
+            {"path": "missing_band.color", "label": "色", "kind": "color", "tooltip": "欠測帯の色です。"},
         ),
     },
     {
         "row_label": "棒設定",
-        "toggle": {"path": "bar.enabled"},
+        "toggle": {"path": "bar.enabled", "tooltip": "棒グラフの描画をON/OFFします。"},
         "palette_fields": (
-            {"path": "bar_color", "label": "棒色", "kind": "color"},
-            {"path": "bar.width", "label": "棒幅", "kind": "float"},
-            {"path": "bar.edge_width", "label": "外枠太さ", "kind": "float"},
-            {"path": "bar.edge_alpha", "label": "外枠濃さ", "kind": "float"},
+            {"path": "bar_color", "label": "棒色", "kind": "color", "tooltip": "棒本体の色です。"},
+            {"path": "bar.width", "label": "棒幅", "kind": "float", "tooltip": "棒の幅です。"},
+            {"path": "bar.edge_width", "label": "外枠太さ", "kind": "float", "tooltip": "棒外枠の線幅です。"},
+            {"path": "bar.edge_alpha", "label": "外枠濃さ", "kind": "float", "tooltip": "棒外枠の濃さです。"},
         ),
     },
     {
         "row_label": "系列設定",
-        "toggle": {"path": "series.enabled"},
+        "toggle": {"path": "series.enabled", "tooltip": "系列（折れ線）の描画をON/OFFします。"},
         "palette_fields": (
-            {"path": "series_color", "label": "色", "kind": "color"},
-            {"path": "series_width", "label": "太さ", "kind": "float"},
-            {"path": "series_style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES},
+            {"path": "series_color", "label": "色", "kind": "color", "tooltip": "系列線の色です。"},
+            {"path": "series_width", "label": "太さ", "kind": "float", "tooltip": "系列線の太さです。"},
+            {"path": "series_style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES, "tooltip": "系列線の線種です。"},
         ),
     },
     {
-        "row_label": "Y軸(時間雨量)",
-        "toggle": {"path": "y_axis.enabled"},
-        "values": (
-            {"path": "y_axis.max", "label": "上限", "kind": "float"},
-            {"path": "y_axis.tick_step", "label": "刻み", "kind": "float"},
+        "row_label": "Y軸設定（左）",
+        "toggle": {"path": "y_axis.enabled", "tooltip": "時間雨量のY軸設定を有効化します。"},
+        "palette_fields": (
+            {"path": "y_axis.max", "label": "上限", "kind": "float", "tooltip": "時間雨量Y軸の上限値です。"},
+            {"path": "y_axis.tick_step", "label": "刻み", "kind": "float", "tooltip": "時間雨量Y軸の目盛間隔です。"},
+            {"path": "y_axis.number_format", "label": "数値形式", "kind": "choice", "values": ("plain", "comma", "percent")},
         ),
     },
+)
+_STYLE_FIELD_PATH_ORDER: tuple[str, ...] = (
+    "figure_width",
+    "figure_height",
+    "dpi",
+    "font_family",
+    "legend.enabled",
+    "font.title_size",
+    "font.x_label_size",
+    "font.y_label_size",
+    "font.x_tick_size",
+    "font.y_tick_size",
+    "font.legend_size",
+    "title.template",
+    "axis.x_label",
+    "axis.y_label",
+    "y2_axis.label",
+    "y2_axis.label_rotation",
+    "axis.x_label_offset",
+    "axis.y_label_offset",
+    "x_axis.tick_hours_of_day",
+    "x_axis.year_tick_step",
+    "x_axis.tick_interval_hours",
+    "x_axis.tick_rotation",
+    "x_axis.show_date_labels",
+    "x_axis.tick_label_pad",
+    "y_axis.tick_label_pad",
+    "x_axis.range_margin_rate",
+    "y_axis.number_format",
+    "invert_y_axis",
+    "threshold.label_enabled",
+    "threshold.label_offset",
+    "x_axis.data_trim_enabled",
+    "x_axis.data_trim_start_hours",
+    "x_axis.data_trim_end_hours",
+    "x_axis.date_boundary_line_enabled",
+    "x_axis.date_boundary_line_offset_hours",
 )
 
 
@@ -798,13 +865,59 @@ class HydrologyGraphsApp(tk.Toplevel):
         """対象グラフに応じた編集項目定義を返す。"""
 
         fields = [dict(field) for field in BASE_GRAPH_STYLE_FIELDS]
-        if nested_value(graph_style, "x_axis.tick_interval_hours", None) is not None:
+        if not self._is_hyetograph_style_key(graph_key):
+            fields = [
+                field
+                for field in fields
+                if str(field.get("path", "")).strip() not in {"y2_axis.label", "y2_axis.label_rotation"}
+            ]
+        if graph_key.startswith("annual_max_"):
+            annual_hidden_paths = {
+                "x_axis.date_boundary_line_enabled",
+                "x_axis.date_boundary_line_offset_hours",
+                "x_axis.data_trim_enabled",
+                "x_axis.data_trim_start_hours",
+                "x_axis.data_trim_end_hours",
+                "x_axis.tick_hours_of_day",
+                "x_axis.tick_interval_hours",
+                "x_axis.show_date_labels",
+            }
+            fields = [field for field in fields if str(field.get("path", "")).strip() not in annual_hidden_paths]
+        if self._is_event_style_key(graph_key):
+            if nested_value(graph_style, "x_axis.tick_hours_of_day", None) is not None:
+                fields.append(
+                    {
+                        "path": "x_axis.tick_hours_of_day",
+                        "label": "X軸目盛時刻(1-24,カンマ区切り)",
+                        "kind": "str",
+                        "tooltip": "表示する目盛時刻を1-24で指定します（例: 1,2,3,4）。0-23指定も可。データ間隔は常に1時間です。",
+                    }
+                )
+            elif nested_value(graph_style, "x_axis.tick_interval_hours", None) is not None:
+                fields.append(
+                    {
+                        "path": "x_axis.tick_interval_hours",
+                        "label": "X軸目盛間隔(時間)",
+                        "kind": "int",
+                        "tooltip": "X軸の時刻目盛りを何時間間隔で表示するかを指定します（互換設定）。",
+                    }
+                )
+            if nested_value(graph_style, "x_axis.show_date_labels", None) is not None:
+                fields.append(
+                    {
+                        "path": "x_axis.show_date_labels",
+                        "label": "X軸日付表示",
+                        "kind": "bool",
+                        "tooltip": "X軸目盛に日付を含めて表示します。OFFで時刻のみ表示します。",
+                    }
+                )
+        elif nested_value(graph_style, "x_axis.year_tick_step", None) is not None:
             fields.append(
                 {
-                    "path": "x_axis.tick_interval_hours",
-                    "label": "X軸間隔(時間)",
+                    "path": "x_axis.year_tick_step",
+                    "label": "X軸目盛間引き(年)",
                     "kind": "int",
-                    "tooltip": "X軸の時刻目盛りを何時間間隔で表示するかを指定します。",
+                    "tooltip": "年最大系のX軸ラベルをN年ごとに表示します。1で全表示、2で1つおきです。",
                 }
             )
         if self._is_event_style_key(graph_key):
@@ -835,10 +948,6 @@ class HydrologyGraphsApp(tk.Toplevel):
                         "tooltip": "描画前に末尾側から除外する時間。累積雨量は除外後データで再計算します。",
                     }
                 )
-        if nested_value(graph_style, "bar_color", None) is not None:
-            fields.append({"path": "bar_color", "label": "棒色", "kind": "str"})
-        if nested_value(graph_style, "bar.width", None) is not None:
-            fields.append({"path": "bar.width", "label": "棒幅", "kind": "float", "tooltip": "棒グラフの幅です。"})
         if nested_value(graph_style, "invert_y_axis", None) is not None:
             fields.append({"path": "invert_y_axis", "label": "Y軸反転", "kind": "bool"})
         if nested_value(graph_style, "threshold.label_enabled", None) is not None:
@@ -980,6 +1089,8 @@ class HydrologyGraphsApp(tk.Toplevel):
         row_def: dict[str, Any],
     ) -> int:
         palette_fields = list(row_def.get("palette_fields") or [])
+        if not palette_fields and self._should_use_palette_row(row_def):
+            palette_fields = [dict(value_def) for value_def in list(row_def.get("values") or [])]
         if palette_fields:
             controls, rows_used = create_palette_style_row(
                 self,
@@ -1005,6 +1116,32 @@ class HydrologyGraphsApp(tk.Toplevel):
         for control in controls:
             self._add_style_control(graph_style, control)
         return rows_used
+
+    @staticmethod
+    def _should_use_palette_row(row_def: dict[str, Any]) -> bool:
+        """複合入力行を詳細設定ダイアログへ寄せるべきか判定する。"""
+
+        values = list(row_def.get("values") or [])
+        if not values:
+            return False
+        if any(str(value.get("kind", "")).strip() == "color" for value in values):
+            return True
+        non_bool_values = [value for value in values if str(value.get("kind", "")).strip() != "bool"]
+        if len(non_bool_values) >= 3:
+            return True
+        if len(non_bool_values) >= 2 and any(str(value.get("kind", "")).strip() == "choice" for value in non_bool_values):
+            return True
+        return False
+
+    @staticmethod
+    def _ordered_style_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        order_map = {path: idx for idx, path in enumerate(_STYLE_FIELD_PATH_ORDER)}
+        decorated: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        for idx, field in enumerate(fields):
+            path = str(field.get("path", "")).strip()
+            decorated.append(((order_map.get(path, len(order_map) + idx), idx), field))
+        decorated.sort(key=lambda item: item[0])
+        return [field for _, field in decorated]
 
     @staticmethod
     def _paired_compact_row_definitions() -> tuple[dict[str, Any], ...]:
@@ -1066,12 +1203,13 @@ class HydrologyGraphsApp(tk.Toplevel):
             for child in self.graph_style_box.winfo_children():
                 child.destroy()
             fields = self._graph_style_fields_for(graph_key, graph_style)
-            excluded: set[str] = {"grid.enabled"}
+            excluded: set[str] = set()
             if self._is_hyetograph_style_key(graph_key):
-                excluded.update({"bar.width", "bar_color", "series_color", "series_width", "series_style"})
+                excluded.update({"y_axis.number_format"})
             fields = [field for field in fields if str(field.get("path")) not in excluded]
+            fields = self._ordered_style_fields(fields)
             label_col_minsize = min(style_label_column_minsize(fields), 170)
-            self.graph_style_box.columnconfigure(0, minsize=44)
+            self.graph_style_box.columnconfigure(0, minsize=STYLE_FORM_TOGGLE_COLUMN_MINSIZE)
             self.graph_style_box.columnconfigure(1, minsize=label_col_minsize)
             self.graph_style_box.columnconfigure(2, weight=0)
             display_mode_box = getattr(self, "display_mode_box", None)
@@ -1147,6 +1285,8 @@ class HydrologyGraphsApp(tk.Toplevel):
             row_defs: list[dict[str, Any]] = [dict(row_def) for row_def in _COMMON_COMPACT_ROWS]
             if self._is_hyetograph_style_key(graph_key):
                 row_defs.extend(dict(row_def) for row_def in _HYETOGRAPH_COMPACT_ROWS)
+            else:
+                row_defs.extend(dict(row_def) for row_def in _NON_HYETOGRAPH_COMPACT_ROWS)
 
             for row_def in row_defs:
                 toggle_def = row_def.get("toggle")
