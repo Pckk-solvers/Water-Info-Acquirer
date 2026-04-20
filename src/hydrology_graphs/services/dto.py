@@ -38,6 +38,8 @@ class PreviewInput:
     graph_type: str
     base_datetime: str | None
     event_window_days: int | None
+    source2: str | None = None
+    station_key2: str | None = None
     event_window_terminal_padding: bool = False
     time_display_mode: str = "datetime"
 
@@ -51,6 +53,8 @@ class BatchTarget:
     graph_type: str
     base_datetime: str | None
     event_window_days: int | None
+    source2: str | None = None
+    station_key2: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

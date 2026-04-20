@@ -126,6 +126,21 @@ def _build_preview_input(
         return None
 
     source, station_key = target.source, target.station_key
+
+    # 比較対象の解決
+    source2, station_key2 = None, None
+    station2_token = app.preview_target_station2.get().strip()
+    if station2_token and station2_token != "(なし)":
+        target2 = _resolve_preview_target(
+            app,
+            graph_type=graph_type,
+            event_window_days=event_window_days,
+            station_token=station2_token,
+            base_date=base_date,
+        )
+        if target2:
+            source2, station_key2 = target2.source, target2.station_key
+
     if target.base_date is not None:
         base_date = target.base_date.isoformat()
         app.preview_target_date.set(base_date)
@@ -143,6 +158,8 @@ def _build_preview_input(
         style_payload=preview_payload,
         source=source,
         station_key=station_key,
+        source2=source2,
+        station_key2=station_key2,
         graph_type=graph_type,
         base_datetime=base_date,
         event_window_days=event_window_days,

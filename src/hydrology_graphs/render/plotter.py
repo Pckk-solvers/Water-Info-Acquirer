@@ -61,6 +61,8 @@ def render_graph_png(
     graph_style: dict[str, Any],
     thresholds: list[ThresholdRecord],
     time_display_mode: str = "datetime",
+    station_name2: str | None = None,
+    df2: pd.DataFrame | None = None,
 ) -> bytes:
     """描画対象とスタイルから PNG バイト列を生成する。"""
 
@@ -80,6 +82,7 @@ def render_graph_png(
         )
 
     trimmed_df = _trim_event_dataframe(df, graph_style, graph_type=graph_type)
+    trimmed_df2 = _trim_event_dataframe(df2, graph_style, graph_type=graph_type) if df2 is not None else None
 
     fig, ax = plt.subplots(
         figsize=(figure_width, figure_height),
@@ -89,34 +92,67 @@ def render_graph_png(
     ax.set_facecolor(_FIXED_BACKGROUND_COLOR)
     _apply_common_axes_style(ax, graph_style, graph_type=graph_type)
 
-    # グラフ種別ごとに描画方法を切り替える。イベント系は折れ線/棒、年最大系は年次棒。
+    # グラフ種別ごとに描画方法を切り替える。
+    plots: list[Any] = []
     if graph_type in (GRAPH_HYDRO_DISCHARGE, GRAPH_HYDRO_WATER_LEVEL):
-        _plot_hydro(ax, trimmed_df, graph_style)
+        plots = _plot_hydro(
+            ax,
+            trimmed_df,
+            graph_style,
+            df2=trimmed_df2,
+            label1=station_name,
+            label2=station_name2
+        )
     elif graph_type in (GRAPH_ANNUAL_RAINFALL, GRAPH_ANNUAL_DISCHARGE, GRAPH_ANNUAL_WATER_LEVEL):
         _plot_annual(ax, trimmed_df, graph_style)
+        # 年最大系でも凡例が必要ならここで取得
+        h, _labels = ax.get_legend_handles_labels()
+        plots.extend(h)
     else:
         raise ValueError(f"Unsupported graph_type: {graph_type}")
 
-    # 基準線は最後に重ねることで、主系列の見た目を邪魔しにくくする。
+    # 基準線は最後に重ねる。
     _plot_thresholds(ax, thresholds, graph_style)
+
+    # 凡例の描画（系列が複数ある場合、または強制設定がある場合）
+    legend_cfg = graph_style.get("legend", {})
+    if bool(legend_cfg.get("enabled", True)):
+        # 左軸に描かれた要素（基準線など）も含めて収集する。
+        ax_handles, _ = ax.get_legend_handles_labels()
+        merged_handles: list[Any] = [*plots, *ax_handles]
+
+        # _nolegend_ を除外しつつラベル重複を抑止する。
+        filtered_plots: list[Any] = []
+        filtered_labels: list[str] = []
+        seen_labels: set[str] = set()
+        for p in merged_handles:
+            lbl = str(p.get_label())
+            if not lbl or lbl.startswith("_") or lbl in seen_labels:
+                continue
+            filtered_plots.append(p)
+            filtered_labels.append(lbl)
+            seen_labels.add(lbl)
+        if filtered_plots:
+            loc = str(legend_cfg.get("position", "upper right"))
+            anchor = legend_cfg.get("fixed_anchor")
+            bbox = None
+            if isinstance(anchor, dict) and "x" in anchor and "y" in anchor:
+                bbox = (float(anchor["x"]), float(anchor["y"]))
+
+            ax.legend(
+                filtered_plots,
+                filtered_labels,
+                loc=loc,
+                bbox_to_anchor=bbox,
+                fontsize=float(graph_style.get("font", {}).get("legend_size", 10)),
+                frameon=True,
+                facecolor="white",
+                framealpha=0.8,
+            )
+
     _plot_date_boundaries(ax, trimmed_df, graph_style, graph_type=graph_type)
     _apply_title_axis_labels(ax, graph_style, station_name)
     _apply_axis_details(ax, graph_style, time_display_mode=time_display_mode)
-
-    legend_cfg = graph_style.get("legend", {})
-    if legend_cfg.get("enabled", True):
-        loc = str(legend_cfg.get("position", "upper right"))
-        anchor = legend_cfg.get("fixed_anchor")
-        handles, labels = ax.get_legend_handles_labels()
-        filtered = [(h, label) for h, label in zip(handles, labels, strict=False) if _legend_label_visible(label)]
-        handles = [h for h, _ in filtered]
-        labels = [label for _, label in filtered]
-        # 位置を固定したい場合は bbox_to_anchor を使い、通常は標準位置を使う。
-        if isinstance(anchor, dict) and "x" in anchor and "y" in anchor:
-            if handles:
-                ax.legend(handles, labels, loc=loc, bbox_to_anchor=(float(anchor["x"]), float(anchor["y"])))
-        elif handles:
-            ax.legend(handles, labels, loc=loc)
 
     margin = graph_style.get("margin", {})
     fig.subplots_adjust(
@@ -435,26 +471,64 @@ def _trim_event_dataframe(df: pd.DataFrame, graph_style: dict[str, Any], *, grap
     return data.loc[mask].copy()
 
 
-def _plot_hydro(ax, df: pd.DataFrame, graph_style: dict[str, Any]) -> None:
+def _plot_hydro(
+    ax,
+    df: pd.DataFrame,
+    graph_style: dict[str, Any],
+    *,
+    df2: pd.DataFrame | None = None,
+    label1: str = "観測値",
+    label2: str | None = None,
+) -> list[Any]:
     """流量・水位の折れ線グラフを描く。"""
 
+    plots: list[Any] = []
+
+    # 1本目の描画
     series_cfg = graph_style.get("series", {})
-    if not bool(series_cfg.get("enabled", True)):
-        return
-    full_time, values, missing_mask = _prepare_hydro_data(df)
-    if full_time.empty:
-        return
-    ax.plot(
-        full_time,
-        values,
-        color=graph_style.get("series_color", "#0F766E"),
-        linewidth=float(graph_style.get("series_width", 1.5)),
-        linestyle=_line_style(graph_style.get("series_style", "solid")),
-        marker="o" if graph_style.get("show_markers", False) else None,
-        label="観測値",
-        zorder=float(series_cfg.get("zorder", 2)),
-    )
-    _plot_missing_bands(ax, full_time, missing_mask, graph_style)
+    if bool(series_cfg.get("enabled", True)):
+        full_time, values, missing_mask = _prepare_hydro_data(df)
+        if not full_time.empty:
+            p1 = ax.plot(
+                full_time,
+                values,
+                color=graph_style.get("series_color", "#0F766E"),
+                linewidth=float(graph_style.get("series_width", 1.5)),
+                linestyle=_line_style(graph_style.get("series_style", "solid")),
+                marker="o" if graph_style.get("show_markers", False) else None,
+                label=label1,
+                zorder=float(series_cfg.get("zorder", 2)),
+            )
+            plots.extend(p1)
+            _plot_missing_bands(ax, full_time, missing_mask, graph_style)
+
+    # 2本目の描画
+    series2_cfg = graph_style.get("series2", {})
+    if df2 is not None and bool(series2_cfg.get("enabled", False)):
+        full_time2, values2, missing_mask2 = _prepare_hydro_data(df2)
+        if not full_time2.empty:
+            use_y2 = bool(series2_cfg.get("use_secondary_y", False))
+            target_ax = ax.twinx() if use_y2 else ax
+            if use_y2:
+                target_ax.grid(False)
+                target_ax.set_facecolor((1, 1, 1, 0))
+                # 右軸の数値フォーマットなどはメインに準拠させるか検討の余地ありだが、一旦デフォルト
+
+            p2 = target_ax.plot(
+                full_time2,
+                values2,
+                color=series2_cfg.get("color", "#F59E0B"),
+                linewidth=float(series2_cfg.get("width", 1.5)),
+                linestyle=_line_style(series2_cfg.get("style", "dashed")),
+                marker="o" if series2_cfg.get("show_markers", False) else None,
+                label=label2 or "比較対象",
+                zorder=float(series2_cfg.get("zorder", 2)),
+            )
+            plots.extend(p2)
+            # 欠測帯を描画
+            _plot_missing_bands(target_ax, full_time2, missing_mask2, graph_style)
+
+    return plots
 
 
 def _prepare_hydro_data(df: pd.DataFrame) -> tuple[pd.DatetimeIndex, pd.Series, pd.Series]:

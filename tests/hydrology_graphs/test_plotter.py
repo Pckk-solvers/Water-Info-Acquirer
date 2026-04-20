@@ -792,3 +792,88 @@ def test_render_hydro_axis_grid_flags_take_precedence_over_grid_enabled(monkeypa
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     assert (True, "x") in calls
     assert (True, "y") in calls
+
+
+def test_render_hydro_comparison_mode_draws_two_series_and_legend(monkeypatch):
+    rows1 = []
+    start = datetime(2025, 1, 1, 0, 0, 0)
+    for i in range(8):
+        rows1.append({"observed_at": start + timedelta(hours=i), "value": float(i + 1)})
+    df1 = pd.DataFrame(rows1)
+    df2 = df1.copy()
+    df2["value"] = df2["value"] * 2
+
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    style["series2"]["enabled"] = True
+
+    plot_calls = []
+    original_plot = matplotlib.axes.Axes.plot
+
+    def _spy(self, *args, **kwargs):
+        plot_calls.append((args, kwargs))
+        return original_plot(self, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "plot", _spy)
+
+    legend_calls = []
+    original_legend = matplotlib.axes.Axes.legend
+
+    def _leg_spy(self, *args, **kwargs):
+        legend_calls.append((args, kwargs))
+        return original_legend(self, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "legend", _leg_spy)
+
+    png = render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="Main",
+        df=df1,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+        station_name2="Sub",
+        df2=df2,
+    )
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    # 2系列プロットされていること (メイン + サブ)
+    assert len(plot_calls) >= 2
+    # 凡例が呼ばれていること
+    assert legend_calls
+    # 凡例ラベルに両方の観測所名が含まれていること
+    legend_labels = legend_calls[0][0][1]
+    assert "Main" in legend_labels
+    assert "Sub" in legend_labels
+
+
+def test_render_hydro_comparison_mode_uses_twinx_for_secondary_y(monkeypatch):
+    rows = [{"observed_at": datetime(2025, 1, 1, 0, 0, 0), "value": 1.0}]
+    df1 = pd.DataFrame(rows)
+    df2 = pd.DataFrame(rows)
+
+    style = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    style["series2"]["enabled"] = True
+    style["series2"]["use_secondary_y"] = True
+
+    twinx_called = False
+    original_twinx = matplotlib.axes.Axes.twinx
+
+    def _spy(self):
+        nonlocal twinx_called
+        twinx_called = True
+        return original_twinx(self)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "twinx", _spy)
+
+    render_graph_png(
+        graph_type="hydrograph_discharge",
+        station_name="A",
+        df=df1,
+        graph_style=style,
+        thresholds=[],
+        time_display_mode="datetime",
+        station_name2="B",
+        df2=df2,
+    )
+
+    assert twinx_called is True

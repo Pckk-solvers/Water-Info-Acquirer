@@ -159,6 +159,13 @@ def _style_hydro_discharge() -> dict[str, Any]:
                 "zorder": 3,
             },
             "series": {"enabled": True, "zorder": 2},
+            "series2": {
+                "enabled": False,
+                "color": "#F59E0B",
+                "width": 1.5,
+                "style": "dashed",
+                "use_secondary_y": False,
+            },
         }
     )
     return style
@@ -199,6 +206,13 @@ def _style_hydro_water_level() -> dict[str, Any]:
                 "zorder": 3,
             },
             "series": {"enabled": True, "zorder": 2},
+            "series2": {
+                "enabled": False,
+                "color": "#F59E0B",
+                "width": 1.5,
+                "style": "dashed",
+                "use_secondary_y": False,
+            },
         }
     )
     return style

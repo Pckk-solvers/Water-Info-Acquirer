@@ -144,36 +144,51 @@ def build_style_tab(app, parent: ttk.Frame) -> None:
     preview_target = ttk.LabelFrame(right, text="プレビュー出力対象")
     preview_target.grid(row=0, column=0, sticky="ew", pady=(0, 6))
     preview_target.columnconfigure(1, weight=2)
-    preview_target.columnconfigure(3, weight=1)
-    preview_target.columnconfigure(5, weight=2)
+    preview_target.columnconfigure(3, weight=2)
+    preview_target.columnconfigure(5, weight=1)
+    preview_target.columnconfigure(7, weight=2)
+
+    ttk.Label(preview_target, text="観測所1").grid(row=0, column=0, padx=(6, 2), pady=6, sticky="w")
     app.preview_station_combo = ttk.Combobox(
         preview_target,
         textvariable=app.preview_target_station,
         state="readonly",
-        width=36,
+        width=24,
     )
-    app.preview_station_combo.bind("<<ComboboxSelected>>", app._on_preview_target_selection_changed)
-    ttk.Label(preview_target, text="観測所").grid(row=0, column=0, padx=(6, 2), pady=6, sticky="w")
     app.preview_station_combo.grid(row=0, column=1, padx=(0, 6), pady=6, sticky="ew")
-    ttk.Label(preview_target, text="基準日").grid(row=0, column=2, padx=6, pady=6, sticky="w")
+    app.preview_station_combo.bind("<<ComboboxSelected>>", app._on_preview_target_selection_changed)
+
+    ttk.Label(preview_target, text="比較先").grid(row=0, column=2, padx=6, pady=6, sticky="w")
+    app.preview_station2_combo = ttk.Combobox(
+        preview_target,
+        textvariable=app.preview_target_station2,
+        state="readonly",
+        width=24,
+    )
+    app.preview_station2_combo.grid(row=0, column=3, padx=(0, 6), pady=6, sticky="ew")
+    app.preview_station2_combo.bind("<<ComboboxSelected>>", app._on_preview_target_selection_changed)
+
+    ttk.Label(preview_target, text="基準日").grid(row=0, column=4, padx=6, pady=6, sticky="w")
     app.preview_date_combo = ttk.Combobox(
         preview_target,
         textvariable=app.preview_target_date,
         state="readonly",
         width=12,
     )
+    app.preview_date_combo.grid(row=0, column=5, padx=(0, 6), pady=6, sticky="ew")
     app.preview_date_combo.bind("<<ComboboxSelected>>", app._on_preview_target_selection_changed)
-    app.preview_date_combo.grid(row=0, column=3, padx=(0, 6), pady=6, sticky="ew")
-    ttk.Label(preview_target, text="対象グラフ").grid(row=0, column=4, padx=6, pady=6, sticky="w")
+
+    ttk.Label(preview_target, text="対象グラフ").grid(row=0, column=6, padx=6, pady=6, sticky="w")
     app.preview_graph_combo = ttk.Combobox(
         preview_target,
         textvariable=app.preview_target_graph,
         state="readonly",
-        width=28,
+        width=24,
     )
-    app.preview_graph_combo.grid(row=0, column=5, padx=(0, 6), pady=6, sticky="ew")
+    app.preview_graph_combo.grid(row=0, column=7, padx=(0, 6), pady=6, sticky="ew")
     app.preview_graph_combo.bind("<<ComboboxSelected>>", app._on_preview_graph_selected)
-    button_col = 6
+
+    button_col = 8
     if getattr(app, "developer_mode", False):
         sample_btn = ttk.Button(preview_target, text="サンプル出力", command=app._export_preview_sample)
         sample_btn.grid(row=0, column=button_col, padx=(0, 6), pady=6)

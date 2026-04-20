@@ -403,12 +403,23 @@ def preview_graph_target_with_catalog(
         base_date=_parse_date(data.base_datetime) if data.base_datetime else None,
         event_window_days=data.event_window_days,
     )
+    target2 = None
+    if data.source2 and data.station_key2:
+        target2 = GraphTarget(
+            source=data.source2,
+            station_key=data.station_key2,
+            graph_type=data.graph_type,  # type: ignore[arg-type]
+            base_date=_parse_date(data.base_datetime) if data.base_datetime else None,
+            event_window_days=data.event_window_days,
+        )
+
     try:
         # プレビューは本番実行と同じ描画パスを通して、見た目のズレをなくす。
         png, target_status, target_reason = _render_target_bytes_with_status(
             catalog,
             target,
             style_result.style,
+            target2=target2,
             threshold_file_path=data.threshold_file_path,
             threshold_result=threshold_result,
             terminal_padding_hours=_event_padding_hours(data.event_window_terminal_padding),
@@ -680,17 +691,22 @@ def _render_target_bytes_with_status(
     target: GraphTarget,
     style: dict,
     *,
+    target2: GraphTarget | None = None,
     threshold_file_path: str | None,
     threshold_result: ThresholdLoadResult | None = None,
     terminal_padding_hours: int = 0,
     time_display_mode: str = "datetime",
 ) -> tuple[bytes, str, str | None]:
-    """1対象分の PNG を生成し、評価状態（ok/warn）を返す。"""
+    """1対象分（または比較ペア）の PNG を生成し、評価状態（ok/warn）を返す。"""
 
     effective_threshold_result = (
-        threshold_result if threshold_result is not None else load_thresholds(threshold_file_path) if threshold_file_path else None
+        threshold_result
+        if threshold_result is not None
+        else load_thresholds(threshold_file_path)
+        if threshold_file_path
+        else None
     )
-    # ここでも再検証して、UI 側の事前検証漏れがあっても安全側に倒す。
+    # メイン系列の評価
     status, reason_code, reason_message, draw_df = _evaluate_target(
         catalog.data,
         source=target.source,
@@ -703,6 +719,24 @@ def _render_target_bytes_with_status(
     )
     if status not in {"ok", "warn"} or draw_df is None:
         raise UsecaseError(reason_code or REASON_CONTRACT_ERROR, reason_message or "描画対象が見つかりません。")
+
+    # 比較系列の評価
+    draw_df2 = None
+    station_name2 = None
+    if target2 is not None:
+        # 比較対象はNGであってもメインの描画を優先するため、例外を投げずにNone扱いとする。
+        status2, _, _, draw_df2 = _evaluate_target(
+            catalog.data,
+            source=target2.source,
+            station_key=target2.station_key,
+            graph_type=target2.graph_type,
+            base_datetime=target2.base_date.isoformat() if target2.base_date else None,
+            event_window_days=target2.event_window_days,
+            terminal_padding_hours=terminal_padding_hours,
+            threshold_result=effective_threshold_result,
+        )
+        if status2 in {"ok", "warn"} and draw_df2 is not None:
+            station_name2 = _resolve_station_name(catalog, target2.station_key)
 
     thresholds = _thresholds_for_target(
         effective_threshold_result,
@@ -729,6 +763,8 @@ def _render_target_bytes_with_status(
             graph_style=graph_style,
             thresholds=thresholds,
             time_display_mode=time_display_mode,
+            station_name2=station_name2,
+            df2=draw_df2,
         )
         return png, status, reason_message
     except Exception as exc:  # noqa: BLE001

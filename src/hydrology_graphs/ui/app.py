@@ -211,6 +211,16 @@ _NON_HYETOGRAPH_COMPACT_ROWS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "row_label": "比較系列(2本目)",
+        "toggle": {"path": "series2.enabled", "tooltip": "比較用系列（2本目の折れ線）を表示します。"},
+        "palette_fields": (
+            {"path": "series2.color", "label": "色", "kind": "color", "tooltip": "2本目の線の色です。"},
+            {"path": "series2.width", "label": "太さ", "kind": "float", "tooltip": "2本目の線の太さです。"},
+            {"path": "series2.style", "label": "線種", "kind": "choice", "values": _LINE_STYLE_CHOICES, "tooltip": "2本目の線の線種です。"},
+            {"path": "series2.use_secondary_y", "label": "右軸", "kind": "bool", "tooltip": "2本目の線を右軸（Y2軸）に表示します。"},
+        ),
+    },
+    {
         "row_label": "棒設定",
         "toggle": {"path": "bar.enabled", "tooltip": "棒グラフの描画をON/OFFします。"},
         "palette_fields": (
@@ -348,11 +358,13 @@ class HydrologyGraphsApp(tk.Toplevel):
         self.event_window_3 = tk.BooleanVar(value=True)
         self.event_window_5 = tk.BooleanVar(value=False)
         self.batch_status = tk.StringVar(value="待機中")
+        self.time_display_mode = tk.StringVar(value="datetime")
         self.preview_message = tk.StringVar(value="")
         self.preview_target_station = tk.StringVar(value="")
+        self.preview_target_station2 = tk.StringVar(value="")
         self.preview_target_date = tk.StringVar(value="")
         self.preview_target_graph = tk.StringVar(value="")
-        self.time_display_mode = tk.StringVar(value="datetime")
+
         self.base_date_year = tk.StringVar(value="")
         self.base_date_month = tk.StringVar(value="")
         self.base_date_candidate = tk.StringVar(value="")
@@ -412,6 +424,7 @@ class HydrologyGraphsApp(tk.Toplevel):
         self.precheck_summary: tk.StringVar
         self.result_tree: ttk.Treeview
         self.preview_station_combo: ttk.Combobox
+        self.preview_station2_combo: ttk.Combobox
         self.preview_date_combo: ttk.Combobox
         self.preview_graph_combo: ttk.Combobox
         self.run_btn: ttk.Button
@@ -522,8 +535,10 @@ class HydrologyGraphsApp(tk.Toplevel):
 
         records: list[dict[str, Any]] = []
         source = "water_info"
-        station_key = "DEV001"
-        station_name = "開発用ダミー観測所"
+        stations = [
+            ("DEV001", "開発用ダミー観測所1(本川)"),
+            ("DEV002", "開発用ダミー観測所2(比較用)"),
+        ]
         metric_units = {
             "rainfall": "mm",
             "water_level": "m",
@@ -536,71 +551,103 @@ class HydrologyGraphsApp(tk.Toplevel):
             end="2024-09-04 00:00:00",
             freq="1h",
         )
-        def _dev_rainfall_value(hour_index: int) -> float:
-            # 現実寄りに、乾燥区間と短時間ピークを混在させる。
-            light_event = max(0.0, 6.0 - abs(hour_index - 18) * 1.2)
-            main_event = max(0.0, 38.0 - abs(hour_index - 49) * 2.4)
-            tail_event = max(0.0, 12.0 - abs(hour_index - 63) * 1.8)
-            # ごく小さい降雨は 0 に落として「降っていない時間」を作る。
-            value = light_event + main_event + tail_event
-            return 0.0 if value < 0.8 else float(value)
+        def _dev_rainfall_value(hour_index: int, station_key: str) -> float:
+            # DEV001: 本川想定（ピーク集中型）
+            if station_key == "DEV001":
+                light_event = max(0.0, 6.0 - abs(hour_index - 18) * 1.2)
+                main_event = max(0.0, 38.0 - abs(hour_index - 49) * 2.4)
+                tail_event = max(0.0, 12.0 - abs(hour_index - 63) * 1.8)
+                value = light_event + main_event + tail_event
+                return 0.0 if value < 0.8 else float(value)
 
-        for metric in ("rainfall", "water_level", "discharge"):
-            for i, ts in enumerate(event_index):
-                if metric == "rainfall":
-                    value = _dev_rainfall_value(i)
-                elif metric == "water_level":
-                    rain = _dev_rainfall_value(max(0, i - 3))
-                    value = 2.2 + rain * 0.08
-                else:
-                    rain = _dev_rainfall_value(max(0, i - 5))
-                    value = 120.0 + rain * 14.0
+            # DEV002: 支川想定（前半に小ピーク、後半に中ピークの二山型）
+            early_peak = max(0.0, 14.0 - abs(hour_index - 24) * 1.0)
+            late_peak = max(0.0, 26.0 - abs(hour_index - 56) * 1.6)
+            convective_spike = 5.0 if hour_index in (31, 32, 33) else 0.0
+            valley = -3.0 if 40 <= hour_index <= 45 else 0.0
+            value = early_peak + late_peak + convective_spike + valley
+            return 0.0 if value < 0.6 else float(value)
 
-                # 欠測表示の実験用：9月1日12時を欠測扱いにする
-                is_missing = ts == datetime(2024, 9, 1, 12, 0, 0)
-                records.append(
-                    {
-                        "source": source,
-                        "station_key": station_key,
-                        "station_name": station_name,
-                        "observed_at": ts.to_pydatetime(),
-                        "metric": metric,
-                        "value": float("nan") if is_missing else float(value),
-                        "unit": metric_units[metric],
-                        "interval": "1hour",
-                        "quality": "missing" if is_missing else "normal",
-                    }
-                )
+        for station_key, station_name in stations:
+            for metric in ("rainfall", "water_level", "discharge"):
+                for i, ts in enumerate(event_index):
+                    if metric == "rainfall":
+                        value = _dev_rainfall_value(i, station_key)
+                    elif metric == "water_level":
+                        if station_key == "DEV001":
+                            rain = _dev_rainfall_value(max(0, i - 3), station_key)
+                            value = 2.2 + rain * 0.08
+                        else:
+                            rain = _dev_rainfall_value(max(0, i - 1), station_key)
+                            value = 1.6 + rain * 0.11
+                    else:
+                        if station_key == "DEV001":
+                            rain = _dev_rainfall_value(max(0, i - 5), station_key)
+                            value = 120.0 + rain * 14.0
+                        else:
+                            rain = _dev_rainfall_value(max(0, i - 2), station_key)
+                            value = 85.0 + rain * 10.5
+
+                    # 欠測表示の実験用：9月1日12時を欠測扱いにする (DEV001のみ)
+                    is_missing = station_key == "DEV001" and ts == datetime(2024, 9, 1, 12, 0, 0)
+                    records.append(
+                        {
+                            "source": source,
+                            "station_key": station_key,
+                            "station_name": station_name,
+                            "observed_at": ts.to_pydatetime(),
+                            "metric": metric,
+                            "value": float("nan") if is_missing else float(value),
+                            "unit": metric_units[metric],
+                            "interval": "1hour",
+                            "quality": "missing" if is_missing else "normal",
+                        }
+                    )
 
         # 年最大系プレビューの要件(10年以上)を満たすため、年ごとのピークを入れる。
         for year in range(2015, 2026):
-            for metric in ("rainfall", "water_level", "discharge"):
-                if metric == "rainfall":
-                    value = 48.0 + (year - 2015) * 2.5
-                elif metric == "water_level":
-                    value = 3.1 + (year - 2015) * 0.12
-                else:
-                    value = 240.0 + (year - 2015) * 36.0
-                records.append(
-                    {
-                        "source": source,
-                        "station_key": station_key,
-                        "station_name": station_name,
-                        "observed_at": datetime(year, 9, 1, 12, 0, 0),
-                        "metric": metric,
-                        "value": float(value),
-                        "unit": metric_units[metric],
-                        "interval": "1hour",
-                        "quality": "normal",
-                    }
-                )
+            for station_key, station_name in stations:
+                for metric in ("rainfall", "water_level", "discharge"):
+                    y = year - 2015
+                    if station_key == "DEV001":
+                        if metric == "rainfall":
+                            value = 48.0 + y * 2.5
+                        elif metric == "water_level":
+                            value = 3.1 + y * 0.12
+                        else:
+                            value = 240.0 + y * 36.0
+                    else:
+                        # DEV002 は異なる傾向（弱い上昇 + 隔年ゆらぎ）
+                        wobble = 3.0 if (year % 2 == 0) else -2.0
+                        if metric == "rainfall":
+                            value = 35.0 + y * 1.8 + wobble
+                        elif metric == "water_level":
+                            value = 2.2 + y * 0.08 + wobble * 0.02
+                        else:
+                            value = 170.0 + y * 22.0 + wobble * 4.0
+                    records.append(
+                        {
+                            "source": source,
+                            "station_key": station_key,
+                            "station_name": station_name,
+                            "observed_at": datetime(year, 9, 1, 12, 0, 0),
+                            "metric": metric,
+                            "value": float(value),
+                            "unit": metric_units[metric],
+                            "interval": "1hour",
+                            "quality": "normal",
+                        }
+                    )
 
         frame = pd.DataFrame.from_records(records)
         return ParquetCatalog(
             data=frame,
             invalid_files={},
             warnings=["dev_dummy_catalog"],
-            station_metric_labels={("water_info", "DEV001"): ("雨量", "流量", "水位")},
+            station_metric_labels={
+                ("water_info", "DEV001"): ("雨量", "流量", "水位"),
+                ("water_info", "DEV002"): ("雨量", "流量", "水位"),
+            },
         )
 
     def _browse_parquet_dir(self) -> None:
@@ -697,8 +744,12 @@ class HydrologyGraphsApp(tk.Toplevel):
         self._preview_station_display_to_pair = {}
         self._preview_graph_display_to_key = {}
         self.preview_station_combo.configure(values=())
+        combo2 = getattr(self, "preview_station2_combo", None)
+        if combo2 is not None:
+            combo2.configure(values=())
         self.preview_date_combo.configure(values=())
         self.preview_target_station.set("")
+        self.preview_target_station2.set("")
         self.preview_target_date.set("")
         combo = getattr(self, "preview_graph_combo", None)
         if combo is not None:

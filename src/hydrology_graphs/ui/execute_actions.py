@@ -176,6 +176,15 @@ def refresh_preview_choices(app) -> None:
     app.preview_date_combo.configure(values=choices.date_values)
     app.preview_target_station.set(_retained_preview_choice(retained_station, choices.station_values))
     app.preview_target_date.set(_retained_preview_choice(retained_date, choices.date_values))
+
+    preview_station2_combo = getattr(app, "preview_station2_combo", None)
+    if preview_station2_combo is not None:
+        station2_values = ["(なし)"] + list(choices.station_values)
+        preview_station2_combo.configure(values=station2_values)
+        current_station2 = app.preview_target_station2.get().strip()
+        if not current_station2 or current_station2 not in station2_values:
+            app.preview_target_station2.set("(なし)")
+
     preview_graph_combo = getattr(app, "preview_graph_combo", None)
     if preview_graph_combo is not None:
         preview_graph_combo.configure(values=choices.graph_values)

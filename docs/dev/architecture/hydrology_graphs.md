@@ -77,6 +77,9 @@
   9. 欠測がある場合は services が `warn` を返し、render は欠測可視化付きで描画を継続する。
   10. `io/` が parquet 読込、スタイル保存、PNG 保存を担当する。
   11. `ui/` が結果一覧の `target_id` を内部管理しつつ、日本語の表示ラベルへ変換し、`warn` を「欠測あり継続」で表示する。
+  12. ハイドログラフ比較モード時は、UI が「メイン系列」と「比較系列」の 2 つの観測所情報を `PreviewInput` または `BatchTarget` に載せて渡す。
+  13. `services/usecases.py` は、比較系列が指定されている場合、2 つの `GraphTarget` に対して個別にデータ評価・抽出を行い、`render/plotter.py` へ複数のデータフレームを渡す。
+  14. `render/plotter.py` は、渡された複数の系列をそれぞれのスタイル（`series` / `series2`）で描画し、軸の使い分け（左軸 / 右軸）や凡例の統合管理を行う。
 
 ## 補足
 

@@ -242,3 +242,46 @@ def test_load_style_backfills_font_object_from_legacy_font_size():
     assert font["title_size"] > 0
     assert font["x_label_size"] > 0
     assert font["y_tick_size"] > 0
+
+
+def test_default_hydro_styles_contain_series2_defaults():
+    discharge = default_style()["graph_styles"]["hydrograph_discharge:3day"]
+    water_level = default_style()["graph_styles"]["hydrograph_water_level:3day"]
+    for style in (discharge, water_level):
+        series2 = style.get("series2", {})
+        assert series2.get("enabled") is False
+        assert series2.get("color") == "#F59E0B"
+        assert series2.get("width") == 1.5
+        assert series2.get("style") == "dashed"
+        assert series2.get("use_secondary_y") is False
+
+
+def test_hyetograph_and_annual_max_do_not_contain_series2():
+    style = default_style()
+    hyeto = style["graph_styles"]["hyetograph:3day"]
+    annual = style["graph_styles"]["annual_max_discharge"]
+    assert "series2" not in hyeto
+    assert "series2" not in annual
+
+
+def test_load_style_backfills_series2_defaults_for_hydrographs():
+    payload = default_style()
+    # 意図的に series2 を削除した不完全なペイロードを模す
+    payload["graph_styles"]["hydrograph_discharge:3day"].pop("series2", None)
+
+    result = load_style(payload=payload)
+
+    assert result.is_valid
+    series2 = result.style["graph_styles"]["hydrograph_discharge:3day"]["series2"]
+    assert series2["enabled"] is False
+    assert series2["color"] == "#F59E0B"
+
+
+def test_load_style_rejects_invalid_series2_color():
+    payload = default_style()
+    payload["graph_styles"]["hydrograph_discharge:3day"]["series2"]["color"] = "invalid"
+
+    result = load_style(payload=payload)
+
+    assert not result.is_valid
+    assert "error:hydrograph_discharge:3day_series2_color_must_be_hex" in result.warnings

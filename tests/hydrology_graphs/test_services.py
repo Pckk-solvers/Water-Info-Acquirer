@@ -475,3 +475,47 @@ def test_run_graph_batch_honors_event_padding(tmp_path):
     assert result.items[0].status == "success"
     assert result.items[0].reason_code == "missing_with_warning"
     assert result.items[0].reason_message is not None
+
+
+def test_preview_graph_target_comparison_mode_succeeds(tmp_path):
+    # 2つの観測所データを作成
+    rows = []
+    start = datetime(2025, 1, 1)
+    for key in ("111", "222"):
+        for i in range(72):
+            rows.append(
+                {
+                    "source": "jma",
+                    "station_key": key,
+                    "station_name": f"St-{key}",
+                    "observed_at": start + timedelta(hours=i),
+                    "metric": "water_level",
+                    "value": float(i + 1),
+                    "unit": "m",
+                    "interval": "1hour",
+                    "quality": "normal",
+                }
+            )
+    pd.DataFrame(rows).to_parquet(tmp_path / "comp.parquet", index=False)
+
+    style = default_style()
+    style["graph_styles"]["hydrograph_water_level:3day"]["series2"]["enabled"] = True
+
+    result = preview_graph_target(
+        PreviewInput(
+            parquet_dir=str(tmp_path),
+            threshold_file_path=None,
+            style_json_path=None,
+            style_payload=style,
+            source="jma",
+            station_key="111",
+            source2="jma",
+            station_key2="222",
+            graph_type="hydrograph_water_level",
+            base_datetime="2025-01-02",
+            event_window_days=3,
+        )
+    )
+
+    assert result.status == "success"
+    assert result.image_bytes_png is not None
