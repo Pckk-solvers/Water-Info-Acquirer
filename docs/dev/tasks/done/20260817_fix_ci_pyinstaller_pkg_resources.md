@@ -39,11 +39,12 @@
 - `uv run ruff check src tests`が成功した。
 - `uv run pytest tests/river_meta -q`で94件すべて成功した。
 - `uv run mkdocs build -q`が成功した。
-- GitHub Actionsはプッシュ後に再確認する。
+- GitHub Actionsのrun `31993741573`で`checks`と`pyinstaller-smoke`がともに成功した。
+- Node.js 20の非推奨警告は表示されたが、CIの失敗要因ではない。
 
 ## 残課題
 
-- なし。PyInstallerスモークビルドを含むGitHub Actionsの再実行結果をプッシュ後に確認する。
+- なし。
 
 ## 関連要件 / 関連設計
 
