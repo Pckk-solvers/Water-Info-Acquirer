@@ -26,6 +26,7 @@ a = Analysis(
         "water_info_acquirer.app_registry",
         "water_info_acquirer.navigation",
         "water_info.launcher_entry",
+        "water_info.postprocess_launcher_entry",
         "jma_rainfall_pipeline.launcher_entry",
         "river_meta.rainfall.gui.launcher_entry",
     ],

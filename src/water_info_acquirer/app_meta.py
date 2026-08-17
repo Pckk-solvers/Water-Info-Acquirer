@@ -15,6 +15,10 @@ MODULES = {
         "jp": "国土交通省 水文データ取得",
         "en": "Water Info",
     },
+    "postprocess": {
+        "jp": "水文統計（位況・流況）",
+        "en": "Hydrological Statistics",
+    },
     "jma": {
         "jp": "気象庁 雨量データ取得",
         "en": "JMA Rainfall",

@@ -13,14 +13,14 @@
   - 低水位
   - 渇水位
 
-データの取得にはGUIを使用します。取得後の算定処理には、現在のところ専用GUIがないため、PowerShellから後処理モジュールを実行します。
+データの取得には既存の取得GUIを使用します。取得後の算定処理は、ランチャーの「水文統計（位況・流況）」GUIから実行できます。CLIで後処理を行う方法も記載しますが、データ取得をCLIで行う手順は扱いません。
 
 ```text
 水文データ取得GUI
     ↓
 時間データ・日データのExcel
     ↓
-water_info.postprocess
+水文統計（位況・流況）GUI
     ↓
 流況・位況の算定結果をExcel / Parquetへ出力
 ```
@@ -80,7 +80,7 @@ py -m venv .venv
 
 共有フォルダ内に配布用の`.exe`が含まれている場合は、Pythonや`uv`を準備せずに、その実行ファイルをダブルクリックしてGUIを起動できます。
 
-ただし、現状の流況・位況算定処理はPowerShellから後処理モジュールを実行する必要があります。後処理まで行う場合は、`uv`またはPython仮想環境を準備してください。
+配布用実行ファイルに後処理GUIが含まれている場合は、Pythonや`uv`を準備せずに取得から算定まで実行できます。
 
 ## 3. GUIでデータを取得する
 
@@ -131,14 +131,30 @@ py -m venv .venv
 
 ## 4. 後処理を実行する
 
-後処理では、時間データを`--hour-file`、日データを`--daily-file`へ指定します。パスに日本語や空白が含まれる場合があるため、ファイルパスは`"`で囲んでください。
+### 4.1 後処理GUIで実行する（推奨）
 
-### 4.1 `uv`が使える場合
+1. アプリ選択画面で「水文統計（位況・流況）」を選択します。
+2. 「対象種別」で「水位（位況）」または「流量（流況）」を選択します。
+3. 必須の「水位時間データ (_H)」または「流量時間データ (_H)」に、取得GUIで作成した時間データを指定します。
+4. 日データを使用する場合は、同じ対象・観測所・期間の日データを指定します。日データは任意です。
+5. Excel出力先を指定し、必要ならParquet出力をオンにして保存先を指定します。
+6. 「実行」を押します。
+
+時間データのファイル名が`_WH`または`_QH`で終わる場合、対象種別の初期値が補助的に設定されます。最終的には画面の「対象種別」の選択を確認してください。対象種別を切り替えると、画面の説明と出力ラベル例も切り替わります。
+
+日データを指定しない場合でも、時間データから日平均を作成して算定できます。
+
+### 4.2 CLIで後処理を実行する場合
+
+後処理CLIを使う場合は、時間データを`--hour-file`、日データを`--daily-file`へ指定します。パスに日本語や空白が含まれる場合があるため、ファイルパスは`"`で囲んでください。ここでも入力ファイルの取得は既存GUIで行います。
+
+### 4.3 `uv`が使える場合
 
 #### 流況を算定する
 
 ```powershell
 uv run python -m water_info.postprocess `
+  --metric discharge `
   --hour-file "<時間流量ファイルのパス>_QH.xlsx" `
   --daily-file "<日流量ファイルのパス>_QD.xlsx" `
   --out-excel "outputs/flow_statistics/<観測所名>_流況算定.xlsx" `
@@ -149,13 +165,14 @@ uv run python -m water_info.postprocess `
 
 ```powershell
 uv run python -m water_info.postprocess `
+  --metric water_level `
   --hour-file "<時間水位ファイルのパス>_WH.xlsx" `
   --daily-file "<日水位ファイルのパス>_WD.xlsx" `
   --out-excel "outputs/level_statistics/<観測所名>_位況算定.xlsx" `
   --out-parquet "outputs/level_statistics/<観測所名>_parquet"
 ```
 
-### 4.2 `uv`がない場合
+### 4.4 `uv`がない場合
 
 「2.2 `uv`がない場合」で作成した仮想環境のPythonを使用します。
 
@@ -163,6 +180,7 @@ uv run python -m water_info.postprocess `
 
 ```powershell
 .\.venv\Scripts\python.exe -m water_info.postprocess `
+  --metric discharge `
   --hour-file "<時間流量ファイルのパス>_QH.xlsx" `
   --daily-file "<日流量ファイルのパス>_QD.xlsx" `
   --out-excel "outputs/flow_statistics/<観測所名>_流況算定.xlsx" `
@@ -173,13 +191,14 @@ uv run python -m water_info.postprocess `
 
 ```powershell
 .\.venv\Scripts\python.exe -m water_info.postprocess `
+  --metric water_level `
   --hour-file "<時間水位ファイルのパス>_WH.xlsx" `
   --daily-file "<日水位ファイルのパス>_WD.xlsx" `
   --out-excel "outputs/level_statistics/<観測所名>_位況算定.xlsx" `
   --out-parquet "outputs/level_statistics/<観測所名>_parquet"
 ```
 
-### 4.3 日データを使用しない場合
+### 4.5 日データを使用しない場合
 
 日データを取得していない場合は、`--daily-file`の行を削除します。時間データから作成した日平均値を使って算定されます。
 
@@ -225,18 +244,16 @@ uv run python -m water_info.postprocess `
 
 通常は`summary_adj`を確認し、欠測の影響や補正前の値を比較したい場合に`summary_raw`を使用します。
 
-### 6.2 流況結果を読むときの注意
+### 6.2 対象種別ごとの項目名
 
-現行の後処理は、Excelの項目名を水位向けの名称で出力します。そのため、流量ファイル（`_QH.xlsx` / `_QD.xlsx`）を入力した場合は、次のように読み替えます。
+対象種別に応じてExcelの見出しが動的に変わります。
 
-| Excelに表示される名称 | 流況としての読み方 |
+| 対象種別 | 出力例 |
 |---|---|
-| 位況豊水位 | 豊水流量 |
-| 位況平水位 | 平水流量 |
-| 位況低水位 | 低水流量 |
-| 位況渇水位 | 渇水流量 |
+| 水位（位況） | `位況豊水位`、`位況平水位`、`位況低水位`、`位況渇水位`、`最高水位` |
+| 流量（流況） | `流況豊水流量`、`流況平水流量`、`流況低水流量`、`流況渇水流量`、`最大流量` |
 
-水位ファイル（`_WH.xlsx` / `_WD.xlsx`）を入力した場合は、Excelの名称をそのまま位況として使用できます。
+ファイル名の`_WH`/`_QH`は対象種別の初期値を補助するだけです。ファイル名と画面の選択が異なる場合は、画面で選択した対象種別が出力ラベルの正本になります。
 
 ### 6.3 Parquet
 
@@ -272,23 +289,21 @@ uv run python -m water_info.postprocess `
 
 GUIで再取得し、「指定全期間シート挿入」をオンにしてください。後処理は`全期間`シートを優先して読み込みます。
 
-### 流況の出力が水位表記になる
-
-現行実装の制約です。入力ファイルが流量であれば、値は流量を使って計算されています。「6.2 流況結果を読むときの注意」の対応表で読み替えてください。
-
 ### 後処理用の画面が見つからない
 
-現在、流況・位況算定専用のGUIはありません。データ取得はGUIで行い、算定処理だけPowerShellから実行します。
+アプリ選択画面の「水文統計（位況・流況）」を開きます。古い配布ファイルを使用している場合は、後処理GUIが含まれていない可能性があるため、最新版の配布ファイルまたはリポジトリの起動環境を使用してください。
 
 ## 8. 現在の制約と今後の対象
 
-- データ取得はGUIで行い、算定処理は後処理モジュールを実行する2段階構成です。
-- 後処理には流況・位況を切り替える`--mode`がありません。入力したExcelが流量か水位かを利用者が管理します。
-- Excelの日本語項目名は水位向けに固定されています。
-- 今後、流況・位況の両方を明示的に扱えるGUIや、入力種別に応じた出力名称への対応を想定しています。
+- データ取得は既存の取得GUI、算定は後処理GUIという2段階構成です。後処理GUI自体はデータ取得を行いません。
+- 後処理GUIは水位（位況）と流量（流況）を扱います。雨量の位況・流況算定は今回の対象外です。
+- ファイル名からの対象種別判定は補助機能であり、画面で選択した対象種別が最終的な正本です。
+- CLIで後処理する場合、`--metric discharge`で流況、`--metric water_level`で位況を明示できます。省略時は従来互換のため水位です。
 
 ## 9. 関連ドキュメント
 
 - [Water Info後処理の概要](docs/advanced/postprocess.md)
 - [Water Info後処理の要件](docs/dev/requirements/postprocess.md)
+- [位況・流況後処理GUIの要件](docs/dev/requirements/postprocess-gui.md)
+- [位況・流況後処理GUIの構成](docs/dev/architecture/postprocess_gui.md)
 - [Water Infoの構成](docs/dev/architecture/water_info.md)

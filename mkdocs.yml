@@ -52,6 +52,7 @@ nav:
           - 概要: dev/requirements/README.md
           - Hydrology Graphs Platform: dev/requirements/hydrology-graphs-platform.md
           - Water Info 後処理: dev/requirements/postprocess.md
+          - 位況・流況後処理GUI: dev/requirements/postprocess-gui.md
       - Architecture:
           - 概要: dev/architecture/README.md
           - アーキテクチャ概要: dev/architecture/overview.md
@@ -61,6 +62,7 @@ nav:
           - river_meta/rainfall: dev/architecture/river_meta_rainfall.md
           - hydrology_graphs: dev/architecture/hydrology_graphs.md
           - water_info_acquirer: dev/architecture/water_info_acquirer.md
+          - 位況・流況後処理GUI: dev/architecture/postprocess_gui.md
       - ADR:
           - 概要: dev/adr/README.md
       - Tasks:

@@ -35,6 +35,8 @@
   - 指定アプリの直接起動入口。
 - `python main.py hydrology_graphs`
   - 指定アプリの直接起動入口（位置引数）。
+- `python main.py --app postprocess`
+  - 取得済みデータの位況・流況後処理GUIを直接起動する入口。
 
 ## 4. 実態として欠けていないもの
 

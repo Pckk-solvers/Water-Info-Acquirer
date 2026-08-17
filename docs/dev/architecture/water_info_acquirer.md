@@ -27,7 +27,7 @@
 - `app_meta.py`
   - アプリ名や表示情報の定義。
 - `app_registry.py`
-  - `water_info` / `jma_rainfall_pipeline` / `river_meta.rainfall` / `hydrology_graphs` の起動先を束ねる。
+  - `water_info` / `jma_rainfall_pipeline` / `river_meta.rainfall` / `hydrology_graphs` / `postprocess` の起動先を束ねる。
 - `launcher.py`
   - Tk root を作り、カード選択と起動を実施する。
 - `navigation.py`

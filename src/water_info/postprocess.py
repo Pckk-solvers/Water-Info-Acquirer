@@ -15,6 +15,8 @@ from typing import Any, Iterable, cast
 
 import pandas as pd
 
+from .postprocess_labels import build_output_label_maps, metric_definition, normalize_metric
+
 
 def load_hourly(path: str | Path) -> pd.DataFrame:
     """_H系Excelを読み込み、列名を正規化してhydro_dateを付与。"""
@@ -235,8 +237,9 @@ def add_ikyo(
     source_cols: Iterable[str],
     apply_threshold: bool = True,
     use_scaling: bool = True,
+    statistic_name: str = "位況",
 ) -> pd.DataFrame:
-    """位況4種を基準列ごとに追加。
+    """位況/流況4種を基準列ごとに追加。
 
     apply_threshold=False なら欠測閾値を無視した参考版。
     use_scaling=False なら基準順位を補正せずそのまま使用。
@@ -249,7 +252,7 @@ def add_ikyo(
     ]
     out = df_with_ranks.copy()
     out["year"] = out["hydro_date"].dt.year
-    print(f"[INFO] 位況算出: 年={sorted(out['year'].unique())}")
+    print(f"[INFO] {statistic_name}算出: 年={sorted(out['year'].unique())}")
 
     for src_col in source_cols:
         suffix = {
@@ -449,6 +452,12 @@ def export_parquet(dfs: dict[str, pd.DataFrame], root: str | Path | None) -> Non
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Water Info post-processing")
     p.add_argument("--config", required=False, help="設定ファイル(JSON)へのパス")
+    p.add_argument(
+        "--metric",
+        choices=("water_level", "discharge"),
+        default="water_level",
+        help="対象種別（water_level=水位/位況、discharge=流量/流況）",
+    )
     p.add_argument("--hour-file", required=False, help="_H系Excelファイルへのパス")
     p.add_argument("--daily-file", required=False, help="_D系Excelファイルへのパス")
     p.add_argument("--out-excel", required=False, help="出力Excelパス")
@@ -496,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.set_defaults(**defaults)
 
     args = parser.parse_args(remaining)
+    metric = normalize_metric(args.metric)
+    metric_info = metric_definition(metric)
 
     # 必須チェック (config/CLI 合算後)
     missing = []
@@ -538,8 +549,20 @@ def main(argv: list[str] | None = None) -> int:
         # 非欠損本数は残す
 
         # サマリ用の位況計算は従来通り
-        df_ikyo = add_ikyo(df_ranked, source_cols, apply_threshold=True, use_scaling=True)
-        df_ikyo_raw = add_ikyo(df_ranked_raw, source_cols, apply_threshold=False, use_scaling=False)
+        df_ikyo = add_ikyo(
+            df_ranked,
+            source_cols,
+            apply_threshold=True,
+            use_scaling=True,
+            statistic_name=metric_info.statistic_name,
+        )
+        df_ikyo_raw = add_ikyo(
+            df_ranked_raw,
+            source_cols,
+            apply_threshold=False,
+            use_scaling=False,
+            statistic_name=metric_info.statistic_name,
+        )
         df_peaks = build_peaks(df_hour_raw)
         df_year_summary = build_year_summary(df_ikyo, df_hour_raw, source_cols, apply_threshold=True, use_scaling=True)
         df_year_summary_raw = build_year_summary(
@@ -547,62 +570,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         # Excel用の列名マッピング
-        main_map = {
-            "hydro_date": "日付",
-            "year": "年",
-            "hourly_daily_avg_var_den": "日平均（可変分母）",
-            "hourly_daily_avg_fixed_den": "日平均（固定分母）",
-            "daily_value": "日データ",
-            "count_non_null": "非欠損本数",
-            "rank_var_den": "ランク（可変分母）",
-            "rank_fixed_den": "ランク（固定分母）",
-            "rank_daily_value": "ランク（日データ）",
-            "rank_var_den_ref": "ランク（可変分母,参考）",
-            "rank_fixed_den_ref": "ランク（固定分母,参考）",
-            "rank_daily_value_ref": "ランク（日データ,参考）",
-        }
-        peak_map = {
-            "hydro_date": "日付",
-            "peak_max_value": "最高値",
-            "peak_max_time": "最高時刻（水水DB基準）",
-        }
-        year_map = {
-            "year": "年",
-            "missing_var_den": "欠損数（可変分母）",
-            "missing_fixed_den": "欠損数（固定分母）",
-            "missing_daily_value": "欠損数（日データ）",
-            "mean_var_den": "平均（可変分母）",
-            "mean_fixed_den": "平均（固定分母）",
-            "mean_daily_value": "平均（日データ）",
-            "max_hourly_value": "最大（1時間値）",
-            "max_hourly_time": "最大生起日時（水水DB基準）",
-            "min_hourly_value": "最小（1時間値）",
-            "min_hourly_time": "最小生起日時（水水DB基準）",
-            "rank_used_ikyo_high_var_den": "採用順位（豊水位,可変分母）",
-            "rank_used_ikyo_normal_var_den": "採用順位（平水位,可変分母）",
-            "rank_used_ikyo_low_var_den": "採用順位（低水位,可変分母）",
-            "rank_used_ikyo_drought_var_den": "採用順位（渇水位,可変分母）",
-            "rank_used_ikyo_high_fixed_den": "採用順位（豊水位,固定分母）",
-            "rank_used_ikyo_normal_fixed_den": "採用順位（平水位,固定分母）",
-            "rank_used_ikyo_low_fixed_den": "採用順位（低水位,固定分母）",
-            "rank_used_ikyo_drought_fixed_den": "採用順位（渇水位,固定分母）",
-            "rank_used_ikyo_high_daily_value": "採用順位（豊水位,日データ）",
-            "rank_used_ikyo_normal_daily_value": "採用順位（平水位,日データ）",
-            "rank_used_ikyo_low_daily_value": "採用順位（低水位,日データ）",
-            "rank_used_ikyo_drought_daily_value": "採用順位（渇水位,日データ）",
-            "ikyo_high_var_den": "位況豊水位（可変分母）",
-            "ikyo_normal_var_den": "位況平水位（可変分母）",
-            "ikyo_low_var_den": "位況低水位（可変分母）",
-            "ikyo_drought_var_den": "位況渇水位（可変分母）",
-            "ikyo_high_fixed_den": "位況豊水位（固定分母）",
-            "ikyo_normal_fixed_den": "位況平水位（固定分母）",
-            "ikyo_low_fixed_den": "位況低水位（固定分母）",
-            "ikyo_drought_fixed_den": "位況渇水位（固定分母）",
-            "ikyo_high_daily_value": "位況豊水位（日データ）",
-            "ikyo_normal_daily_value": "位況平水位（日データ）",
-            "ikyo_low_daily_value": "位況低水位（日データ）",
-            "ikyo_drought_daily_value": "位況渇水位（日データ）",
-        }
+        main_map, peak_map, year_map = build_output_label_maps(metric, include_daily=True)
 
         df_main_excel = _rename_for_excel(df_main, main_map)
         df_peaks_excel = _rename_for_excel(df_peaks, peak_map)
@@ -655,8 +623,20 @@ def main(argv: list[str] | None = None) -> int:
             df_main_out = cast(pd.DataFrame, df_main_out[cols])
 
         # サマリ用位況
-        df_ikyo = add_ikyo(df_ranked, source_cols=source_cols, apply_threshold=True, use_scaling=True)
-        df_ikyo_raw = add_ikyo(df_ranked_raw, source_cols=source_cols, apply_threshold=False, use_scaling=False)
+        df_ikyo = add_ikyo(
+            df_ranked,
+            source_cols=source_cols,
+            apply_threshold=True,
+            use_scaling=True,
+            statistic_name=metric_info.statistic_name,
+        )
+        df_ikyo_raw = add_ikyo(
+            df_ranked_raw,
+            source_cols=source_cols,
+            apply_threshold=False,
+            use_scaling=False,
+            statistic_name=metric_info.statistic_name,
+        )
         df_year_summary = build_year_summary(
             df_ikyo,
             df_hour_raw,
@@ -672,49 +652,7 @@ def main(argv: list[str] | None = None) -> int:
             use_scaling=False,
         )
         # マッピング（daily関連を除外）
-        main_map = {
-            "hydro_date": "日付",
-            "hourly_daily_avg_var_den": "日平均（可変分母）",
-            "hourly_daily_avg_fixed_den": "日平均（固定分母）",
-            "year": "年",
-            "count_non_null": "非欠損本数",
-            "rank_var_den": "ランク（可変分母）",
-            "rank_fixed_den": "ランク（固定分母）",
-            "rank_var_den_ref": "ランク（可変分母,参考）",
-            "rank_fixed_den_ref": "ランク（固定分母,参考）",
-        }
-        peak_map = {
-            "hydro_date": "日付",
-            "peak_max_value": "最高値",
-            "peak_max_time": "最高時刻（水水DB基準）",
-        }
-        year_map = {
-            "year": "年",
-            "missing_var_den": "欠損数（可変分母）",
-            "missing_fixed_den": "欠損数（固定分母）",
-            "mean_var_den": "平均（可変分母）",
-            "mean_fixed_den": "平均（固定分母）",
-            "max_hourly_value": "最大（1時間値）",
-            "max_hourly_time": "最大生起日時（水水DB基準）",
-            "min_hourly_value": "最小（1時間値）",
-            "min_hourly_time": "最小生起日時（水水DB基準）",
-            "rank_used_ikyo_high_var_den": "採用順位（豊水位,可変分母）",
-            "rank_used_ikyo_normal_var_den": "採用順位（平水位,可変分母）",
-            "rank_used_ikyo_low_var_den": "採用順位（低水位,可変分母）",
-            "rank_used_ikyo_drought_var_den": "採用順位（渇水位,可変分母）",
-            "rank_used_ikyo_high_fixed_den": "採用順位（豊水位,固定分母）",
-            "rank_used_ikyo_normal_fixed_den": "採用順位（平水位,固定分母）",
-            "rank_used_ikyo_low_fixed_den": "採用順位（低水位,固定分母）",
-            "rank_used_ikyo_drought_fixed_den": "採用順位（渇水位,固定分母）",
-            "ikyo_high_var_den": "位況豊水位（可変分母）",
-            "ikyo_normal_var_den": "位況平水位（可変分母）",
-            "ikyo_low_var_den": "位況低水位（可変分母）",
-            "ikyo_drought_var_den": "位況渇水位（可変分母）",
-            "ikyo_high_fixed_den": "位況豊水位（固定分母）",
-            "ikyo_normal_fixed_den": "位況平水位（固定分母）",
-            "ikyo_low_fixed_den": "位況低水位（固定分母）",
-            "ikyo_drought_fixed_den": "位況渇水位（固定分母）",
-        }
+        main_map, peak_map, year_map = build_output_label_maps(metric, include_daily=False)
         df_main_excel = _rename_for_excel(df_main_out, main_map)
         df_peaks_excel = _rename_for_excel(df_peaks, peak_map)
         df_year_excel = cast(pd.DataFrame, _rename_for_excel(df_year_summary, year_map).T.reset_index())

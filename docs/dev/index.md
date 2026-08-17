@@ -16,6 +16,7 @@
 - Hydrology Graphs Platform: `docs/dev/requirements/hydrology-graphs-platform.md`
 - Water Info 時刻正規化・出力整合: `docs/dev/requirements/water_info.md`
 - Water Info 後処理: `docs/dev/requirements/postprocess.md`
+- 位況・流況後処理GUI: `docs/dev/requirements/postprocess-gui.md`
 
 ## 現行の設計
 
@@ -26,6 +27,7 @@
 - river_meta/rainfall アーキテクチャ: `docs/dev/architecture/river_meta_rainfall.md`
 - Hydrology Graphs アーキテクチャ: `docs/dev/architecture/hydrology_graphs.md`
 - water_info_acquirer アーキテクチャ: `docs/dev/architecture/water_info_acquirer.md`
+- 位況・流況後処理GUI: `docs/dev/architecture/postprocess_gui.md`
 - 時間意味と境界ルール: `docs/dev/domain/time-semantics.md`
 
 ## 参照資料

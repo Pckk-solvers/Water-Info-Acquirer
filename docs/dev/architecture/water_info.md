@@ -12,6 +12,12 @@
   - CLI 引数の解釈。
 - `src/water_info/launcher_entry.py`
   - `water_info_acquirer` から開くときの GUI 入口。
+- `src/water_info/postprocess_launcher_entry.py`
+  - 位況・流況後処理GUIのランチャー入口。
+- `src/water_info/postprocess.py`
+  - 時間・日データの集計、ランク、位況・流況表示、Excel/Parquet出力。
+- `src/water_info/postprocess_labels.py`
+  - 水位/流量ごとの表示ラベル定義。
 
 ## 責務
 
@@ -21,6 +27,7 @@
 - HTML 行単位での時刻と値の対応付け
 - Parquet / NDJSON / Excel 出力
 - GUI での条件設定と実行
+- 取得済みファイルを対象とする位況・流況後処理GUI
 
 ## 主な層
 
@@ -32,6 +39,10 @@
   - HTTP、HTML パース、URL 組み立て、Excel 書き込みなどの実装詳細を置く。
 - `ui/`
   - Tkinter の画面、ダイアログ、進捗表示、実行操作を置く。
+- `postprocess_labels.py`
+  - 対象種別を正本にして、位況/流況・水位/流量の表示名を生成する。
+- `postprocess_service.py`
+  - GUIから後処理を呼び出す実行境界を置く。
 
 ## データの流れ
 

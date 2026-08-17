@@ -33,6 +33,20 @@ APP_DEFINITIONS: tuple[AppDefinition, ...] = (
         help_url="https://pckk-solvers.github.io/Water-Info-Acquirer/user/water-info/",
     ),
     AppDefinition(
+        key="postprocess",
+        title_key="postprocess",
+        open_app=lambda *, parent, on_open_other, on_close, on_return_home=None, developer_mode=False: __import__(
+            "water_info.postprocess_launcher_entry", fromlist=["open_postprocess"]
+        ).open_postprocess(
+            parent=parent,
+            on_open_other=on_open_other,
+            on_close=on_close,
+            on_return_home=on_return_home,
+        ),
+        description="取得済みの水位・流量データから位況・流況を算出します。",
+        help_url="",
+    ),
+    AppDefinition(
         key="jma",
         title_key="jma",
         open_app=lambda *, parent, on_open_other, on_close, on_return_home=None, developer_mode=False: __import__(

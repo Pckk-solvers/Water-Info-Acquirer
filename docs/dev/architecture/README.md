@@ -10,4 +10,5 @@
 - `river_meta_rainfall.md`: `src/river_meta/rainfall/` の責務と処理の流れ
 - `hydrology_graphs.md`: `src/hydrology_graphs/` の責務と処理の流れ
 - `water_info_acquirer.md`: `src/water_info_acquirer/` の責務とランチャー構成
+- `postprocess_gui.md`: 位況・流況後処理GUIの画面構成と責務分割
 
