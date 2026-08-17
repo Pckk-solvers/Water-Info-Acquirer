@@ -54,10 +54,10 @@
 - `uv lock --check`が成功した。
 - `uv run pytest -q`で243件すべて成功した。
 - `uv run ruff check src tests`が成功した。
+- GitHub Dependabotを再確認し、全40件が`fixed`、オープン警告が0件であることを確認した。
 
 ## 残課題
 
-- GitHub Dependabotの再スキャン完了後、オープン警告が解消されたことを確認する。
 - 依存更新後の配布用PyInstaller成果物が必要な場合は、別途ビルド確認を行う。
 
 ## 関連要件 / 関連設計
