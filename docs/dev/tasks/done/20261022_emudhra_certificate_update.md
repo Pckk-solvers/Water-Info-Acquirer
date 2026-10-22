@@ -33,3 +33,11 @@ uv lock --check、依存差分の確認、certifi実体のCA指紋確認、既�
 
 対象差分・安全な初回取得・requirements経由のビルド・版数整合を確認済み。
 2026-10-22のユーザー指示で、依存更新・commit・push・可能なリリースを実施する。
+
+## 実施結果
+
+- certifi 2026.10.19と下限制約をpyproject.toml・requirements.txt・uv.lockへ反映。
+- mainのCI、Docs、PyInstaller smoke buildがすべて成功（commit d4a9dc03）。
+- ローカルでlock整合と依存差分を確認。新規検証環境の全依存同期は取得時間の上限で終了したため、CI成功と区別して記録。
+- 配布物の作成はv1.4.1タグによる既存workflowで実施し、GitHub Releaseの成果物を確認する。
+- 計算・取得ロジックとAPIは変更していない。コード反映とCI検証が完了したためdoneへ移動。
