@@ -59,3 +59,6 @@ exclude = ["src/jma_rainfall_pipeline"]
 [tool.ruff.lint]
 select = ["F", "E", "W"]
 ignore = ["E501"]
+
+[tool.uv]
+required-version = ">=0.13.5"
