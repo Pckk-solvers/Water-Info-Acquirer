@@ -7,6 +7,8 @@
 - `github-pages.md`
 - `release-process.md`
 - `water_info-cli-validation.md`
+- `water_info-dam-investigation.md`: 長安口ダムの取得調査とGUI対応案
+- `water_info-dam-usage.md`: ダム諸量のGUI操作・出力・再開方法
 - `hydrology-graphs-platform/`: グラフ機能の各種契約
 - `postprocess/`: 後処理の設定サンプル
 

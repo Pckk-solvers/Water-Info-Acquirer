@@ -19,6 +19,7 @@ from .validation import InputValidator, format_input_error_message
 from .progress_window import ProgressWindow
 from .dialogs import show_error_popup, show_results
 from .side_panel import populate_side_panel
+from .dam_panel import DamPanel
 
 
 class WWRApp:
@@ -143,6 +144,21 @@ class WWRApp:
         self.listbox.pack(fill='both', expand=True)
         self._load_initial_codes()
 
+        # ダムは単一項目選択とは独立した取得経路で扱う。
+        self.target = StringVar(value="水位・流量・雨量")
+        target_row = Frame(main, bg="#d1f6ff")
+        target_row.pack(pady=4)
+        Label(target_row, text="取得対象", bg="#d1f6ff").pack(side='left', padx=4)
+        self.target_combo = ttk.Combobox(target_row, textvariable=self.target,
+                                         values=("水位・流量・雨量", "ダム諸量"), state="readonly", width=20)
+        self.target_combo.pack(side='left')
+        self.target_combo.bind("<<ComboboxSelected>>", self._select_target)
+        controls_parent = main
+        self.regular_controls = Frame(controls_parent, bg="#d1f6ff")
+        self.regular_controls.pack(fill='both', expand=True)
+        self.dam_panel = DamPanel(controls_parent, get_codes=lambda: self.codes)
+        main = self.regular_controls
+
         # 取得項目選択
         frame_item = Frame(main, bg="#d1f6ff")
         frame_item.pack(pady=7, anchor='center')
@@ -201,6 +217,14 @@ class WWRApp:
         notebook.add(tab_side, text="説明")
         populate_side_panel(tab_side)
         self._bind_validation_events()
+
+    def _select_target(self, _event=None):
+        if self.target.get() == "ダム諸量":
+            self.regular_controls.pack_forget()
+            self.dam_panel.pack(fill='both', expand=True)
+        else:
+            self.dam_panel.pack_forget()
+            self.regular_controls.pack(fill='both', expand=True)
 
     def _bind_validation_events(self):
         self.entry_year_start.bind("<FocusOut>", self._on_validate_inputs)

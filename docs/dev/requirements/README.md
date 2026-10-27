@@ -5,6 +5,7 @@
 
 - `hydrology-graphs-platform.md`: Hydrology Graphs Platform の現行要件
 - `water_info.md`: Water Info の時刻正規化・出力整合の現行要件
+- `water_info-dam.md`: ダム諸量のGUI取得・整理
 - `postprocess.md`: Water Info 後処理の現行要件
 - `postprocess-gui.md`: 位況・流況後処理GUIの現行要件
 

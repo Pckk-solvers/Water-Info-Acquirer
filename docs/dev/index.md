@@ -15,6 +15,7 @@
 
 - Hydrology Graphs Platform: `docs/dev/requirements/hydrology-graphs-platform.md`
 - Water Info 時刻正規化・出力整合: `docs/dev/requirements/water_info.md`
+- ダム諸量のGUI取得・整理: `docs/dev/requirements/water_info-dam.md`
 - Water Info 後処理: `docs/dev/requirements/postprocess.md`
 - 位況・流況後処理GUI: `docs/dev/requirements/postprocess-gui.md`
 
@@ -23,6 +24,7 @@
 - リポジトリ全体アーキテクチャ: `docs/dev/architecture/overview.md`
 - 起動経路: `docs/dev/architecture/entrypoints.md`
 - Water Info アーキテクチャ: `docs/dev/architecture/water_info.md`
+- ダム諸量の構成: `docs/dev/architecture/water_info_dam.md`
 - JMA 雨量パイプライン アーキテクチャ: `docs/dev/architecture/jma_rainfall_pipeline.md`
 - river_meta/rainfall アーキテクチャ: `docs/dev/architecture/river_meta_rainfall.md`
 - Hydrology Graphs アーキテクチャ: `docs/dev/architecture/hydrology_graphs.md`
@@ -36,6 +38,8 @@
 - GitHub Pages 公開: `docs/dev/reference/github-pages.md`
 - リリース手順: `docs/dev/reference/release-process.md`
 - Water Info CLI 検証手順: `docs/dev/reference/water_info-cli-validation.md`
+- ダム諸量の取得調査とGUI対応案: `docs/dev/reference/water_info-dam-investigation.md`
+- ダム諸量の操作と出力: `docs/dev/reference/water_info-dam-usage.md`
 - Hydrology Graphs Platform 契約: `docs/dev/reference/hydrology-graphs-platform/`
 - Water Info 後処理サンプル設定: `docs/dev/reference/postprocess/`
 

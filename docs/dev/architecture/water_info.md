@@ -2,6 +2,8 @@
 
 `src/water_info/` は、水文水質データの取得・正規化・出力を担当する。
 
+ダム諸量の専用経路は [ダム諸量の構成](water_info_dam.md) を参照。
+
 ## 入口
 
 - `src/water_info/__main__.py`
