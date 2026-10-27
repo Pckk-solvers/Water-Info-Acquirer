@@ -7,6 +7,32 @@ import threading
 
 from ..service.process_manager import ProcessManager, ProcessProgress
 from .progress_window import ProgressSnapshot
+from ..service.acquisition import run_acquisition
+
+
+class AcquisitionController:
+    """共通取得サービスをワーカーで実行し、UIへイベントだけを返す。"""
+
+    def __init__(self):
+        self.events = queue.Queue()
+        self.stop_event = threading.Event()
+
+    def start(self, plan, *, fetch_hourly, fetch_daily):
+        def worker():
+            try:
+                run_acquisition(plan, fetch_hourly=fetch_hourly, fetch_daily=fetch_daily,
+                    should_stop=self.stop_event.is_set,
+                    on_progress=lambda p: self.events.put(("progress", p)),
+                    on_result=lambda r: self.events.put(("result", r)))
+            except Exception as exc:
+                self.events.put(("fatal", str(exc)))
+            finally:
+                self.events.put(("done", None))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def cancel(self):
+        self.stop_event.set()
 
 
 class ExecutionController:

@@ -1,445 +1,434 @@
-"""Tkinter UI for water_info."""
+"""観測所・条件・出力先・実行結果を一つの画面で扱う取得GUI。"""
 
-from __future__ import annotations
-
-from datetime import datetime
-
-from tkinter import (
-    Frame, Label, Button, Entry, Listbox, Toplevel,
-    StringVar, BooleanVar, Radiobutton, Checkbutton,
-    PanedWindow, ttk, TOP, BOTTOM
-)
+import os
+from pathlib import Path
+import queue
+import re
+import tkinter as tk
+from tkinter import filedialog, ttk
+from tkinter.scrolledtext import ScrolledText
 
 from water_info_acquirer.app_meta import get_module_title
 from water_info_acquirer.navigation import build_navigation_menu
-from ..domain.models import WaterInfoRequest
-from .execution import ExecutionController, estimate_unit_total, to_snapshot
-from .debug import log
-from .validation import InputValidator, format_input_error_message
-from .progress_window import ProgressWindow
-from .dialogs import show_error_popup, show_results
-from .side_panel import populate_side_panel
-from .dam_panel import DamPanel
+from ..service.acquisition import AcquisitionPlan, AcquisitionResult
+from .execution import AcquisitionController
+from .forms import RegularConditions, DamConditions
+from .help_content import show_help
+from .styles import BACKGROUND, configure_styles, card
+
+STATUS_LABELS = {"complete": "完了", "warning": "品質注意", "partial": "一部取得",
+                 "failed": "失敗", "cancelled": "中止"}
 
 
 class WWRApp:
-    def __init__(
-        self,
-        parent,
-        fetch_hourly,
-        fetch_daily,
-        empty_error_type,
-        single_sheet_mode=False,
-        on_open_other=None,
-        on_close=None,
-        on_return_home=None,
-        debug_ui: bool = False,
-        initial_codes: list[str] | None = None,
-    ):
+    def __init__(self, parent, fetch_hourly, fetch_daily, empty_error_type,
+                 single_sheet_mode=False, on_open_other=None, on_close=None,
+                 on_return_home=None, debug_ui=False, initial_codes=None):
         self.fetch_hourly = fetch_hourly
         self.fetch_daily = fetch_daily
-        self.empty_error_type = empty_error_type
-        self.single_sheet_mode = single_sheet_mode
-        self.parent = parent
         self.on_open_other = on_open_other
         self.on_close = on_close
         self.on_return_home = on_return_home
-        self._debug_ui = debug_ui
-        self._initial_codes = initial_codes or []
-        self.root = Toplevel(parent)
-        # 親を非表示にしていても子が前面に来るように設定
+        self.root = tk.Toplevel(parent)
         self.root.title(get_module_title("water_info", lang="jp"))
-        self.root.config(bg="#d1f6ff")
-        w, h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self.root.geometry(f"950x750+{(w-900)//2}+{(h-700)//2}")  # 初期サイズを中央に
-        self.root.update_idletasks()
-        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+        self.root.configure(background=BACKGROUND)
+        width = min(1160, self.root.winfo_screenwidth() - 60)
+        height = min(850, self.root.winfo_screenheight() - 100)
+        self.root.geometry(f"{width}x{height}")
+        self.root.minsize(960, 720)
         self.root.protocol("WM_DELETE_WINDOW", self._handle_close)
-        self.root.deiconify()
-        self.root.lift()
-        self.root.focus_force()
-
+        configure_styles(self.root)
         self.codes = []
-        self.mode = StringVar(value="S")
-        self.use_data_sru = BooleanVar(value=False)
-        self.export_parquet = BooleanVar(value=False)
-        self.year_start = StringVar(value=str(datetime.now().year))
-        self.month_start = StringVar(value="1月")
-        self.year_end = StringVar(value=str(datetime.now().year))
-        self.month_end = StringVar(value="12月")
+        self.results: dict[str, AcquisitionResult] = {}
+        self._running = False
+        self._controller = None
+        self._poll_id = None
+        self._locked = []
+        self._help_window = None
+        self.target = tk.StringVar(self.root, value="水位・流量・雨量")
+        self.output_dir = tk.StringVar(self.root, value=str(Path("outputs/water_info").resolve()))
+        self.export_parquet = tk.BooleanVar(self.root, value=False)
+        self.code_input = tk.StringVar(self.root)
+        self.count_text = tk.StringVar(self.root, value="0観測所")
+        self.feedback = tk.StringVar(self.root)
+        self.status = tk.StringVar(self.root, value="観測所と取得条件を設定してください。")
+        self.progress_text = tk.StringVar(self.root, value="待機中")
+        self.output_hint = tk.StringVar(self.root)
+        self._build_ui(single_sheet_mode)
+        for code in initial_codes or []:
+            self._insert_codes(str(code))
+        self._select_target()
+        self.root.bind("<Configure>", self._resize_hints, add=True)
+        self.root.bind("<Destroy>", self._on_destroy, add=True)
 
-        # GUI 用変数。single_sheet_mode をUIに反映
-        self.single_sheet_var = BooleanVar(value=self.single_sheet_mode)
+    def _build_ui(self, single_sheet):
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=3)
+        self.root.rowconfigure(4, weight=2, minsize=190)
+        self.root.configure(menu=build_navigation_menu(self.root, current_app_key="water",
+            on_open_other=self._open_other, on_return_home=self._return_home,
+            extra_actions=(("この画面の使い方", self._show_help),)))
+        header = ttk.Frame(self.root, padding=(22, 14), style="Water.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(header, text="水文データの取得", style="Water.Title.TLabel").pack(side="left")
+        ttk.Button(header, text="使い方・品質の説明", command=self._show_help,
+                   style="Water.TButton").pack(side="right")
 
-        self._validator = InputValidator(cooldown_sec=1.0)
-        self._clear_error_on_change = True
-        self._build_ui()
+        settings_view = ttk.Frame(self.root, style="Water.TFrame")
+        settings_view.grid(row=1, column=0, sticky="nsew", padx=22)
+        self.settings_canvas = tk.Canvas(settings_view, background=BACKGROUND, highlightthickness=0, height=400)
+        settings_scroll = ttk.Scrollbar(settings_view, command=self.settings_canvas.yview)
+        self.settings_canvas.configure(yscrollcommand=settings_scroll.set)
+        settings_scroll.pack(side="right", fill="y")
+        self.settings_canvas.pack(side="left", fill="both", expand=True)
+        config = ttk.Frame(self.settings_canvas, style="Water.TFrame")
+        settings_window = self.settings_canvas.create_window((0, 0), window=config, anchor="nw")
+        self.settings_canvas.bind("<Configure>", lambda e: self.settings_canvas.itemconfigure(settings_window, width=e.width))
+        config.bind("<Configure>", lambda _e: self.settings_canvas.configure(scrollregion=self.settings_canvas.bbox("all")))
+        self.settings_canvas.bind("<MouseWheel>", self._scroll_settings)
+        config.columnconfigure(1, weight=1)
+        self.station_card = card(config, "1  観測所")
+        self.station_card.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 14))
+        entry_row = ttk.Frame(self.station_card, style="Water.Card.TFrame")
+        entry_row.pack(fill="x")
+        self.code_entry = ttk.Entry(entry_row, textvariable=self.code_input, width=22)
+        self.code_entry.pack(side="left", fill="x", expand=True)
+        self.code_entry.bind("<Return>", lambda _e: self._add_code())
+        ttk.Button(entry_row, text="追加", command=self._add_code, style="Water.TButton").pack(side="left", padx=(5, 0))
+        ttk.Label(self.station_card, text="水文水質DBの観測所記号を入力", style="Water.Hint.TLabel").pack(anchor="w", pady=(5, 8))
+        actions = ttk.Frame(self.station_card, style="Water.Card.TFrame")
+        actions.pack(fill="x", pady=(0, 8))
+        ttk.Button(actions, text="複数コードを貼付", command=self._paste_codes,
+                   style="Water.TButton").pack(side="left")
+        ttk.Button(actions, text="選択を削除", command=self._remove_code,
+                   style="Water.TButton").pack(side="right", padx=(5, 0))
+        listing = ttk.Frame(self.station_card, style="Water.Card.TFrame")
+        listing.pack(fill="both", expand=True)
+        self.station_tree = ttk.Treeview(listing, columns=("code",), show="headings", height=5,
+                                        style="Water.Treeview", selectmode="extended")
+        self.station_tree.heading("code", text="取得する観測所記号")
+        self.station_tree.column("code", width=235, stretch=True)
+        scroll = ttk.Scrollbar(listing, orient="vertical", command=self.station_tree.yview)
+        self.station_tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.station_tree.pack(fill="both", expand=True)
+        self.station_tree.bind("<Delete>", lambda _e: self._remove_code())
+        ttk.Label(self.station_card, textvariable=self.count_text, style="Water.Hint.TLabel").pack(anchor="e", pady=(6, 0))
 
-    def _open_other(self, app_key: str):
-        if self.on_open_other:
-            self.root.destroy()
-            self.on_open_other(app_key)
+        self.conditions_card = card(config, "2  取得条件")
+        self.conditions_card.grid(row=0, column=1, sticky="nsew")
+        targets = ttk.Frame(self.conditions_card, style="Water.Card.TFrame")
+        targets.pack(fill="x", pady=(0, 12))
+        for label in ("水位・流量・雨量", "ダム諸量"):
+            ttk.Radiobutton(targets, text=label, value=label, variable=self.target,
+                command=self._select_target, style="Water.TRadiobutton").pack(side="left", padx=(0, 25))
+        self.regular_controls = RegularConditions(self.conditions_card, single_sheet=single_sheet)
+        self.dam_panel = DamConditions(self.conditions_card)
 
-    def _handle_close(self):
-        try:
-            self.root.destroy()
-        finally:
-            if self.on_close:
-                self.on_close()
+        self.output_card = card(config, "3  出力")
+        self.output_card.grid(row=1, column=1, sticky="ew", pady=(12, 0))
+        folder_row = ttk.Frame(self.output_card, style="Water.Card.TFrame")
+        folder_row.pack(fill="x")
+        self.folder_entry = ttk.Entry(folder_row, textvariable=self.output_dir)
+        self.folder_entry.pack(side="left", fill="x", expand=True)
+        ttk.Button(folder_row, text="参照…", command=self._browse_output,
+                   style="Water.TButton").pack(side="left", padx=(6, 0))
+        ttk.Checkbutton(self.output_card, text="Parquetも追加出力する", variable=self.export_parquet,
+                        style="Water.TCheckbutton").pack(anchor="w", pady=(8, 2))
+        self.output_hint_label = ttk.Label(self.output_card, textvariable=self.output_hint,
+                                          style="Water.Hint.TLabel", wraplength=550)
+        self.output_hint_label.pack(anchor="w", fill="x")
+        self.error_label = ttk.Label(self.root, textvariable=self.feedback, style="Water.Error.TLabel", wraplength=1060)
+        self.error_label.grid(row=2, column=0, sticky="ew", padx=22, pady=(6, 0))
 
-    def _return_home(self):
-        try:
-            self.root.destroy()
-        finally:
-            if self.on_return_home:
-                self.on_return_home()
+        run = ttk.Frame(self.root, padding=(22, 8), style="Water.TFrame")
+        run.grid(row=3, column=0, sticky="ew")
+        run.columnconfigure(0, weight=1)
+        ttk.Label(run, textvariable=self.status, style="Water.TLabel").grid(row=0, column=0, sticky="w")
+        self.bar = ttk.Progressbar(run, maximum=1, mode="determinate")
+        self.bar.grid(row=1, column=0, sticky="ew", pady=(7, 0))
+        ttk.Label(run, textvariable=self.progress_text, style="Water.TLabel").grid(row=0, column=1, padx=12)
+        self.cancel_button = ttk.Button(run, text="中止", command=self._cancel, state="disabled", style="Water.TButton")
+        self.cancel_button.grid(row=0, column=2, rowspan=2, padx=(0, 8))
+        self.execute_button = ttk.Button(run, text="取得を開始", command=self._on_execute, style="Water.Primary.TButton")
+        self.execute_button.grid(row=0, column=3, rowspan=2)
 
-    def _build_ui(self):
-        # ツールタイトル
-        Label(self.root,
-              text=get_module_title("water_info", lang="jp"),
-              bg="#d1f6ff",
-              font=(None, 24, 'bold')
-              ).pack(fill='x', pady=(10,5))
+        result_card = card(self.root, "実行結果")
+        result_card.grid(row=4, column=0, sticky="nsew", padx=22, pady=(0, 16))
+        toolbar = ttk.Frame(result_card, style="Water.Card.TFrame")
+        toolbar.pack(fill="x", pady=(0, 5))
+        ttk.Label(toolbar, text="結果を選ぶと、品質やエラーの詳細を表示します。", style="Water.Hint.TLabel").pack(side="left")
+        self.open_folder_button = ttk.Button(toolbar, text="保存フォルダ", command=self._open_result_folder, state="disabled", style="Water.TButton")
+        self.open_folder_button.pack(side="right")
+        self.open_excel_button = ttk.Button(toolbar, text="Excelを開く", command=self._open_excel, state="disabled", style="Water.TButton")
+        self.open_excel_button.pack(side="right", padx=6)
+        result_body = ttk.Frame(result_card, style="Water.Card.TFrame")
+        result_body.pack(fill="both", expand=True)
+        result_body.columnconfigure(0, weight=3)
+        result_body.columnconfigure(1, weight=2)
+        result_body.rowconfigure(0, weight=1)
+        result_list = ttk.Frame(result_body, style="Water.Card.TFrame")
+        result_list.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        self.result_tree = ttk.Treeview(result_list, columns=("station", "status", "summary"), show="headings",
+                                       height=3, style="Water.Treeview", selectmode="browse")
+        for col, label, width in (("station", "観測所", 200), ("status", "状態", 80), ("summary", "結果", 240)):
+            self.result_tree.heading(col, text=label)
+            self.result_tree.column(col, width=width, minwidth=80, stretch=col == "summary")
+        scroll = ttk.Scrollbar(result_list, command=self.result_tree.yview)
+        scroll.pack(side="right", fill="y")
+        self.result_tree.configure(yscrollcommand=scroll.set)
+        self.result_tree.pack(fill="both", expand=True)
+        for tag, color in (("warning", "#8a5500"), ("partial", "#8a5500"), ("failed", "#b42318"), ("cancelled", "#526978")):
+            self.result_tree.tag_configure(tag, foreground=color)
+        self.result_tree.bind("<<TreeviewSelect>>", self._select_result)
+        self.result_tree.bind("<Double-1>", lambda _e: self._open_excel())
+        self.result_detail = ScrolledText(result_body, height=4, width=35, wrap="word", relief="flat", font=("Yu Gothic UI", 9),
+                                         background="#f5f8fa", foreground="#183142", padx=8, pady=5, state="disabled")
+        self.result_detail.frame.grid(row=0, column=1, sticky="nsew")
+        self._bind_settings_scroll(config)
 
-        self.root.config(
-            menu=build_navigation_menu(
-                self.root,
-                current_app_key="water",
-                on_open_other=self._open_other,
-                on_return_home=self._return_home,
-            )
-        )
+    def _bind_settings_scroll(self, parent):
+        for widget in parent.winfo_children():
+            if not isinstance(widget, (ttk.Treeview, ttk.Scrollbar, ttk.Combobox)):
+                widget.bind("<MouseWheel>", self._scroll_settings, add=True)
+            self._bind_settings_scroll(widget)
 
-        # メインとサイドを分割する PanedWindow
-        paned = PanedWindow(self.root, orient='horizontal')
-        paned.pack(fill='both', expand=True, padx=10, pady=10)
+    def _scroll_settings(self, event):
+        if self.settings_canvas.yview() != (0.0, 1.0) and event.delta:
+            step = max(1, abs(event.delta) // 120)
+            self.settings_canvas.yview_scroll(-step if event.delta > 0 else step, "units")
+            return "break"
 
-        # --- メイン操作領域 ---
-        main = Frame(paned, bg="#d1f6ff")
-        paned.add(main)
-        # 観測所コード入力
-        # 例：コード追加／削除ボタンをまとめたフレーム
-        frame_input = Frame(main, bg="#d1f6ff")
-        # → 中央寄せするには fill を外し、anchor='center' を指定
-        frame_input.pack(pady=5, anchor='center')
-        Label(frame_input, text="観測所記号入力欄                      ", bg="#d1f6ff").pack(anchor='center')
-        entry = Entry(frame_input, textvariable=StringVar(), width=20)
-        entry.pack(side='left', padx=5)
-        entry.bind('<Return>', lambda ev: self._add_code(entry))
-        btn_add = Button(frame_input, text="追加", command=lambda: self._add_code(entry))
-        btn_add.pack(side='left', padx=(2,0))
-        btn_del = Button(frame_input, text="削除", command=self._remove_code)
-        btn_del.pack(side='left')
-
-        # リスト表示
-        Label(main, text="データ取得観測所一覧", bg="#d1f6ff").pack(anchor='center', pady=(10,0))
-        # 固定サイズコンテナを作成
-        frame_list = Frame(main, width=200, height=120)  # 幅200px、高さ120px
-        frame_list.pack(pady=(0,5))
-        frame_list.pack_propagate(False)                # 中のwidgetでFrameサイズを変えない
-
-        # Frame 内に Listbox を配置
-        self.listbox = Listbox(frame_list)
-        self.listbox.pack(fill='both', expand=True)
-        self._load_initial_codes()
-
-        # ダムは単一項目選択とは独立した取得経路で扱う。
-        self.target = StringVar(value="水位・流量・雨量")
-        target_row = Frame(main, bg="#d1f6ff")
-        target_row.pack(pady=4)
-        Label(target_row, text="取得対象", bg="#d1f6ff").pack(side='left', padx=4)
-        self.target_combo = ttk.Combobox(target_row, textvariable=self.target,
-                                         values=("水位・流量・雨量", "ダム諸量"), state="readonly", width=20)
-        self.target_combo.pack(side='left')
-        self.target_combo.bind("<<ComboboxSelected>>", self._select_target)
-        controls_parent = main
-        self.regular_controls = Frame(controls_parent, bg="#d1f6ff")
-        self.regular_controls.pack(fill='both', expand=True)
-        self.dam_panel = DamPanel(controls_parent, get_codes=lambda: self.codes)
-        main = self.regular_controls
-
-        # 取得項目選択
-        frame_item = Frame(main, bg="#d1f6ff")
-        frame_item.pack(pady=7, anchor='center')
-        Label(frame_item, text="取得項目", bg="#d1f6ff").pack(side=TOP)
-        for txt, val in [('水位','S'), ('流量','R'), ('雨量','U')]:
-            Radiobutton(frame_item, text=txt, variable=self.mode, value=val,
-                        indicatoron=False, bg="#d1f6ff").pack(side='left', padx=(2))
-
-        # 期間指定
-        frame_period = Frame(main, bg="#d1f6ff")
-        frame_period.pack(anchor='center', pady=7)
-        Label(frame_period, text="取得期間", bg="#d1f6ff").pack(side=TOP)
-        self.period_error = Label(frame_period, text="", bg="#d1f6ff", fg="#c62828", font=(None, 9, "bold"))
-        self.period_error.pack(side=TOP)
-        self.entry_year_start = ttk.Entry(frame_period, textvariable=self.year_start, width=6)
-        self.entry_year_start.pack(side='left')
-        Label(frame_period, text="年", bg="#d1f6ff").pack(side='left')
-        self.combo_month_start = ttk.Combobox(
-            frame_period,
-            textvariable=self.month_start,
-            values=[f"{i}月" for i in range(1,13)],
-            width=6,
-            state="readonly",
-        )
-        self.combo_month_start.pack(side='left', padx=(2,2))
-        Label(frame_period, text="～", bg="#d1f6ff").pack(side='left')
-        self.entry_year_end = ttk.Entry(frame_period, textvariable=self.year_end, width=6)
-        self.entry_year_end.pack(side='left')
-        Label(frame_period, text="年", bg="#d1f6ff").pack(side='left')
-        self.combo_month_end = ttk.Combobox(
-            frame_period,
-            textvariable=self.month_end,
-            values=[f"{i}月" for i in range(1,13)],
-            width=6,
-            state="readonly",
-        )
-        self.combo_month_end.pack(side='left', padx=2)
-
-        # 日別データ切替
-        Checkbutton(main, text="日データ", variable=self.use_data_sru, bg="#d1f6ff").pack(anchor='center', pady=10)
-
-        # 指定全期間シート挿入
-        Checkbutton(main, text="指定全期間シート挿入", variable=self.single_sheet_var, bg="#d1f6ff").pack(anchor='center', pady=10)
-        Checkbutton(main, text="Parquetを出力", variable=self.export_parquet, bg="#d1f6ff").pack(anchor='center', pady=(0, 10))
-
-        # 実行ボタン
-        self.execute_button = Button(main, text="実行", command=self._on_execute, height=2, width=8)
-        self.execute_button.pack(pady=(10,5))
-
-        Label(main, text="※本ツールに関する問い合わせ窓口\n国土基盤事業本部 流域計画部 技術研究室 南まさし", bg="#d1f6ff", font=(None, 15, 'bold')).pack(anchor='center', side=BOTTOM, pady=(5,0))
-
-        # --- サイドパネル（Notebookタブ） ---
-        notebook = ttk.Notebook(paned)
-        paned.add(notebook)
-        tab_side = Frame(notebook, bg="#eef6f9")
-        notebook.add(tab_side, text="説明")
-        populate_side_panel(tab_side)
-        self._bind_validation_events()
+    def _resize_hints(self, event):
+        if event.widget is self.root:
+            self.output_hint_label.configure(wraplength=max(280, self.output_card.winfo_width() - 35))
+            self.error_label.configure(wraplength=max(500, self.root.winfo_width() - 44))
 
     def _select_target(self, _event=None):
+        self.regular_controls.pack_forget()
+        self.dam_panel.pack_forget()
         if self.target.get() == "ダム諸量":
-            self.regular_controls.pack_forget()
-            self.dam_panel.pack(fill='both', expand=True)
+            self.dam_panel.pack(fill="x")
+            self.output_hint.set("Excel1冊・年別シート / 全期間CSV・品質情報・原データ\n観測所と期間ごとのサブフォルダに保存します。")
         else:
-            self.dam_panel.pack_forget()
-            self.regular_controls.pack(fill='both', expand=True)
+            self.regular_controls.pack(fill="x")
+            self.output_hint.set("Excelは観測所ごとに1冊・年別シート。指定したフォルダに保存します。")
+        self.feedback.set("")
+        self.settings_canvas.yview_moveto(0)
 
-    def _bind_validation_events(self):
-        self.entry_year_start.bind("<FocusOut>", self._on_validate_inputs)
-        self.entry_year_end.bind("<FocusOut>", self._on_validate_inputs)
-        self.entry_year_start.bind("<KeyRelease>", self._on_validate_inputs)
-        self.entry_year_end.bind("<KeyRelease>", self._on_validate_inputs)
-        self.combo_month_start.bind("<<ComboboxSelected>>", self._on_validate_inputs)
-        self.combo_month_end.bind("<<ComboboxSelected>>", self._on_validate_inputs)
-
-        if self._clear_error_on_change:
-            self.entry_year_start.bind("<KeyRelease>", self._clear_period_error_on_change)
-            self.entry_year_end.bind("<KeyRelease>", self._clear_period_error_on_change)
-            self.combo_month_start.bind("<<ComboboxSelected>>", self._clear_period_error_on_change)
-            self.combo_month_end.bind("<<ComboboxSelected>>", self._clear_period_error_on_change)
-
-    def _add_code(self, entry):
-        code = entry.get().strip()
-        if code.isdigit() and code not in self.codes:
-            self.codes.append(code)
-            self.listbox.insert('end', code)
-        entry.delete(0, 'end')
-
-    def _load_initial_codes(self) -> None:
-        for code in self._initial_codes:
-            code = str(code).strip()
-            if code.isdigit() and code not in self.codes:
-                self.codes.append(code)
-                self.listbox.insert('end', code)
-
-    def _remove_code(self):
-        for idx in reversed(self.listbox.curselection()):
-            self.listbox.delete(idx)
-            self.codes.pop(idx)
-
-    def _validate(self):
-        # 観測所コードが未入力の場合
-        if not self.codes:
-            show_error_popup(self.root, "入力エラー: 観測所コード未入力")
+    def _insert_codes(self, text):
+        codes = [s for s in re.split(r"[\s,，、;；]+", text.strip()) if s]
+        invalid = [s for s in codes if not s.isascii() or not s.isdigit()]
+        if invalid:
+            self.feedback.set(f"観測所記号は半角数字で入力してください: {invalid[0]}")
             return False
+        for code in codes:
+            if code not in self.codes:
+                self.codes.append(code)
+                self.station_tree.insert("", "end", iid=code, values=(code,))
+        self.count_text.set(f"{len(self.codes)}観測所")
         return True
 
-    def _on_validate_inputs(self, _event=None):
-        if not self._validator.can_validate(
-            self.year_start.get(),
-            self.year_end.get(),
-            self.month_start.get(),
-            self.month_end.get(),
-        ):
-            self._set_period_error("")
+    def _add_code(self):
+        if self._running:
+            return
+        self.feedback.set("")
+        if self._insert_codes(self.code_input.get()):
+            self.code_input.set("")
+        self.code_entry.focus_set()
+
+    def _paste_codes(self):
+        if self._running:
             return
         try:
-            self._validator.build_request(
-                year_start=self.year_start.get(),
-                year_end=self.year_end.get(),
-                month_start=self.month_start.get(),
-                month_end=self.month_end.get(),
-                mode_type=self.mode.get(),
-                use_daily=self.use_data_sru.get(),
-                single_sheet=self.single_sheet_var.get(),
-                export_parquet=self.export_parquet.get(),
-            )
-            self._set_period_error("")
-        except ValueError as exc:
-            msg = format_input_error_message(exc)
-            if self._validator.should_throttle(msg):
-                return
-            self._set_period_error(msg)
+            text = self.root.clipboard_get()
+        except tk.TclError:
+            self.feedback.set("クリップボードに観測所記号がありません。")
+            return
+        self.feedback.set("")
+        self._insert_codes(text)
 
-    def _set_period_error(self, msg: str) -> None:
-        self.period_error.configure(text=msg)
+    def _remove_code(self):
+        if self._running:
+            return
+        for code in self.station_tree.selection():
+            self.codes.remove(code)
+            self.station_tree.delete(code)
+        self.count_text.set(f"{len(self.codes)}観測所")
 
-    def _clear_period_error_on_change(self, _event=None) -> None:
-        if self.period_error.cget("text"):
-            self.period_error.configure(text="")
+    def _browse_output(self):
+        folder = filedialog.askdirectory(parent=self.root, title="取得データの出力先", initialdir=self.output_dir.get())
+        if folder:
+            self.output_dir.set(folder)
+            self.feedback.set("")
+
+    def _build_plan(self):
+        if not self.codes:
+            raise ValueError("観測所記号を追加してください。")
+        if not self.output_dir.get().strip():
+            raise ValueError("出力フォルダを指定してください。")
+        folder = Path(self.output_dir.get().strip()).expanduser().resolve()
+        if folder.exists() and not folder.is_dir():
+            raise ValueError("出力先にファイルが指定されています。フォルダを選択してください。")
+        request = (self.dam_panel.build_request(folder, self.export_parquet.get())
+            if self.target.get() == "ダム諸量" else self.regular_controls.build_request(self.export_parquet.get()))
+        return AcquisitionPlan(tuple(self.codes), request, folder)
+
+    def _set_running(self, running):
+        self._running = running
+        if running:
+            self._locked = []
+
+            def lock(parent):
+                for widget in parent.winfo_children():
+                    if isinstance(widget, (ttk.Entry, ttk.Combobox, ttk.Button, ttk.Checkbutton, ttk.Radiobutton)):
+                        self._locked.append((widget, str(widget.cget("state"))))
+                        widget.configure(state="disabled")
+                    lock(widget)
+
+            for frame in (self.station_card, self.conditions_card, self.output_card):
+                lock(frame)
+        else:
+            for widget, state in self._locked:
+                if widget.winfo_exists():
+                    widget.configure(state=state)
+            self._locked = []
+        self.execute_button.configure(state="disabled" if running else "normal")
+        self.cancel_button.configure(state="normal" if running else "disabled")
 
     def _on_execute(self):
-        if not self._validate():
+        if self._running:
             return
-        log(self._debug_ui, "[UI] execute start")
-        self._set_execute_enabled(False)
-
-        # メインウィンドウの座標・サイズを確定
-        self.root.update_idletasks()
-        rx = self.root.winfo_rootx()
-        ry = self.root.winfo_rooty()
-        rw = self.root.winfo_width()
-
-        request = self._build_request()
-        if request is None:
-            log(self._debug_ui, "[UI] request build failed")
-            self._set_execute_enabled(True)
-            return
-        self._start_execution(request, rx + rw + 10, ry)
-
-    def _show_results(self, files):
-        show_results(self.root, files, on_exit=self._handle_close)
-
-    def _build_request(self) -> WaterInfoRequest | None:
+        self.feedback.set("")
         try:
-            return self._validator.build_request(
-                year_start=self.year_start.get(),
-                year_end=self.year_end.get(),
-                month_start=self.month_start.get(),
-                month_end=self.month_end.get(),
-                mode_type=self.mode.get(),
-                use_daily=self.use_data_sru.get(),
-                single_sheet=self.single_sheet_var.get(),
-                export_parquet=self.export_parquet.get(),
-            )
-        except ValueError as exc:
-            self._set_period_error(format_input_error_message(exc))
-            return None
-
-    def _finish_processing(self, progress_window: ProgressWindow, results) -> None:
-        progress_window.destroy()
-        self._set_execute_enabled(True)
-        if results:
-            self._show_results([r.file_path for r in results])
-
-    def _start_execution(self, request: WaterInfoRequest, progress_x: int, progress_y: int) -> None:
-        unit_total = estimate_unit_total(self.codes, request)
-        total_hint = unit_total or len(self.codes)
-        progress_window = ProgressWindow(self.root, progress_x, progress_y, total_hint)
-        started_at = ProgressWindow.now()
-        log(self._debug_ui, f"[UI] progress window created total_hint={total_hint}")
-
-        controller = ExecutionController()
-        ui_queue = controller.start(
-            codes=self.codes,
-            request=request,
-            fetch_hourly=self.fetch_hourly,
-            fetch_daily=self.fetch_daily,
-            unit_total=unit_total,
-        )
-        log(self._debug_ui, "[UI] worker started, begin polling")
-
-        def _schedule_next():
-            self.root.after(100, _poll)
-
-        def _poll():
-            log(self._debug_ui, "[UI] poll tick")
-            if not progress_window.exists():
-                return
-            controller.poll_queue(
-                ui_queue,
-                on_progress=lambda progress: self._on_progress(progress, progress_window, started_at),
-                on_error=self._on_error,
-                on_done=lambda results: self._on_done(results, progress_window),
-                schedule_next=_schedule_next,
-            )
-
-        _poll()
-
-    def _on_progress(self, progress, progress_window: ProgressWindow, started_at: float) -> None:
-        if progress is None:
+            plan = self._build_plan()
+            plan.output_dir.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError) as exc:
+            self.feedback.set(str(exc))
             return
-        if not progress_window.exists():
-            return
-        log(
-            self._debug_ui,
-            "[UI] progress",
-            f"processed={progress.processed}",
-            f"total={progress.total}",
-            f"success={progress.success}",
-            f"failed={progress.failed}",
-            f"code={progress.current_code}",
-            f"station={progress.current_station}",
-        )
-        snapshot = to_snapshot(progress, ProgressWindow.now() - started_at)
-        progress_window.update(snapshot)
+        self.results.clear()
+        self.result_tree.delete(*self.result_tree.get_children())
+        self._select_result()
+        self.bar.configure(value=0, maximum=1)
+        self.status.set(f"{self.target.get()} / {len(plan.codes)}観測所 / 取得を開始します")
+        self.progress_text.set("取得中")
+        self._set_running(True)
+        self._controller = AcquisitionController()
+        self._controller.start(plan, fetch_hourly=self.fetch_hourly, fetch_daily=self.fetch_daily)
+        self._poll_id = self.root.after(100, self._poll)
 
-    def _on_error(self, err) -> None:
-        log(
-            self._debug_ui,
-            "[UI] error",
-            f"code={err.code}",
-            f"type={err.error_type}",
-            f"msg={err.message}",
-        )
-        if isinstance(err.error, self.empty_error_type):
-            show_error_popup(self.root, f"データ未取得: {err.message}")
+    def _poll(self):
+        controller = self._controller
+        if controller is None:
+            return
+        try:
+            while True:
+                kind, value = controller.events.get_nowait()
+                if kind == "progress":
+                    self.bar.configure(maximum=max(value.total, 1), value=value.current)
+                    self.progress_text.set(f"{value.current} / {value.total}")
+                    self.status.set(f"{value.code}  {value.message}")
+                elif kind == "result":
+                    self._add_result(value)
+                elif kind == "fatal":
+                    self.feedback.set(f"処理エラー: {value}")
+                elif kind == "done":
+                    self._set_running(False)
+                    labels = [f"{label} {sum(r.status == key for r in self.results.values())}件"
+                              for key, label in STATUS_LABELS.items() if any(r.status == key for r in self.results.values())]
+                    self.status.set("終了: " + " / ".join(labels) if labels else "処理が終了しました。")
+                    self.progress_text.set("終了")
+                    self._poll_id = None
+                    return
+        except queue.Empty:
+            pass
+        self._poll_id = self.root.after(100, self._poll)
+
+    def _cancel(self):
+        if self._controller and self._running:
+            self._controller.cancel()
+            self.cancel_button.configure(state="disabled")
+            self.status.set("中止処理中。取得済み分の保存が終わるまでお待ちください。")
+
+    def _add_result(self, result):
+        iid = result.code
+        self.results[iid] = result
+        self.result_tree.insert("", "end", iid=iid, values=(
+            f"{result.code} {result.station_name}", STATUS_LABELS[result.status], result.summary), tags=(result.status,))
+        self.result_tree.selection_set(iid)
+        self.result_tree.see(iid)
+        self._select_result()
+
+    def _selected_result(self):
+        selected = self.result_tree.selection()
+        return self.results.get(selected[0]) if selected else None
+
+    def _select_result(self, _event=None):
+        result = self._selected_result()
+        text = "" if result is None else f"{result.detail}\n保存先: {result.output_dir}"
+        self.result_detail.configure(state="normal")
+        self.result_detail.delete("1.0", "end")
+        self.result_detail.insert("1.0", text)
+        self.result_detail.configure(state="disabled")
+        self.open_excel_button.configure(state="normal" if result and result.excel_path and result.excel_path.is_file() else "disabled")
+        self.open_folder_button.configure(state="normal" if result and result.output_dir.is_dir() else "disabled")
+
+    def _open_path(self, path):
+        if path and path.exists():
+            try:
+                os.startfile(path)
+            except OSError as exc:
+                self.feedback.set(f"開けませんでした: {exc}")
+
+    def _open_excel(self):
+        result = self._selected_result()
+        if result:
+            self._open_path(result.excel_path)
+
+    def _open_result_folder(self):
+        result = self._selected_result()
+        if result:
+            self._open_path(result.output_dir)
+
+    def _show_help(self):
+        if self._help_window is not None and self._help_window.winfo_exists():
+            self._help_window.lift()
         else:
-            show_error_popup(self.root, f"処理エラー: 観測所コード {err.code} {err.message}")
+            self._help_window = show_help(self.root)
 
-    def _on_done(self, results, progress_window: ProgressWindow) -> None:
-        log(self._debug_ui, f"[UI] done results={len(results)}")
-        self._finish_processing(progress_window, results)
+    def _stop_polling(self):
+        if self._controller:
+            self._controller.cancel()
+        if self._poll_id:
+            self.root.after_cancel(self._poll_id)
+            self._poll_id = None
 
-    def _set_execute_enabled(self, enabled: bool) -> None:
-        if hasattr(self, "execute_button") and self.execute_button.winfo_exists():
-            self.execute_button.config(state="normal" if enabled else "disabled")
+    def _on_destroy(self, event):
+        if event.widget is self.root:
+            self._stop_polling()
+
+    def _handle_close(self):
+        self._stop_polling()
+        self.root.destroy()
+        if self.on_close:
+            self.on_close()
+
+    def _return_home(self):
+        self._handle_transition(self.on_return_home)
+
+    def _open_other(self, key):
+        callback = self.on_open_other
+        if callback:
+            self._handle_transition(lambda: callback(key))
+
+    def _handle_transition(self, callback):
+        if callback:
+            self._stop_polling()
+            self.root.destroy()
+            callback()
 
 
-def show_water(
-    parent,
-    fetch_hourly,
-    fetch_daily,
-    empty_error_type,
-    single_sheet_mode=False,
-    on_open_other=None,
-    on_close=None,
-    on_return_home=None,
-    debug_ui: bool = False,
-    initial_codes: list[str] | None = None,
-):
-    """Factory for launcher to create water_info window."""
-    return WWRApp(
-        parent=parent,
-        fetch_hourly=fetch_hourly,
-        fetch_daily=fetch_daily,
-        empty_error_type=empty_error_type,
-        single_sheet_mode=single_sheet_mode,
-        on_open_other=on_open_other,
-        on_close=on_close,
-        on_return_home=on_return_home,
-        debug_ui=debug_ui,
-        initial_codes=initial_codes,
-    )
+def show_water(parent, fetch_hourly, fetch_daily, empty_error_type, single_sheet_mode=False,
+               on_open_other=None, on_close=None, on_return_home=None, debug_ui=False, initial_codes=None):
+    return WWRApp(parent, fetch_hourly, fetch_daily, empty_error_type, single_sheet_mode,
+                  on_open_other, on_close, on_return_home, debug_ui, initial_codes)

@@ -266,6 +266,8 @@ def process_data_for_code(
     single_sheet=False,
     export_parquet=False,
     progress_callback=None,
+    output_dir=None,
+    should_stop=None,
 ):
     request = _build_legacy_request(
         year_start=str(Y1),
@@ -280,8 +282,9 @@ def process_data_for_code(
     result = run_cli_request_for_code(
         code=str(code),
         request=request,
-        output_dir=None,
+        output_dir=output_dir,
         progress_callback=progress_callback,
+        **({"should_stop": should_stop} if should_stop is not None else {}),
     )
     if result.parquet_path is not None:
         print(f"Parquetファイルを出力しました。 {result.parquet_path}")
@@ -299,6 +302,8 @@ def process_period_date_display_for_code(
     single_sheet=False,
     export_parquet=False,
     progress_callback=None,
+    output_dir=None,
+    should_stop=None,
 ):
     """
     年単位URL（各年のBGNDATE=YYYY0101, ENDDATE=YYYY1231）を用いて指定年分のデータを取得し、
@@ -321,8 +326,9 @@ def process_period_date_display_for_code(
     result = run_cli_request_for_code(
         code=str(code),
         request=request,
-        output_dir=None,
+        output_dir=output_dir,
         progress_callback=progress_callback,
+        **({"should_stop": should_stop} if should_stop is not None else {}),
     )
     if result.parquet_path is not None:
         print(f"Parquetファイルを出力しました。 {result.parquet_path}")
@@ -360,6 +366,7 @@ def run_cli_request_for_code(
     request: WaterInfoRequest,
     output_dir: str | Path | None = None,
     progress_callback=None,
+    should_stop=None,
 ) -> WaterInfoOutputResult:
     if request.options.use_daily:
         return _run_daily_request_for_code(
@@ -367,12 +374,14 @@ def run_cli_request_for_code(
             request=request,
             output_dir=output_dir,
             progress_callback=progress_callback,
+            **({"should_stop": should_stop} if should_stop is not None else {}),
         )
     return _run_hourly_request_for_code(
         code=code,
         request=request,
         output_dir=output_dir,
         progress_callback=progress_callback,
+        **({"should_stop": should_stop} if should_stop is not None else {}),
     )
 
 
@@ -382,6 +391,7 @@ def _run_hourly_request_for_code(
     request: WaterInfoRequest,
     output_dir: str | Path | None,
     progress_callback=None,
+    should_stop=None,
 ) -> WaterInfoOutputResult:
     period = request.period
     options = request.options
@@ -395,6 +405,7 @@ def _run_hourly_request_for_code(
         throttled_get=throttled_get,
         headers=HEADERS,
         progress_callback=progress_callback,
+        **({"should_stop": should_stop} if should_stop is not None else {}),
     )
     if df is None or not value_col:
         raise ValueError(f"観測所コード {code}：時刻データを取得できませんでした")
@@ -475,6 +486,7 @@ def _run_daily_request_for_code(
     request: WaterInfoRequest,
     output_dir: str | Path | None,
     progress_callback=None,
+    should_stop=None,
 ) -> WaterInfoOutputResult:
     period = request.period
     options = request.options
@@ -488,6 +500,7 @@ def _run_daily_request_for_code(
         throttled_get=throttled_get,
         headers=HEADERS,
         progress_callback=progress_callback,
+        **({"should_stop": should_stop} if should_stop is not None else {}),
     )
     if df is None or not data_label or not chart_title:
         raise ValueError(f"観測所コード {code}：日データを取得できませんでした")
